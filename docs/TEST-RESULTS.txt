@@ -189,3 +189,18 @@ erros de runtime: 0 []
 flow: 14 PASS · search: 17 PASS · agents: 18 PASS · apis: 13 PASS
 }
 ERRORS: 0
+
+== 14. FASE 1 DA V2 NO SERVIÇO PUBLICADO (commit 48ca6d7, 2026-10-21)
+PASS GET /health → {"status":"alive","commit":"48ca6d7…","uptimeSeconds":48}
+PASS GET /ready → storage gravável; keyVault ok:false («APP_SECRET não configurado»); persistence durableBetweenDeploys:false
+PASS registo em produção → 201 com papel USER (sem promoção por corpo)
+PASS POST /api/projects sem cabeçalho CSRF → 403
+PASS POST /api/projects com CSRF → 201
+PASS GET /api/admin/metrics como USER → 403
+PASS palavra-passe fraca → 400 · registo sem consentimento → 400
+PASS GET /api/auth/export → 1 projecto, 0 chaves, 4 eventos de auditoria do próprio
+PASS DELETE /api/auth/account sem palavra-passe → 401 (exige confirmação)
+PASS DELETE /api/auth/account com palavra-passe → 200 · projectos e sessões removidos · GET /api/auth/sessions → 401
+PASS POST /api/providers/groq/key com cofre inactivo → 503 needsEnv=APP_SECRET (não finge guardar)
+PASS tests/deployed.mjs → 6/6 (grafo 69/126, pesquisa, /api/fetch 200/6 771 B, VIES 80/80/83, 403 cross-origin, SSRF recusado)
+NOTA: nenhuma resposta 503 do Render foi observada nesta sessão; a primeira resposta após inactividade demorou 13,46 s.

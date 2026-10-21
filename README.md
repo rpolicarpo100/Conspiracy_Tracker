@@ -188,6 +188,19 @@ continua no `localStorage` do navegador quando não há sessão; com sessão, o 
 `DATA_DIR` — e **o plano gratuito não tem disco persistente**, pelo que esses dados se perdem em cada
 deploy. `/api/meta` declara essa limitação (`durableBetweenDeploys`).
 
+## Estado da V2 (fase 1) em produção
+
+Publicado em `main` (commit verificado em `/health`) e verificado por pedidos HTTP reais:
+registo/login, projecto criado com CSRF e recusado sem ele, `/api/admin/*` a 403 para USER,
+exportação, eliminação de conta (com confirmação de palavra-passe) e o cofre de chaves a recusar
+guardar quando falta `APP_SECRET`.
+
+**Acção necessária do operador**: definir `APP_SECRET` (≥24 caracteres) nas variáveis de ambiente do
+serviço no Render. Sem isso, `/ready` reporta `keyVault.ok:false` e a aplicação devolve
+`503 needsEnv=APP_SECRET` em vez de guardar chaves — é o comportamento correcto, mas as chaves de IA
+ficam indisponíveis. `ADMIN_EMAIL` deve ser definido no painel (nunca no repositório) para haver
+administrador.
+
 ## Limitações
 
 Persistência garantida em produção **não existe** enquanto o serviço correr no plano gratuito (sem

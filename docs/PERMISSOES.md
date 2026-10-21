@@ -24,7 +24,7 @@ registo e confirma que a conta fica `USER`.
 | --- | --- | --- | --- | --- |
 | `GET /health`, `/ready`, `/api/meta` | sim | sim | sim | sim |
 | `POST /api/auth/register`, `/login` | sim (com rate limit) | — | — | — |
-| `GET /api/auth/me` | 401 | sim | — | sim |
+| `GET /api/auth/me` | 200 `{user:null}` (por desenho: a interface sonda a sessão) | sim | — | sim |
 | `POST /api/auth/logout`, `/logout-all` | 401 | sim | — | sim |
 | `GET /api/auth/sessions` | 401 | sim | — | sim |
 | `DELETE /api/auth/sessions/{id}` | 401 | sim (só as suas) | 404 | sim (só as suas) |
