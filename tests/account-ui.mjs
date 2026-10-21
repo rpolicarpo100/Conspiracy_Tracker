@@ -23,7 +23,7 @@ const seed = await fetch(BASE + '/api/auth/register', {
   body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASS, acceptTerms: true })
 });
 if (seed.status !== 201) throw new Error('semeadura do administrador falhou: HTTP ' + seed.status);
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 1000 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));

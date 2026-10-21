@@ -1,0 +1,19 @@
+{
+ "geradoEm": "2026-10-21T21:16:15.888Z",
+ "osv": "ok",
+ "instalados": 27,
+ "directos": [
+  "cytoscape",
+  "cytoscape-fcose",
+  "tesseract.js"
+ ],
+ "directosDev": [
+  "d3-force",
+  "graphology",
+  "playwright"
+ ],
+ "vulnerabilidades": {},
+ "candidatos": [],
+ "criticos": [],
+ "avisos": []
+}

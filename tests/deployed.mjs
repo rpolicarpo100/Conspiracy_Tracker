@@ -1,7 +1,7 @@
 /* Verificação do site publicado (Render). Uso: node tests/deployed.mjs https://conspiracy-aitracker.onrender.com */
 import { chromium } from 'playwright';
 const URL_APP = process.argv[2] || 'https://conspiracy-aitracker.onrender.com';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 980 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));

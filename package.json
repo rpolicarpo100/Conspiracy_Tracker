@@ -6,12 +6,13 @@
   "license": "MIT",
   "dependencies": {
     "cytoscape": "^3.34.4",
-    "cytoscape-fcose": "^2.2.0"
+    "cytoscape-fcose": "^2.2.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "d3-force": "^3.0.0",
     "graphology": "^0.25.4",
-    "playwright": "^1.48.2"
+    "playwright": "^1.64.1"
   },
   "engines": {
     "node": ">=18"
@@ -19,11 +20,13 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "dev": "node tools/serve.mjs",
-    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs && node tests/server.mjs && node tests/evidence.mjs && node tests/research.mjs && node tests/graph.mjs && node tests/agents-p3.mjs && node tests/fase3c.mjs && node tests/fase3d.mjs && node tests/pdftext.mjs && node tests/fase3e.mjs",
-    "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs && node tests/account-ui.mjs && node tests/documents-ui.mjs",
+    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs && node tests/server.mjs && node tests/evidence.mjs && node tests/research.mjs && node tests/graph.mjs && node tests/agents-p3.mjs && node tests/fase3c.mjs && node tests/fase3d.mjs && node tests/pdftext.mjs && node tests/fase3e.mjs && node tests/ocr.mjs && node tests/seguranca.mjs",
+    "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs && node tests/account-ui.mjs && node tests/documents-ui.mjs && node tests/mfa-ui.mjs",
     "audit:apis": "node tools/audit-catalog.mjs --attempts=3",
     "test:deployed": "node tests/deployed.mjs",
     "status": "node tools/status.mjs",
-    "status:check": "node tools/status.mjs --check"
+    "status:check": "node tools/status.mjs --check",
+    "audit:deps": "node tools/audit-deps.mjs",
+    "ocr:data": "node tools/fetch-ocr-data.mjs"
   }
 }

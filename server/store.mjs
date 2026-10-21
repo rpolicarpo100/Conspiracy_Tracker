@@ -6,6 +6,8 @@
    este módulo por Postgres (a API abaixo é a única superfície a substituir).
    ===================================================================== */
 import { promises as fs } from 'node:fs';
+import fs_sync from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
@@ -13,7 +15,7 @@ const SCHEMA_VERSION = 5;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
-  users: [], sessions: [], projects: [], credentials: [], usage: [],
+  users: [], sessions: [], mfaChallenges: [], projects: [], credentials: [], usage: [],
   evidence: [], claims: [], runs: [], relations: [], agentRuns: [], notes: [], entityLinks: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
@@ -87,44 +89,197 @@ export function createStore(dir) {
   let loaded = false;
   let writeChain = Promise.resolve();
 
+  /* ---------- integridade, cópias de segurança e bloqueio de instância ----------
+
+     Porque isto existe: o disco do plano gratuito é efémero, mas enquanto o
+     processo vive o ficheiro é a única memória da investigação. Um `rename`
+     sem `fsync`, um JSON truncado ou duas instâncias a escrever o mesmo
+     ficheiro apagam trabalho sem aviso. Então:
+     · cada gravação é tmp → fsync → rename → fsync da pasta;
+     · ao lado do ficheiro fica o sha256 do conteúdo (verificado na leitura);
+     · guardam-se as 3 últimas cópias boas e, se a principal estiver ilegível,
+       recupera-se a mais recente VÁLIDA — dizendo qual e porquê;
+     · um ficheiro de bloqueio impede duas instâncias de escreverem o mesmo
+       diretório: a segunda entra em modo só-de-leitura e diz isso em /ready.
+     Nada disto substitui disco persistente ou Postgres: mitiga, não resolve. */
+  const checksumFile = file + '.sha256';
+  const lockFile = path.join(root, 'db.lock');
+  const BACKUPS = 3;
+  let lockState = { held: false, readOnly: false, owner: null, reason: null };
+  const recovery = { used: null, reason: null, freshStart: false, skippedBackups: 0, backups: [] };
+
+  const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
+
+  function acquireLock() {
+    try {
+      const meu = { pid: process.pid, at: new Date().toISOString(), host: os.hostname() };
+      fs_sync.mkdirSync(root, { recursive: true });
+      if (fs_sync.existsSync(lockFile)) {
+        let dono = null;
+        try { dono = JSON.parse(fs_sync.readFileSync(lockFile, 'utf8')); } catch { dono = null; }
+        const vivo = dono && dono.pid && (() => { try { process.kill(dono.pid, 0); return dono.pid !== process.pid; } catch { return false; } })();
+        if (vivo) {
+          lockState = { held: false, readOnly: true, owner: dono, reason: 'outra instância (pid ' + dono.pid + ') está a escrever neste diretório: esta instância entra em modo só-de-leitura para não corromper a base' };
+          console.error('[store] ' + lockState.reason);
+          return;
+        }
+      }
+      fs_sync.writeFileSync(lockFile, JSON.stringify(meu), { mode: 0o600 });
+      lockState = { held: true, readOnly: false, owner: meu, reason: null };
+    } catch (e) {
+      lockState = { held: false, readOnly: true, owner: null, reason: 'não foi possível criar o bloqueio: ' + e.message };
+      console.error('[store] ' + lockState.reason);
+    }
+  }
+
+  function releaseLock() {
+    try {
+      if (!lockState.held) return;
+      const dono = JSON.parse(fs_sync.readFileSync(lockFile, 'utf8'));
+      if (dono.pid === process.pid) fs_sync.rmSync(lockFile, { force: true });
+    } catch { /* já não existe */ }
+  }
+
+  const latestCopy = file + '.ultima-copia.json';
+  function keepLatest(data) {
+    try { fs_sync.writeFileSync(latestCopy, data, { mode: 0o600 }); } catch (e) { console.error('[store] cópia «última» falhou:', e.message); }
+  }
+
+  function rotateBackups(data) {
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const copy = path.join(root, 'db-backup-' + stamp + '.json');
+      fs_sync.writeFileSync(copy, data, { mode: 0o600 });
+      const all = fs_sync.readdirSync(root).filter((f) => /^db-backup-.*\.json$/.test(f)).sort();
+      while (all.length > BACKUPS) {
+        const old = all.shift();
+        fs_sync.rmSync(path.join(root, old), { force: true });
+      }
+      return copy;
+    } catch (e) {
+      console.error('[store] cópia de segurança falhou:', e.message);
+      return null;
+    }
+  }
+
+  function tryRead(filePath) {
+    try {
+      const raw = fs_sync.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw);
+      return { raw, parsed };
+    } catch { return null; }
+  }
+
   async function load() {
     if (loaded) return db;
-    try {
-      await fs.mkdir(root, { recursive: true });
-      const raw = await fs.readFile(file, 'utf8');
-      const parsed = JSON.parse(raw);
+    await fs.mkdir(root, { recursive: true });
+    acquireLock();
+
+    let raw = null, parsed = null, problema = null;
+    const principal = tryRead(file);
+    if (principal) {
+      /* o sha256 só existe a partir desta versão; se existir, tem de bater certo */
+      const esperado = (() => { try { return fs_sync.readFileSync(checksumFile, 'utf8').trim(); } catch { return null; } })();
+      if (esperado && sha(principal.raw) !== esperado) {
+        problema = 'o ficheiro não corresponde ao sha256 registado (escrita interrompida ou alteração externa)';
+      } else {
+        raw = principal.raw; parsed = principal.parsed;
+      }
+    } else if (fs_sync.existsSync(file)) {
+      problema = 'ficheiro existe mas não é JSON válido (truncado?)';
+    }
+
+    if (!parsed) {
+      /* procura a cópia válida mais recente — e diz qual usou */
+      const datadas = (() => { try { return fs_sync.readdirSync(root).filter((f) => /^db-backup-.*\.json$/.test(f)).sort().reverse(); } catch { return []; } })();
+      const copias = (fs_sync.existsSync(latestCopy) ? [path.basename(latestCopy)] : []).concat(datadas);
+      recovery.backups = copias.slice(0, BACKUPS).map((f) => path.join(root, f));
+      for (const nome of copias) {
+        const cand = tryRead(path.join(root, nome));
+        if (cand && cand.parsed && cand.parsed.version) { raw = cand.raw; parsed = cand.parsed; recovery.used = path.join(root, nome); break; }
+        recovery.skippedBackups++;
+      }
+      if (parsed) {
+        recovery.reason = (problema || 'base principal inexistente') + ' — recuperada a cópia ' + path.basename(recovery.used);
+        console.error('[store] ' + recovery.reason);
+        if (fs_sync.existsSync(file)) {
+          const broken = file + '.broken-' + Date.now();
+          try { fs_sync.renameSync(file, broken); console.error('[store] base danificada preservada em ' + broken); } catch { /* nada a fazer */ }
+        }
+      }
+    }
+
+    if (parsed) {
       db = Object.assign(EMPTY(), parsed);
-      /* o que o ficheiro guardado não tinha: base para descrever a migração sem inventar */
       const missing = Object.keys(EMPTY()).filter((k) => !(k in parsed));
       const m = migrate(db, missing);
       if (m.applied.length) {
         console.log('[store] migração aplicada:', m.from, '→', m.to,
           m.applied.map((a) => a.changes.join('; ')).join(' | '));
+      }
+      if (lockState.readOnly) {
+        console.log('[store] base aberta em modo só-de-leitura: as migrações ficam por gravar');
+      } else {
         await persist();
       }
+      /* fotografia do estado em disco: é a ela que se volta se uma gravação falhar */
+      lastGood = JSON.stringify(db);
       loaded = true;
-    } catch (e) {
-      if (e.code !== 'ENOENT') {
-        // dados ilegíveis não são ignorados em silêncio: preserva-se o ficheiro e recomeça-se
-        const broken = file + '.broken-' + Date.now();
-        await fs.rename(file, broken).catch(() => {});
-        console.error('[store] base ilegível, preservada em', broken);
-      }
-      db = EMPTY(); loaded = true;
-      db.migrations.push({ from: 0, to: SCHEMA_VERSION, at: new Date().toISOString(),
-        changes: ['base criada directamente na versão ' + SCHEMA_VERSION] });
-      await persist();
+      return db;
     }
+
+    /* sem base e sem cópias: começa vazia — mas isso NUNCA é silencioso */
+    recovery.freshStart = true;
+    if (!recovery.reason) recovery.reason = problema ? problema + ' — não há cópia válida: base recomeçada vazia' : 'primeira execução: base criada vazia';
+    if (problema) console.error('[store] ' + recovery.reason);
+    db = EMPTY();
+    loaded = true;
+    db.migrations.push({ from: 0, to: SCHEMA_VERSION, at: new Date().toISOString(),
+      changes: ['base criada directamente na versão ' + SCHEMA_VERSION] });
+    if (!lockState.readOnly) await persist();
     return db;
   }
 
+  let lastBackupAt = 0;
+  let lastGood = null;            // último estado gravado com sucesso (para desfazer)
   function persist() {
     writeChain = writeChain.then(async () => {
-      const tmp = file + '.tmp-' + process.pid;
+      if (lockState.readOnly) throw new Error('base em modo só-de-leitura: ' + lockState.reason);
       const data = JSON.stringify(db, null, 1);
-      await fs.writeFile(tmp, data, { mode: 0o600 });
-      await fs.rename(tmp, file);           // troca atómica
-    }).catch((e) => console.error('[store] falha ao gravar:', e.message));
+      const tmp = file + '.tmp-' + process.pid;
+      const fh = await fs.open(tmp, 'w', 0o600);
+      try {
+        await fh.writeFile(data);
+        await fh.sync();                     // os bytes chegam ao disco antes do rename
+      } finally { await fh.close(); }
+      await fs.rename(tmp, file);
+      try {
+        const dh = await fs.open(root, 'r');
+        try { await dh.sync(); } finally { await dh.close(); }   // o rename também
+      } catch { /* alguns sistemas de ficheiros não permitem fsync de pasta */ }
+      lastGood = data;
+      await fs.writeFile(checksumFile + '.tmp', sha(data), { mode: 0o600 });
+      await fs.rename(checksumFile + '.tmp', checksumFile);
+      /* a última gravação boa fica sempre copiada: é a rede de segurança para
+         uma escrita truncada; as cópias datadas rodam a cada 5 minutos */
+      keepLatest(data);
+      if (Date.now() - lastBackupAt > 5 * 60 * 1000) {
+        lastBackupAt = Date.now();
+        rotateBackups(data);
+      }
+    }).catch((e) => {
+      console.error('[store] falha ao gravar:', e.message);
+      /* a memória não pode ficar à frente do disco: desfaz-se a alteração */
+      if (lastGood) {
+        try {
+          const antes = JSON.parse(lastGood);
+          Object.keys(db).forEach((k) => { delete db[k]; });
+          Object.assign(db, antes);
+          console.error('[store] estado em memória reposto ao último gravado com sucesso');
+        } catch (e2) { console.error('[store] reposição em memória falhou:', e2.message); }
+      }
+      throw e;
+    });
     return writeChain;
   }
 
@@ -168,6 +323,36 @@ export function createStore(dir) {
       db.relations = db.relations.filter((r) => !mine.has(r.projectId));
       db.agentRuns = db.agentRuns.filter((r) => !mine.has(r.projectId));
       await persist();
+    },
+
+    /* --- desafios de segundo factor (a sessão só nasce depois do código) --- */
+    async createMfaChallenge({ userId, tokenHash, ip, ua, ttlMs }) {
+      db.mfaChallenges = db.mfaChallenges || [];
+      const now = Date.now();
+      /* limpeza: um desafio velho não fica à espera para sempre */
+      db.mfaChallenges = db.mfaChallenges.filter((c) => Date.parse(c.expiresAt) > now && !c.usedAt);
+      const c = {
+        id: id('mfa'), userId, tokenHash, ip: ip || null, ua: ua ? String(ua).slice(0, 180) : null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(now + (ttlMs || 5 * 60 * 1000)).toISOString(),
+        usedAt: null, attempts: 0
+      };
+      db.mfaChallenges.push(c); await persist(); return c;
+    },
+    mfaChallengeByHash(h) {
+      const c = (db.mfaChallenges || []).find((x) => x.tokenHash === h);
+      if (!c || c.usedAt || Date.parse(c.expiresAt) <= Date.now()) return null;
+      return c;
+    },
+    async bumpMfaChallenge(cid) {
+      const c = (db.mfaChallenges || []).find((x) => x.id === cid);
+      if (!c) return null;
+      c.attempts = (c.attempts || 0) + 1; await persist(); return c;
+    },
+    async consumeMfaChallenge(cid) {
+      const c = (db.mfaChallenges || []).find((x) => x.id === cid);
+      if (!c) return null;
+      c.usedAt = new Date().toISOString(); await persist(); return c;
     },
 
     /* --- sessões --- */
@@ -535,6 +720,24 @@ export function createStore(dir) {
     counters() { return Object.assign({}, db.metrics.counters); },
     schemaVersion() { return db.version; },
     migrations() { return (db.migrations || []).slice(); },
+    /* estado de integridade: o que foi recuperado, se há bloqueio, se é só-leitura */
+    integrity() {
+      return {
+        file, root, checksum: fs_sync.existsSync(checksumFile),
+        backups: (() => { try { return fs_sync.readdirSync(root).filter((f) => /^db-backup-.*\.json$/.test(f)).length; } catch { return 0; } })(),
+        lock: { held: lockState.held, readOnly: lockState.readOnly, ownerPid: lockState.owner ? lockState.owner.pid : null, reason: lockState.reason },
+        recovery: Object.assign({}, recovery),
+        sizes: (() => {
+          try { return { db: fs_sync.statSync(file).size, bytes: fs_sync.statSync(file).size }; } catch { return { db: 0 }; }
+        })()
+      };
+    },
+    readOnly() { return !!lockState.readOnly; },
+    async close() {
+      /* uma base só-de-leitura não tem nada para gravar: fechar não é erro */
+      if (!lockState.readOnly) await writeChain.catch(() => {});
+      releaseLock();
+    },
     persist
   };
 }

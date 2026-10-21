@@ -18,13 +18,15 @@ import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOT
 import { validateEntityLink } from './graph.mjs';
 import { MEMORY_KINDS, MEMORY_LIMITS, validateMemory, memoryToMarkdown } from './memory.mjs';
 import { extractPdfText, PDF_LIMITS } from './pdftext.mjs';
+import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
+import { MFA, newSecret, otpauthUri, verifyTotp, newRecoveryCodes, consumeRecoveryCode, makeAttemptLimiter, maskSecret } from './mfa.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3e';
+const APP_VERSION = '2.0.0-fase3f';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -130,6 +132,38 @@ export async function fetchDocument(url) {
 
     if (isPdf) {
       const ex = extractPdfText(buf);
+      /* digitalização (só imagens): tenta OCR — e diz sempre o que fez */
+      if (!ex.ok && ex.imageOnly && !ex.encrypted && res.ok) {
+        const oc = await ocrPdf(buf, { maxImages: OCR_LIMITS.maxImages, perImageMs: OCR_LIMITS.perImageMs });
+        if (oc.ok) {
+          return {
+            ok: true, status: res.status, kind: 'pdf', finalUrl: u.toString(),
+            text: String(oc.text).slice(0, 40000), bytes: buf.length, hash,
+            extraction: {
+              method: 'ocr', pages: oc.pages || ex.pages || 0, streams: 0,
+              usedToUnicode: 0, chars: oc.chars || 0, imageOnly: true, encrypted: false,
+              streamFailures: 0, reason: null,
+              confidence: oc.confidenceAvg != null ? oc.confidenceAvg : null,
+              imagesRecognized: oc.imagesRecognized, perPage: oc.perPage,
+              engine: oc.engine, engineAvailable: true,
+              warnings: (oc.warnings || []).concat(['OCR: o texto foi lido de uma imagem, não da camada de texto do documento']),
+              needsHumanReview: true
+            },
+            error: null
+          };
+        }
+        return {
+          ok: false, status: res.status, kind: 'pdf', finalUrl: u.toString(),
+          text: '', bytes: buf.length, hash,
+          extraction: {
+            method: 'nenhum', pages: ex.pages || 0, imageOnly: true, encrypted: false,
+            ocrAttempted: true, ocrAvailable: !!oc.engineAvailable, ocrReason: oc.reason || null,
+            confidence: null, warnings: (oc.warnings || []).concat(ex.warnings || []),
+            needsHumanReview: true, reason: oc.reason || ex.reason || null
+          },
+          error: oc.reason || ex.reason
+        };
+      }
       return {
         ok: res.ok && ex.ok, status: res.status, kind: 'pdf', finalUrl: u.toString(),
         text: ex.ok ? String(ex.text).slice(0, 40000) : '',
@@ -399,6 +433,7 @@ export async function createApi(opts) {
   }
   const accessLimiter = makeLimiter(60);
   const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
+  const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
 
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
@@ -491,6 +526,12 @@ export async function createApi(opts) {
     const method = req.method;
     const now = () => new Date().toISOString();
 
+    /* base em só-de-leitura (outra instância escreve na mesma pasta): as
+       alterações são recusadas ANTES de tocar nos dados, com um 503 honesto */
+    if (store.readOnly && store.readOnly() && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      return err(res, 503, 'armazenamento em modo só-de-leitura: outra instância detém a escrita nesta pasta', { retryable: true });
+    }
+
     try {
       /* ---------- saúde ---------- */
       if (p === '/health') {
@@ -500,8 +541,19 @@ export async function createApi(opts) {
         });
       }
       if (p === '/ready') {
+        const integ = typeof store.integrity === 'function' ? store.integrity() : null;
+        const readOnly = !!(integ && integ.lock && integ.lock.readOnly);
         const checks = {
-          storage: { ok: !!store.data, writable: true },
+          storage: {
+            ok: !!store.data && !readOnly, writable: !readOnly,
+            readOnly, reason: readOnly ? integ.lock.reason : null,
+            integrity: integ ? {
+              checksumVerified: integ.checksum, backups: integ.backups,
+              recoveredFrom: integ.recovery.used ? integ.recovery.used.split('/').pop() : null,
+              recoveryReason: integ.recovery.reason,
+              freshStart: integ.recovery.freshStart
+            } : null
+          },
           keyVault: { ok: vault.enabled, mode: vault.enabled ? 'aes-256-gcm' : 'desactivado', reason: vault.reason },
           persistence: {
             ok: !!opts.dataDir || !!process.env.DATA_DIR,
@@ -510,7 +562,11 @@ export async function createApi(opts) {
           }
         };
         const ready = checks.storage.ok;
-        return json(res, ready ? 200 : 503, { ok: ready, status: ready ? 'ready' : 'degraded', checks, version: APP_VERSION, now: now() });
+        return json(res, ready ? 200 : 503, {
+          ok: ready, status: ready ? 'ready' : 'degraded', checks, version: APP_VERSION, now: now(),
+          /* um modo só-de-leitura é dito na cara, não escondido em /health */
+          aviso: readOnly ? 'outra instância detém a escrita nesta pasta: esta responde a leituras e recusa alterações' : null
+        });
       }
 
       /* ---------- meta ---------- */
@@ -525,9 +581,17 @@ export async function createApi(opts) {
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           documents: {
             pdfMaxBytes: PDF_LIMITS.maxBytes, htmlMaxBytes: DOC_MAX_HTML, maxRedirects: DOC_MAX_REDIRECTS,
-            pdfText: 'extraído com /ToUnicode; sem OCR; cifra não é contornada',
+            pdfText: 'extraído com /ToUnicode; digitalizações passam por OCR quando há motor; cifra não é contornada',
             humanReview: 'obrigatória: nenhuma prova nasce de uma extracção',
-            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido'
+            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido',
+            ocr: (() => {
+              const st = ocrStatus();
+              return {
+                available: st.available, engine: st.engine, version: st.version,
+                languages: st.languages, dataSource: st.dataSource, reason: st.reason,
+                minConfidence: OCR_LIMITS.minConfidence, maxImages: OCR_LIMITS.maxImages
+              };
+            })()
           },
           registration: {
             open: true,
@@ -587,11 +651,74 @@ export async function createApi(opts) {
           return err(res, 401, 'credenciais inválidas');
         }
         auth.loginLimiter.reset(key);
+
+        /* conta com segundo factor: NÃO se emite sessão antes do código */
+        if (user.mfa && user.mfa.enabled) {
+          if (mfaLimiter.blocked(user.id)) {
+            await store.audit({ type: 'mfa_blocked', actorId: user.id, ip, action: 'mfa_login' });
+            return err(res, 429, 'demasiados códigos incorrectos; tente novamente dentro de alguns minutos');
+          }
+          const challenge = newToken(32);
+          const c = await store.createMfaChallenge({ userId: user.id, tokenHash: sha256(challenge), ip, ua: req.headers['user-agent'] });
+          await store.audit({ type: 'mfa_challenge', actorId: user.id, subjectId: c.id, ip, action: 'mfa_login' });
+          return json(res, 200, {
+            ok: true, mfaRequired: true, challenge, expiresAt: c.expiresAt,
+            methods: ['totp'].concat((user.mfa.recoveryCodes || []).length ? ['recovery'] : []),
+            nota: 'introduza o código da aplicação de autenticação; a sessão só é criada depois de o código ser aceite'
+          });
+        }
+
         await store.updateUser(user.id, { lastLoginAt: now() });
         const s = await auth.issueSession(user, { ip, ua: req.headers['user-agent'] });
         await store.audit({ type: 'login_succeeded', actorId: user.id, subjectId: user.id, ip, action: 'login' });
         await store.count('logins');
         return json(res, 200, { ok: true, user: publicUser(user), csrf: s.csrf }, { 'set-cookie': auth.cookiesFor(s.token, s.csrf) });
+      }
+
+      /* segundo passo do login: código TOTP ou código de recuperação */
+      if (p === '/api/auth/mfa/verify' && method === 'POST') {
+        const ip = ipOf(req);
+        const body = await readBody(req);
+        const ch = store.mfaChallengeByHash(sha256(String(body.challenge || '')));
+        if (!ch) return err(res, 401, 'desafio inválido ou expirado: volte a introduzir a palavra-passe');
+        if (mfaLimiter.blocked(ch.userId)) {
+          await store.audit({ type: 'mfa_blocked', actorId: ch.userId, ip, action: 'mfa_verify' });
+          return err(res, 429, 'demasiados códigos incorrectos; tente novamente dentro de alguns minutos');
+        }
+        const user = store.userById(ch.userId);
+        if (!user || user.status !== 'active' || !user.mfa || !user.mfa.enabled) return err(res, 401, 'desafio inválido');
+
+        let used = null, via = null;
+        const code = String(body.code || '').replace(/\s+/g, '');
+        if (body.recoveryCode) {
+          const r = consumeRecoveryCode(user.mfa.recoveryCodes, body.recoveryCode, vault.enabled ? vault.secretFor('mfa') : 'pepper-local');
+          if (r) { used = r; via = 'recovery'; }
+        } else {
+          const counter = verifyTotp(user.mfa.secret, code);
+          /* o mesmo código não serve duas vezes: guarda-se o último passo aceite */
+          if (counter != null && (user.mfa.lastCounter == null || counter > user.mfa.lastCounter)) { used = { counter }; via = 'totp'; }
+        }
+        if (!used) {
+          await store.bumpMfaChallenge(ch.id);
+          mfaLimiter.hit(ch.userId);
+          await store.audit({ type: 'mfa_failed', actorId: ch.userId, ip, action: 'mfa_verify', detail: { remaining: mfaLimiter.remaining(ch.userId) } });
+          return err(res, 401, 'código incorrecto', { remaining: mfaLimiter.remaining(ch.userId) });
+        }
+        mfaLimiter.reset(ch.userId);
+        await store.consumeMfaChallenge(ch.id);
+        const patch = via === 'recovery'
+          ? { mfa: Object.assign({}, user.mfa, { recoveryCodes: used.remaining, lastRecoveryAt: now() }) }
+          : { mfa: Object.assign({}, user.mfa, { lastCounter: used.counter }) };
+        await store.updateUser(user.id, Object.assign(patch, { lastLoginAt: now() }));
+        const s2 = await auth.issueSession(user, { ip, ua: req.headers['user-agent'] });
+        await store.audit({ type: 'login_succeeded', actorId: user.id, subjectId: user.id, ip, action: 'login_mfa', detail: { via, recoveryLeft: via === 'recovery' ? used.remaining.length : (user.mfa.recoveryCodes || []).length } });
+        await store.count('logins');
+        const left = via === 'recovery' ? used.remaining.length : (user.mfa.recoveryCodes || []).length;
+        return json(res, 200, {
+          ok: true, user: publicUser(store.userById(user.id)), csrf: s2.csrf, via,
+          recoveryLeft: left,
+          aviso: via === 'recovery' ? 'usou um código de recuperação: foi consumido e restam ' + left + (left <= 2 ? ' — gere novos códigos' : '') : null
+        }, { 'set-cookie': auth.cookiesFor(s2.token, s2.csrf) });
       }
 
       /* ---------- sessão actual ---------- */
@@ -602,6 +729,100 @@ export async function createApi(opts) {
       }
 
       /* ---------- logout ---------- */
+      /* ---------- verificação em dois passos ---------- */
+      if (p === '/api/auth/mfa' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const m = a.user.mfa || {};
+        return json(res, 200, {
+          ok: true,
+          enabled: !!m.enabled,
+          pending: !!m.pendingSecret,
+          secretMasked: m.secret ? maskSecret(m.secret) : null,
+          recoveryCodesLeft: (m.recoveryCodes || []).length,
+          enabledAt: m.enabledAt || null,
+          rules: { digits: MFA.digits, period: MFA.period, window: MFA.window, recoveryCodes: MFA.recoveryCodes, maxAttempts: MFA.maxAttempts }
+        });
+      }
+      if (p === '/api/auth/mfa/setup' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        if (!verifyPassword(body.password, a.user.salt, a.user.passwordHash)) return err(res, 401, 'palavra-passe actual incorrecta');
+        if (a.user.mfa && a.user.mfa.enabled) return err(res, 409, 'a verificação em dois passos já está activa');
+        const secret = newSecret();
+        await store.updateUser(a.user.id, {
+          mfa: Object.assign({}, a.user.mfa || {}, { pendingSecret: secret, pendingAt: now(), enabled: false })
+        });
+        await store.audit({ type: 'mfa_setup_started', actorId: a.user.id, ip: ipOf(req), action: 'mfa_setup' });
+        return json(res, 201, {
+          ok: true, secret, otpauth: otpauthUri(secret, a.user.email),
+          nota: 'guarde o segredo no seu gestor de palavras-passe; a activação só acontece depois de confirmar um código'
+        });
+      }
+      if (p === '/api/auth/mfa/enable' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const m = a.user.mfa || {};
+        if (!m.pendingSecret) return err(res, 400, 'não há activação pendente: comece por /api/auth/mfa/setup');
+        if (mfaLimiter.blocked(a.user.id)) return err(res, 429, 'demasiados códigos incorrectos; tente novamente dentro de alguns minutos');
+        const counter = verifyTotp(m.pendingSecret, body.code);
+        if (counter == null) {
+          mfaLimiter.hit(a.user.id);
+          await store.audit({ type: 'mfa_enable_failed', actorId: a.user.id, ip: ipOf(req), action: 'mfa_enable' });
+          return err(res, 400, 'código incorrecto: confirme o relógio do dispositivo e o segredo', { remaining: mfaLimiter.remaining(a.user.id) });
+        }
+        const pepper = vault.enabled ? vault.secretFor('mfa') : 'pepper-local';
+        const codes = newRecoveryCodes(pepper);
+        await store.updateUser(a.user.id, {
+          mfa: {
+            enabled: true, secret: m.pendingSecret, pendingSecret: null, enabledAt: now(),
+            /* o código que activou a conta não fica «gasto» para o login seguinte:
+               a protecção contra repetição aplica-se a códigos usados para entrar */
+            lastCounter: null, recoveryCodes: codes.map((c) => ({ hash: c.hash, createdAt: now() }))
+          }
+        });
+        mfaLimiter.reset(a.user.id);
+        await store.audit({ type: 'mfa_enabled', actorId: a.user.id, ip: ipOf(req), action: 'mfa_enable', detail: { recoveryCodes: codes.length } });
+        /* os códigos de recuperação são mostrados UMA vez e não ficam em claro em lado nenhum */
+        return json(res, 200, {
+          ok: true, recoveryCodes: codes.map((c) => c.code),
+          nota: 'guarde estes códigos agora: não voltam a ser mostrados; cada um serve uma única vez'
+        });
+      }
+      if (p === '/api/auth/mfa/disable' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        if (!verifyPassword(body.password, a.user.salt, a.user.passwordHash)) return err(res, 401, 'palavra-passe actual incorrecta');
+        const m = a.user.mfa || {};
+        if (!m.enabled) return err(res, 409, 'a verificação em dois passos não está activa');
+        const okCode = verifyTotp(m.secret, body.code);
+        const rec = okCode == null ? consumeRecoveryCode(m.recoveryCodes, body.recoveryCode || '', vault.enabled ? vault.secretFor('mfa') : 'pepper-local') : null;
+        if (okCode == null && !rec) return err(res, 400, 'código incorrecto: para desactivar é preciso a palavra-passe e um código válido');
+        await store.updateUser(a.user.id, { mfa: null });
+        await store.revokeAllSessions(a.user.id, a.session.id);
+        await store.audit({ type: 'mfa_disabled', actorId: a.user.id, ip: ipOf(req), action: 'mfa_disable', detail: { otherSessionsRevoked: true } });
+        return json(res, 200, { ok: true, disabled: true, otherSessionsRevoked: true });
+      }
+      if (p === '/api/auth/mfa/recovery' && method === 'POST') {
+        /* novos códigos de recuperação: exige a palavra-passe e um código TOTP válido */
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        if (!verifyPassword(body.password, a.user.salt, a.user.passwordHash)) return err(res, 401, 'palavra-passe actual incorrecta');
+        const m = a.user.mfa || {};
+        if (!m.enabled) return err(res, 409, 'a verificação em dois passos não está activa');
+        const counter = verifyTotp(m.secret, body.code);
+        if (counter == null) return err(res, 400, 'código incorrecto');
+        const codes = newRecoveryCodes(vault.enabled ? vault.secretFor('mfa') : 'pepper-local');
+        await store.updateUser(a.user.id, {
+          mfa: Object.assign({}, m, { recoveryCodes: codes.map((c) => ({ hash: c.hash, createdAt: now() })), lastCounter: counter })
+        });
+        await store.audit({ type: 'mfa_recovery_regenerated', actorId: a.user.id, ip: ipOf(req), action: 'mfa_recovery' });
+        return json(res, 200, { ok: true, recoveryCodes: codes.map((c) => c.code), nota: 'os códigos anteriores deixaram de funcionar' });
+      }
+
       if (p === '/api/auth/logout' && method === 'POST') {
         const a = await requireUser(req, res); if (!a) return;
         if (!requireCsrf(req, res, a)) return;
@@ -646,6 +867,13 @@ export async function createApi(opts) {
         if (!requireCsrf(req, res, a)) return;
         const body = await readBody(req);
         if (!verifyPassword(body.current, a.user.salt, a.user.passwordHash)) return err(res, 401, 'palavra-passe actual incorrecta');
+        /* com segundo factor activo, trocar a palavra-passe exige-o também:
+           um cookie roubado não pode mudar a palavra-passe e expulsar o dono */
+        if (a.user.mfa && a.user.mfa.enabled) {
+          const okTotp = verifyTotp(a.user.mfa.secret, body.code) != null;
+          const okRec = !okTotp && !!consumeRecoveryCode(a.user.mfa.recoveryCodes, body.recoveryCode || '', vault.enabled ? vault.secretFor('mfa') : 'pepper-local');
+          if (!okTotp && !okRec) return err(res, 401, 'com a verificação em dois passos activa, a troca de palavra-passe exige um código válido', { mfaRequired: true });
+        }
         const problems = passwordProblems(body.next);
         if (problems.length) return err(res, 400, 'palavra-passe fraca: ' + problems.join(', '));
         const { salt, hash } = hashPassword(body.next);
@@ -1589,9 +1817,17 @@ export async function createApi(opts) {
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           documents: {
             pdfMaxBytes: PDF_LIMITS.maxBytes, htmlMaxBytes: DOC_MAX_HTML, maxRedirects: DOC_MAX_REDIRECTS,
-            pdfText: 'extraído com /ToUnicode; sem OCR; cifra não é contornada',
+            pdfText: 'extraído com /ToUnicode; digitalizações passam por OCR quando há motor; cifra não é contornada',
             humanReview: 'obrigatória: nenhuma prova nasce de uma extracção',
-            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido'
+            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido',
+            ocr: (() => {
+              const st = ocrStatus();
+              return {
+                available: st.available, engine: st.engine, version: st.version,
+                languages: st.languages, dataSource: st.dataSource, reason: st.reason,
+                minConfidence: OCR_LIMITS.minConfidence, maxImages: OCR_LIMITS.maxImages
+              };
+            })()
           },
           providers: registryPublic().map((pr) => {
             const c = mine.filter((x) => x.provider === pr.id)[0] || null;
@@ -1782,6 +2018,14 @@ export async function createApi(opts) {
 
       return err(res, 404, 'rota não encontrada');
     } catch (e) {
+      /* base em só-de-leitura e falhas de gravação são 503 (serviço temporariamente
+         incapaz), não 500: o cliente precisa de saber que pode tentar mais tarde
+         e que nada foi gravado a meio */
+      const msg = String(e && e.message || e);
+      if (/só-de-leitura|read-only/i.test(msg)) {
+        console.error('[api] escrita recusada:', msg);
+        return err(res, 503, 'armazenamento em modo só-de-leitura: ' + msg, { retryable: true });
+      }
       const status = e.status || 500;
       if (status >= 500) console.error('[api] erro:', e.message);
       return err(res, status, status >= 500 ? 'erro interno' : e.message);
@@ -1807,6 +2051,9 @@ export async function createApi(opts) {
     };
   }
 
-  api.close = async () => { await store.persist(); };
+  api.close = async () => {
+    if (typeof store.readOnly === 'function' && store.readOnly()) return;   // nada a gravar
+    await store.persist();
+  };
   return api;
 }

@@ -605,3 +605,53 @@ público).
 
 Tempo de publicação: commit 3db157a enviado para `main` às 20:17:24 e já em execução às 20:17:45
 (Render, plano gratuito, autoDeploy).
+
+== 32. FASE 3F — SEGUNDO FACTOR, DURABILIDADE E AUDITORIA DE DEPENDÊNCIAS (versão 2.0.0-fase3f)
+
+Tudo local, Node 20.19, Chromium do Playwright com bibliotecas extraídas sem root.
+
+tests/seguranca.mjs — 25/25
+  · RFC 6238: t=59→287082, t=1111111109→081804, t=1234567890→005924, t=2000000000→279037;
+    janela ±1 aceite, ±3 recusada; segredo de 160 bits; Base32 ida-e-volta;
+  · login sem código devolve {mfaRequired:true, challenge, methods} e **nenhum** cookie de sessão;
+  · desafio de uso único; código repetido → 401; 8 códigos errados → 429;
+  · desactivar exige palavra-passe **e** código; 10 códigos de recuperação de uso único;
+  · durabilidade: db.json truncado → recupera da última cópia e declara
+    `recovery.used = db-backup-…`; ficheiro danificado preservado como `db.json.broken-<ts>`;
+    sem cópia → recomeço vazio **declarado**; segunda instância viva → `lock.readOnly`
+    «outra instância (pid N)»; mutação nessa instância → **503 {retryable:true}** e o estado em
+    memória reposto ao último gravado com sucesso (o teste confirma que a leitura seguinte NÃO vê
+    a alteração recusada); `/ready` → 503 `degraded` com `aviso` + `integrity`.
+
+tests/mfa-ui.mjs — 10/10 (interface real, Playwright)
+  · activar TOTP calculando o código com `totpAt` (mesma função do servidor, não um mock);
+  · segredo mostrado uma vez; 10 códigos; dispensar; logout/login com desafio; código errado →
+    mensagem e **sem** sessão; código certo → captura `docs/shot-28-mfa.png`; desactivar sem código
+    → recusado;
+  · painel de documentos declara o estado real do OCR: «OCR indisponível: sem dados de língua em
+    …/ocr — descarregue-os com npm run ocr:data». (Antes desta fase o painel não dizia nada; o
+    `/api/meta` passou a incluir `documents.ocr` com motor, versão, línguas, origem dos dados,
+    motivo da indisponibilidade, confiança mínima e máximo de imagens.)
+
+tests/ocr.mjs — 15/15
+  · aceleração (sha256 igual ao Node), assinatura PNG/JPEG obrigatória, recusa de não-imagem;
+  · fluxo de entrega unificado (zero cópias desnecessárias);
+  · **recolha real de uma digitalização**: o PDF de 2 páginas sem camada de texto, servido por HTTP
+    local, cai para OCR → `method: 'ocr'`, 143 caracteres, confiança **93/100**, aviso «OCR» presente,
+    revisão humana obrigatória, hash de 64 hex;
+  · sem dados de língua → motor indisponível com motivo escrito; `OCR_ALLOW_CDN=1` aceite e
+    declarado com a origem.
+
+tools/audit-deps.mjs
+  27 pacotes instalados (3 directos, 3 de desenvolvimento) · sem vulnerabilidades altas/críticas ·
+  sem licenças proibidas (AGPL/GPL/SSPL/BUSL) · dados crus em docs/DEPENDENCIAS-DADOS.json.
+  Achado corrigido: playwright 1.48.2 tinha GHSA-7mvr-c777-76hp (alta) → 1.64.1.
+
+Verificação cruzada do extrator de PDF (pdfjs-dist 4.10.38, o que corre em Node 20):
+  · o nosso texto é idêntico ao `pdftotext`; o pdfjs insere espaços dentro de palavras ao lidar com
+    ligaduras («fi cheiro») — nenhuma migração se justifica para extrair texto citável.
+
+Ainda por testar nesta fase:
+  · OCR no serviço público: depende do build descarregar os dados (~4 MB comprimidos) e de CPU/RAM
+    disponíveis no plano gratuito — só se sabe ao vivo, e será registado em §33 com o resultado real;
+  · medição de memória do OCR sob carga sustentada (o limite de concorrência é 1).

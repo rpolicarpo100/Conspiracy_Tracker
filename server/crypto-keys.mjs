@@ -13,7 +13,10 @@ export function keyVault(secret) {
       reason,
       seal() { throw new Error('cofre desactivado'); },
       open() { throw new Error('cofre desactivado'); },
-      mask() { return '—'; }
+      mask() { return '—'; },
+      /* derivação de chaves contextuais: sem cofre, os códigos de recuperação
+         usam um valor de recurso — diz-se na resposta que a protecção é menor */
+      secretFor(purpose) { return 'sem-cofre:' + String(purpose || ''); }
     };
   }
   const key = crypto.createHash('sha256').update(String(secret)).digest();
@@ -26,6 +29,10 @@ export function keyVault(secret) {
     enabled: true,
     reason: null,
     mask,
+    /* chave derivada para um uso concreto (não serve para outro) */
+    secretFor(purpose) {
+      return crypto.createHmac('sha256', key).update('purpose:' + String(purpose || '')).digest('base64');
+    },
     seal(plain) {
       const iv = crypto.randomBytes(12);
       const c = crypto.createCipheriv('aes-256-gcm', key, iv);

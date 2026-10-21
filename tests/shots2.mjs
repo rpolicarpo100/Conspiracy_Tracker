@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1680, height: 1000 }, colorScheme: 'dark' });
 await p.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1800);
@@ -11,7 +11,7 @@ await p.waitForTimeout(1600);
 await p.screenshot({ path: '/home/user/docs/shot-02-details.png' });
 await B.close();
 
-const B2 = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const B2 = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const q = await B2.newPage({ viewport: { width: 1680, height: 1000 }, colorScheme: 'light' });
 await q.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
 await q.waitForTimeout(1500);

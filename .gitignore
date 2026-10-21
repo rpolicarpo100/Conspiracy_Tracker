@@ -17,3 +17,10 @@ tests/_*.mjs
 # artefactos de execução locais
 .cache/
 .ms-playwright/
+
+# bibliotecas de sistema extraídas sem root para o Chromium (tools/setup-ui-env.sh)
+.local/lib/
+
+# dados de língua do OCR: obtidos por tools/fetch-ocr-data.mjs, nunca versionados
+*.traineddata
+*.traineddata.gz

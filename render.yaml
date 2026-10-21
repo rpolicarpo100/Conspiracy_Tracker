@@ -7,7 +7,10 @@ services:
     plan: free
     region: frankfurt
     branch: main
-    buildCommand: npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund
+    # O build descarrega os dados de língua do OCR com integridade conferida contra
+    # o registo npm. Se falhar, o build NÃO falha: a aplicação arranca e declara
+    # «OCR indisponível» em /api/meta (em vez de prometer o que não tem).
+    buildCommand: (npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund) && (node tools/fetch-ocr-data.mjs || echo 'AVISO: dados de OCR não obtidos; OCR ficará indisponível')
     startCommand: node tools/serve.mjs
     healthCheckPath: /
     autoDeploy: true
@@ -28,3 +31,6 @@ services:
       # um deploy e /api/meta declara-o (durableBetweenDeploys: false).
       - key: DATA_DIR
         value: /opt/render/project/src/.data
+      # Onde estão os dados de língua do OCR (descarregados no build).
+      - key: OCR_LANG_PATH
+        value: /opt/render/project/src/.data/ocr

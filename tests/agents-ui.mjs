@@ -1,6 +1,6 @@
 /* Agentes de recolha vistos pela interface: simulação, guarda SSRF e registo no livro. */
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 980 } });
 const errs = [];
 const external = [];

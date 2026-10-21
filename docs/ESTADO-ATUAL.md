@@ -10,12 +10,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase3e**
-- esquema de dados: **v5** · colecções: users, sessions, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, audit, migrations
+- versão da aplicação: **2.0.0-fase3f**
+- esquema de dados: **v5** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 60
-- ficheiros de teste: 26 · blocos de teste declarados (`await t`): 264 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 66
+- ficheiros de teste: 29 · blocos de teste declarados (`await t`): 314 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -36,12 +36,15 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/fase3e.mjs` | 21 | servidor/módulo |
 | `tests/flow.mjs` | 0 | interface (Playwright) |
 | `tests/graph.mjs` | 13 | servidor/módulo |
+| `tests/mfa-ui.mjs` | 10 | interface (Playwright) |
+| `tests/ocr.mjs` | 15 | servidor/módulo |
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
 | `tests/perf.mjs` | 0 | interface (Playwright) |
 | `tests/real-fetch.mjs` | 0 | interface (Playwright) |
 | `tests/research.mjs` | 19 | servidor/módulo |
 | `tests/scale-diag.mjs` | 0 | interface (Playwright) |
 | `tests/search.mjs` | 17 | interface (Playwright) |
+| `tests/seguranca.mjs` | 25 | servidor/módulo |
 | `tests/server.mjs` | 26 | servidor/módulo |
 | `tests/shot-search.mjs` | 0 | interface (Playwright) |
 | `tests/shots.mjs` | 0 | interface (Playwright) |
@@ -50,10 +53,10 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 3db157a Fase 3E: extracção de texto de PDF, recolha de documentos com revisão humana e painel na interface
+- último commit: d0c0480 Registo §31: fase 3E verificada no serviço público (PDF extraído, 0 provas automáticas, SSRF recusado)
 - árvore de trabalho: com alterações locais
-- último bloco de resultados: §31 — FASE 3E NO SERVIÇO PÚBLICO (commit 3db157a, versão 2.0.0-fase3e)
-- documentação: 19 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, BENCHMARKS.md, DECISOES.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md)
+- último bloco de resultados: §32 — FASE 3F — SEGUNDO FACTOR, DURABILIDADE E AUDITORIA DE DEPENDÊNCIAS (versão 2.0.0
+- documentação: 21 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, BENCHMARKS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md, SEGURANCA.md)
 
 ### Coerência
 
@@ -96,7 +99,11 @@ execução; `/ready` diz se o armazenamento e o cofre de chaves estão operacion
 | Memória da investigação | notas, decisões (motivo obrigatório), glossário, lacunas, correcções; append-only; exportação MD | `tests/fase3d.mjs` |
 | Resumo descarregável | JSON, MD, CSV (Excel pt-PT), PDF (gerador próprio, sem dependências) | `tests/fase3d.mjs` · `docs/exemplo-resumo.pdf` |
 | Cópia de segurança | exportação completa sem segredos e reposição com remapeamento de identificadores | `tests/fase3d.mjs` |
-| Documentos e texto de PDF | **verificado no serviço público** (§31): recolha com hash, extração por `/ToUnicode` e XObjects, recusa de cifra, sem OCR, ligaduras resolvidas, fonte inacessível registada, revisão humana obrigatória antes de qualquer prova | `tests/pdftext.mjs` 19 · `tests/fase3e.mjs` 21 · `tests/documents-ui.mjs` 6 · `docs/DOCUMENTOS.md` |
+| Documentos e texto de PDF | **verificado no serviço público** (§31): recolha com hash, extração por `/ToUnicode` e XObjects, recusa de cifra, ligaduras resolvidas, fonte inacessível registada, revisão humana obrigatória antes de qualquer prova | `tests/pdftext.mjs` 19 · `tests/fase3e.mjs` 21 · `tests/documents-ui.mjs` 6 · `docs/DOCUMENTOS.md` |
+| OCR de digitalizações | **implementado e testado localmente** (recolha real → `method:'ocr'`, 143 caracteres, confiança 93/100); **não verificado no serviço público** — o OCR só está activo se o build descarregar os dados de língua | `tests/ocr.mjs` 15 · `tools/fetch-ocr-data.mjs` | P2 concluído em código |
+| Segundo factor (TOTP) | **implementado e testado localmente**: RFC 6238, login em dois passos, códigos de recuperação, limites, auditoria, interface completa; **não verificado no serviço público** | `tests/seguranca.mjs` 25 · `tests/mfa-ui.mjs` 10 · `docs/SEGURANCA.md` | MFA obrigatório para administradores continua a faltar |
+| Durabilidade da base | **implementado e testado**: `fsync`+`sha256`+cópias, recuperação declarada, bloqueio de segunda instância com 503, desfazer em memória | `tests/seguranca.mjs` 25 | O P0 (disco efémero) não está resolvido |
+| Auditoria de dependências | **implementado**: OSV + licenças, falha perante vulnerabilidade alta/crítica; decisões e rejeições documentadas | `tools/audit-deps.mjs` · `docs/DEPENDENCIAS.md` | — |
 
 ### Implementadas mas não testadas em produção
 
@@ -134,9 +141,11 @@ execução; `/ready` diz se o armazenamento e o cofre de chaves estão operacion
 ## Riscos abertos, por prioridade
 
 1. **P0 — perda de dados em deploy** (disco efémero). Mitigado, não resolvido.
-2. **P1 — sem MFA** e sem verificação de email activa (o campo existe, o envio não).
-3. **P2 — sem OCR**: o texto de PDF já é extraído, mas metade das fontes primárias reais são PDF
-   digitalizados, que hoje ficam declarados como não legíveis por máquina.
+2. **P1 — MFA é opcional e a verificação de email não está activa** (o campo existe, o envio não).
+   Não há ainda SMTP configurado, por isso o reposição de palavra-passe depende de um administrador.
+3. **P2 — OCR existe, mas ainda não foi verificado em produção**: os dados de língua são
+   descarregados no build (~4 MB) e a confiança é medida por página; digitalizações com CCITT/JBIG2
+   continuam declaradas não suportadas.
 4. **P2 — sem fila persistente**: uma execução longa perde-se se o processo reiniciar (fica o
    registo do que aconteceu, não o trabalho).
 5. **P3 — `frame-ancestors` permissivo** (ver acima).
@@ -154,6 +163,8 @@ execução; `/ready` diz se o armazenamento e o cofre de chaves estão operacion
 
 1. Ligar uma chave de fornecedor válida e correr um agente de IA real de ponta a ponta.
 2. Disco persistente no Render ou Postgres — resolve o P0.
-3. OCR de PDF digitalizado (motor externo, com erros declarados e revisão humana).
+3. SMTP (nodemailer/resend) para reposição de palavra-passe e verificação de email — lacuna P1 real.
+4. WebAuthn/passkeys como segundo factor preferido; MFA obrigatório para administradores.
+5. Fila persistente (bullmq + Redis) para execuções longas.
 4. Fila de execuções com um trabalhador único e retoma idempotente.
 5. MFA e verificação de email.

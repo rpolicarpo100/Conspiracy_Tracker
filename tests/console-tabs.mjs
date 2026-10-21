@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox'], headless: true });
 const p = await B.newPage({ viewport: { width: 1500, height: 950 } });
 const errs = [];
 p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));

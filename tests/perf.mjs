@@ -1,7 +1,7 @@
 /* Medições de desempenho no browser (Chromium headless), com resultados reais. */
 import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await B.newPage({ viewport: { width: 1600, height: 950 } });
 const out = { ranAt: new Date().toISOString(), browser: 'Chromium (headless)', viewport: '1600x950', results: {} };
 await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });

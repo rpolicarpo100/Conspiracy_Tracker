@@ -117,3 +117,52 @@ Formato: data · decisão · motivo · o que foi recusado.
     aparece em `/api/meta`. Testada aberta e fechada.
     Motivo: testar extração contra a internet real seria instável e contra conteúdo de terceiros;
     abrir a guarda SSRF sem travão seria pior do que não ter teste.
+
+25. **2026-10-21 · TOTP implementado no repositório, não importado.**
+    ~60 linhas com `node:crypto` contra quatro bibliotecas avaliadas (`otplib`, `speakeasy`,
+    `@otplib/preset-default`): duas desactualizadas, e a validação exigível é a mesma — os vectores
+    do RFC 6238. Foi essa a régua: a implementação passa-os a todos, a cada execução.
+    Motivo: cada dependência é superfície; para um algoritmo que se valida com vectores públicos,
+    a dependência não compensa. O que compensa é o teste.
+
+26. **2026-10-21 · Uma palavra-passe deixou de bastar: a sessão nasce depois do segundo factor.**
+    `POST /api/auth/login` devolve `{mfaRequired, challenge}`, não um cookie. MFA é opcional por
+    conta (quem liga é que decide), obrigatório em espírito para administradores — ainda não imposto,
+    e isso está declarado como lacuna.
+    Motivo: um ecrã de segundo passo que emite sessão primeiro é decoração; o teste confirma
+    `/api/auth/me` vazio entre os dois passos.
+
+27. **2026-10-21 · Escrita com `fsync` + `sha256` + cópia da última gravação boa; recuperação sempre declarada.**
+    Antes: `rename` atómico mas sem `fsync` (bytes podiam faltar) e JSON truncado recomeçava a base
+    **em silêncio**. Agora há `db.json.sha256`, `db.json.ultima-copia.json`, até 3 cópias datadas, e
+    `/ready` diz de onde se recuperou. Sem cópia válida: base vazia **declarada**, ficheiro danificado
+    preservado.
+    Motivo: perder dados é grave; perdê-los sem o dizer é imperdoável num sistema que sustenta
+    alegações sobre pessoas.
+
+28. **2026-10-21 · Duas instâncias na mesma pasta: a segunda entra em só-de-leitura.**
+    `db.lock` com pid vivo → 503 em `/ready`, 503 `retryable` nas escritas, leituras intactas. A
+    gravação falhada desfaz a mutação em memória a partir da última gravação boa.
+    Motivo: um deploy do Render pode sobrepor instâncias por alguns segundos; duas escritas cegas
+    corrompem o ficheiro. Recusar escrever é preferível a escrever mal, e o cliente sabe que pode
+    tentar de novo.
+
+29. **2026-10-21 · OCR com `tesseract.js` (WASM), dados locais descarregados no build com integridade npm.**
+    Alternativas rejeitadas com motivo em `docs/DEPENDENCIAS.md` §2: `node-tesseract-ocr` (2021 +
+    vulnerabilidade + `shell`), `mupdf` (AGPL), `@napi-rs/canvas` (segfault comprovado neste
+    ambiente). Em runtime **não há rede**: os dados de língua estão em disco, com `sha256` no
+    manifesto; sem eles o OCR está indisponível e diz porquê.
+    Motivo: sem rede em runtime, o OCR não pode ser um canal por onde entram modelos de terceiros.
+
+30. **2026-10-21 · OCR é pista, não transcrição — e nunca cria provas.**
+    Confiança por página; abaixo de 55/100 a página é assinalada e o resultado declara-se «pista».
+    Tudo entra com `method: 'ocr'` e revisão humana obrigatória; digitalizações com CCITT/JBIG2/JPX
+    são declaradas não suportadas em vez de adivinhadas.
+    Motivo: um OCR que erra um nome próprio numa prova sobre uma pessoa real é um dano, não um bug.
+
+31. **2026-10-21 · Dependências auditadas com evidência, não com opinião.**
+    `tools/audit-deps.mjs` consulta o registo npm e o OSV, verifica licenças proibidas e **falha**
+    (código 1) perante vulnerabilidade alta/crítica. `docs/DEPENDENCIAS.md` regista, para cada
+    candidato, versão/licença/tamanho/descarregamentos/vulnerabilidades e a decisão com motivo —
+    incluindo as rejeições.
+    Motivo: adotar uma biblioteca é uma decisão de segurança; tem de ficar escrita e reproduzível.

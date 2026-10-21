@@ -1,6 +1,6 @@
 /* Testes da pesquisa profunda: exactidão, tolerância, sintaxe, segurança. */
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await B.newPage({ viewport: { width: 1680, height: 1000 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));

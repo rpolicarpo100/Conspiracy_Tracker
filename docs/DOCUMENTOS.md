@@ -31,15 +31,33 @@ instalada, o teste diz que a comparação não foi feita, em vez de fingir que p
 | situação | comportamento | o que a resposta diz |
 | --- | --- | --- |
 | PDF cifrado (`/Encrypt`) | pára | «PDF protegido por cifra: não se extrai texto (não se contorna protecção)» |
-| PDF digitalizado (só imagens) | não inventa texto | «PDF sem camada de texto (digitalizado): não há OCR, o texto tem de ser transcrito por uma pessoa» |
+| PDF digitalizado (só imagens) | tenta OCR; se o motor não tiver dados de língua, não inventa | «OCR indisponível: …» ou o texto com `method:'ocr'`, confiança e aviso de revisão |
 | PDF com *object streams* | extrai, com aviso | «a ordem do texto pode não ser a ordem visual das páginas» |
 | fonte sem `/ToUnicode` | extrai o que consegue | «sem ToUnicode utilizável: acentos e nomes podem sair errados — confirmar no documento» |
 | fluxo corrompido ou acima do limite | ignora esse fluxo | «n fluxo(s) não puderam ser descomprimidos … parte do texto pode faltar» |
 | texto maior do que o limite | corta | «texto cortado no limite de 200 000 caracteres» |
 
-**Não há OCR.** É a lacuna maior e está declarada em `docs/ESTADO-ATUAL.md`: acrescentar OCR exige
-um motor externo (peso, licença, tempo de CPU) e uma decisão própria, porque OCR erra e o erro
-entra no registo como se fosse citação.
+### OCR de digitalizações (desde a fase 3F)
+
+`server/ocr.mjs` usa `tesseract.js` 7 (WebAssembly) num worker. Decisões que importam:
+
+- **Rede zero em runtime**: os dados de língua (`por`, `eng`) estão em disco, descarregados no build
+  por `tools/fetch-ocr-data.mjs` com o `sha512` conferido contra o registo npm e `sha256` registado
+  num manifesto. Sem dados locais, o OCR está **indisponível** e diz porquê (`/api/meta` →
+  `documents.ocr.available=false, reason`).
+- **Sem confiança, sem valor**: a confiança é medida por página; abaixo de **55/100** a página é
+  assinalada e o resultado inteiro declara-se «pista, não transcrição». O texto entra na recolha com
+  `method: 'ocr'` e `needsHumanReview: true` — **continua a não nascer nenhuma prova**.
+- **Limites**: 6 imagens por documento, 45 s por imagem, 120 s por pedido, uma imagem de cada vez
+  (fila com tecto que **recusa com motivo** em vez de crescer). Só PNG/JPEG (assinatura verificada
+  antes de chegar ao motor).
+- **O que não é suportado é dito**: imagens `CCITT`, `JBIG2`, `JPX/J2K` e imagens com *predictor*
+  ficam declaradas não suportadas — não se inventa o que lá está.
+- **`errorHandler` obrigatório**: sem ele, uma imagem inválida derrubava o processo Node (encontrado
+  por um teste, corrigido, coberto).
+
+Ver `docs/DEPENDENCIAS.md` §2 para o motivo de cada alternativa rejeitada (`pdfjs-dist`, `unpdf`,
+`mupdf`, `@napi-rs/canvas`, `node-tesseract-ocr`).
 
 ## 3. Recolha: limites e guardas
 
@@ -107,6 +125,8 @@ continua a dizer «Registo de provas (0)» depois de usar o excerto.
 | `tests/pdftext.mjs` | 19 | extração igual ao `pdftotext`; recusa de cifra, digitalizado, tamanho, bomba de descompressão; ligaduras |
 | `tests/fase3e.mjs` | 21 | rotas de documentos, ausência de provas automáticas, pré-visualização, 404 entre contas, 429, auditoria, SSRF, exceção local fechada em produção, passo 8 do motor |
 | `tests/documents-ui.mjs` | 6 | percurso na interface: recolher → ler → usar excerto → registar revisão, com 0 provas até decisão humana |
+| `tests/ocr.mjs` | 15 | OCR real sobre digitalização (via HTTP local): `method:'ocr'`, 143 caracteres, **93/100** de confiança, revisão obrigatória; recusa de bytes que não são imagem; indisponibilidade declarada |
 
-Execução: `node tests/pdftext.mjs`, `node tests/fase3e.mjs`, `node tests/documents-ui.mjs`
-(este último precisa de Playwright e do Chromium já instalados).
+Execução: `node tests/pdftext.mjs`, `node tests/fase3e.mjs`, `node tests/ocr.mjs`,
+`node tests/documents-ui.mjs` (este último precisa de Playwright e do Chromium já instalados;
+`tools/setup-ui-env.sh` prepara as bibliotecas de sistema sem root).

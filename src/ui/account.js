@@ -12,9 +12,10 @@
   const DRAFT = { auth: {}, project: {}, key: {}, password: {} };   // valores sobrevivem a repintagens
   let S = {
     me: null, csrf: null, tab: 'account', projects: [], meta: null,
-    providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false,
+    providers: [], metrics: null, users: [], audit: [], sessions: [], mfa: null, msg: null, busy: false,
     detail: null,           // projecto aberto: { project, evidence, claims, runs, graph, agents, agentRuns }
     path: null,             // caminho entre entidades pedido
+    mfaChallenge: null,     // login a meio do segundo factor: { token, email, expiresAt, methods }
     graphView: null,        // referência ao SVG desenhado (para exportar PNG)
     period: { from: '', to: '' },   // filtro temporal do grafo
     accessOut: null,        // último resultado de verificação de acesso
@@ -68,6 +69,9 @@
       if (pv.ok) S.providers = pv.json.providers;
       const se = await api('/api/auth/sessions');
       if (se.ok) S.sessions = se.json.sessions;
+      const mf = await api('/api/auth/mfa');
+      if (mf.ok) S.mfa = mf.json;
+      else S.mfa = { enabled: false };
       if (S.me.role === 'ADMIN') {
         const [m, u, a] = await Promise.all([api('/api/admin/metrics'), api('/api/admin/users'), api('/api/admin/audit?limit=60')]);
         if (m.ok) S.metrics = m.json;
@@ -75,7 +79,7 @@
         if (a.ok) S.audit = a.json.events;
       }
     } else {
-      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = [];
+      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null;
       S.detail = null;
     }
     if (my !== gen) return;
@@ -173,14 +177,169 @@
         onclick: async () => {
           const r = await api('/api/auth/login', { method: 'POST', body: { email: f.email, password: f.password } });
           if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+          /* conta com segundo factor: o servidor devolve um desafio, não uma sessão */
+          if (r.json && r.json.mfaRequired) {
+            S.mfaChallenge = { token: r.json.challenge, expiresAt: r.json.expiresAt, methods: r.json.methods || ['totp'], email: f.email };
+            note('Introduza o código da aplicação de autenticação (' + (r.json.methods || ['totp']).join(' ou ') + ').', 'warn');
+            return paint();
+          }
           await refresh();
         }
       }),
       el('button', { class: 'btn sm', type: 'button', text: 'Criar conta', onclick: () => { S.authMode = 'register'; paint(); } })
     ]));
+    if (S.mfaChallenge) {
+      const g = DRAFT.mfaChallenge || (DRAFT.mfaChallenge = { code: '', recoveryCode: '' });
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:8px' }, [
+        el('div', { style: 'font-size:11px' }, [el('b', { text: 'Segundo passo para ' + S.mfaChallenge.email })]),
+        el('div', { style: 'font-size:10px;color:var(--muted)', text: 'a sessão só é criada depois de o código ser aceite' }),
+        el('div', { class: 'chips', style: 'margin-top:4px' }, [
+          el('input', { id: 'mfaCode', placeholder: 'código de 6 dígitos', style: 'width:140px', oninput: (e) => { g.code = e.target.value; } }),
+          el('button', {
+            id: 'mfaVerify', class: 'btn sm primary', type: 'button', text: 'Confirmar código',
+            onclick: async () => {
+              const r = await api('/api/auth/mfa/verify', { method: 'POST', body: { challenge: S.mfaChallenge.token, code: g.code } });
+              if (!r.ok) return note('Código recusado: ' + (r.error.message) + (r.error.remaining != null ? ' (' + r.error.remaining + ' tentativa(s))' : ''), 'bad');
+              S.mfaChallenge = null; DRAFT.mfaChallenge = { code: '', recoveryCode: '' };
+              if (r.json.aviso) note(r.json.aviso, 'warn');
+              await refresh();
+            }
+          }),
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Usar código de recuperação',
+            onclick: async () => {
+              const codigo = prompt('Código de recuperação (ex.: A1B2C-3D4E5):', '');
+              if (!codigo) return;
+              const r = await api('/api/auth/mfa/verify', { method: 'POST', body: { challenge: S.mfaChallenge.token, recoveryCode: codigo } });
+              if (!r.ok) return note('Recusado: ' + r.error.message, 'bad');
+              S.mfaChallenge = null;
+              note(r.json.aviso || 'Entrou com um código de recuperação.', 'warn');
+              await refresh();
+            }
+          })
+        ])
+      ]));
+    }
     if (S.meta && S.meta.registration && S.meta.registration.passwordPolicy) {
       root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:8px;font-size:11px', text: 'Política de palavra-passe: ' + S.meta.registration.passwordPolicy.join(' · ') + '. Recuperação de palavra-passe por email ainda não está implementada: sem essa via, um administrador pode repor a conta (operação auditada).' }));
     }
+  }
+
+  /* ---------------- verificação em dois passos (TOTP) ---------------- */
+  function mfaPanel(onChanged) {
+    const m = S.mfa || { enabled: false };
+    const f = DRAFT.mfa || (DRAFT.mfa = { password: '', code: '', recoveryCode: '' });
+    const root = el('div', {});
+    root.appendChild(el('h4', { style: 'margin:12px 0 4px;font-size:12px', text: 'Verificação em dois passos (TOTP)' }));
+    const rb = recoveryBox();
+    if (rb) root.appendChild(rb);
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+      'Um código de 6 dígitos a cada 30 s, de uma aplicação de autenticação. Sem isto, uma palavra-passe apanhada basta para entrar.' }));
+
+    if (m.enabled) {
+      root.appendChild(el('div', { class: 'warnbox' }, [
+        el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+          el('span', { class: 'tag ok', text: 'activo' }),
+          el('span', { style: 'font-size:10px;color:var(--muted)', text: 'segredo ' + (m.secretMasked || '—') + ' · desde ' + String(m.enabledAt || '').slice(0, 10) }),
+          el('span', { class: 'tag ' + (m.recoveryCodesLeft <= 2 ? 'warn' : 'muted'), text: m.recoveryCodesLeft + ' código(s) de recuperação' })
+        ]),
+        el('div', { class: 'chips', style: 'margin-top:6px' }, [
+          el('input', { type: 'password', placeholder: 'palavra-passe actual', oninput: (e) => { f.password = e.target.value; } }),
+          el('input', { placeholder: 'código de 6 dígitos', style: 'width:120px', oninput: (e) => { f.code = e.target.value; } }),
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Gerar novos códigos de recuperação',
+            onclick: async () => {
+              const r = await api('/api/auth/mfa/recovery', { method: 'POST', body: { password: f.password, code: f.code } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              showRecoveryCodes(r.json.recoveryCodes);
+              await onChanged();
+            }
+          }),
+          el('button', {
+            class: 'btn sm danger', type: 'button', text: 'Desactivar',
+            onclick: async () => {
+              const r = await api('/api/auth/mfa/disable', { method: 'POST', body: { password: f.password, code: f.code, recoveryCode: f.recoveryCode } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              note('Verificação em dois passos desactivada; as outras sessões foram terminadas.', 'warn');
+              f.password = ''; f.code = '';
+              await onChanged();
+            }
+          })
+        ]),
+        el('div', { style: 'font-size:9px;color:var(--muted)', text: 'desactivar exige a palavra-passe e um código válido (ou um código de recuperação)' })
+      ]));
+      return root;
+    }
+
+    if (m.pending) {
+      const setup = DRAFT.mfaSetup || null;
+      root.appendChild(el('div', { class: 'warnbox' }, [
+        el('div', { style: 'font-size:10px', text: 'Activem-se agora: introduza o segredo na aplicação de autenticação e confirme o código de 6 dígitos.' }),
+        setup ? el('div', { style: 'font-size:10px;margin-top:4px' }, [
+          el('div', {}, [el('b', { text: 'segredo: ' }), el('code', { text: setup.secret })]),
+          el('div', { style: 'color:var(--muted);word-break:break-all', text: setup.otpauth })
+        ]) : el('div', { style: 'font-size:10px;color:#c96', text: 'o segredo só é mostrado no momento em que é criado: recomece a activação' }),
+        el('div', { class: 'chips', style: 'margin-top:6px' }, [
+          el('input', { placeholder: 'código de 6 dígitos', style: 'width:140px', oninput: (e) => { f.code = e.target.value; } }),
+          el('button', {
+            class: 'btn sm primary', type: 'button', text: 'Confirmar e activar',
+            onclick: async () => {
+              const r = await api('/api/auth/mfa/enable', { method: 'POST', body: { code: f.code } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              DRAFT.mfaSetup = null;
+              f.code = '';
+              note('Verificação em dois passos activa.', 'ok');
+              showRecoveryCodes(r.json.recoveryCodes);
+              await onChanged();
+            }
+          })
+        ])
+      ]));
+      return root;
+    }
+
+    root.appendChild(el('div', { class: 'chips' }, [
+      el('input', { type: 'password', placeholder: 'palavra-passe actual', oninput: (e) => { f.password = e.target.value; } }),
+      el('button', {
+        class: 'btn sm primary', type: 'button', text: 'Activar verificação em dois passos',
+        onclick: async () => {
+          const r = await api('/api/auth/mfa/setup', { method: 'POST', body: { password: f.password } });
+          if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+          DRAFT.mfaSetup = { secret: r.json.secret, otpauth: r.json.otpauth };
+          note('Segredo criado: introduza-o na aplicação de autenticação e confirme o código.', 'warn');
+          await onChanged();
+        }
+      })
+    ]));
+    root.appendChild(el('div', { style: 'font-size:9px;color:var(--muted);margin-top:4px', text:
+      'o segredo é mostrado uma única vez; os códigos de recuperação também — guarde-os antes de fechar esta área' }));
+    return root;
+  }
+
+  /* os códigos de recuperação são mostrados UMA vez pelo servidor; aqui ficam
+     apenas na memória desta página até a pessoa dizer que os guardou */
+  function showRecoveryCodes(codes) {
+    S.recoveryCodes = codes;
+  }
+
+  function recoveryBox() {
+    if (!S.recoveryCodes || !S.recoveryCodes.length) return null;
+    return el('div', { class: 'warnbox', id: 'mfaRecoveryBox', style: 'margin:8px 0' }, [
+      el('div', { style: 'font-size:11px' }, [el('b', { text: 'Códigos de recuperação — cada um serve uma vez. Guarde-os agora:' })]),
+      el('div', { style: 'font-family:ui-monospace,monospace;font-size:11px;line-height:1.6;margin-top:4px' },
+        S.recoveryCodes.map((c) => el('div', { text: c }))),
+      el('div', { style: 'font-size:9px;color:var(--muted)', text: 'o servidor não os volta a mostrar: sem eles e sem a aplicação de autenticação, a conta não entra' }),
+      el('div', { class: 'chips', style: 'margin-top:4px' }, [
+        el('button', {
+          class: 'btn sm', type: 'button', text: 'Copiar',
+          onclick: () => { VN.dom.download('meridiano-codigos-recuperacao.txt', S.recoveryCodes.join('\n'), 'text/plain'); note('Ficheiro com os códigos descarregado.', 'ok'); }
+        }),
+        el('button', {
+          class: 'btn sm', type: 'button', text: 'Já os guardei',
+          onclick: () => { S.recoveryCodes = null; paint(); }
+        })
+      ])
+    ]);
   }
 
   function paintAccount(root) {
@@ -209,6 +368,8 @@
     root.appendChild(el('div', { class: 'chips', style: 'margin-top:6px' }, [
       el('button', { class: 'btn sm', type: 'button', text: 'Terminar todas as outras sessões', onclick: async () => { await api('/api/auth/logout-all', { method: 'POST', body: {} }); note('Sessões terminadas', 'ok'); refresh(); } })
     ]));
+
+    root.appendChild(mfaPanel(refresh));
 
     const f = {};
     root.appendChild(el('h4', { style: 'margin:12px 0 4px;font-size:12px', text: 'Alterar palavra-passe' }));
@@ -326,8 +487,15 @@
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Documentos e texto extraído (' + (docs || []).length + ')' }));
     root.appendChild(el('div', { class: 'warnbox', style: 'margin-bottom:6px' }, [
       el('div', { style: 'font-size:10px;color:var(--muted)', text:
-        'Recolher guarda o texto lido e o hash SHA-256 do ficheiro — não cria provas. PDF cifrado não é aberto (não se contorna protecção), ' +
-        'PDF digitalizado não tem OCR e um PDF sem mapa de caracteres pode sair com letras erradas: leia antes de citar.' }),
+        'Recolher guarda o texto lido e o hash SHA-256 do ficheiro — não cria provas. PDF cifrado não é aberto (não se contorna protecção); ' +
+        'digitalizações passam por OCR quando o motor está disponível e a confiança é declarada; um PDF sem mapa de caracteres pode sair com letras erradas. Leia antes de citar.' }),
+      el('div', { style: 'font-size:9px;color:var(--muted)', text: (() => {
+        const oc = S.meta && S.meta.documents && S.meta.documents.ocr;
+        if (!oc) return '';
+        return oc.available
+          ? 'OCR disponível (' + oc.engine + ' ' + (oc.version || '') + ', ' + (oc.languages || []).join('+') + ', dados ' + (oc.dataSource || '') + ') — apoios de confiança inferior a ' + oc.minConfidence + '/100 são assinalados'
+          : 'OCR indisponível: ' + (oc.reason || 'sem motor') + ' — digitalizações ficam registadas como «sem camada de texto»';
+      })() }),
       el('div', { class: 'chips', style: 'margin-top:4px' }, [
         el('input', {
           id: 'docUrl', placeholder: 'URL do documento (PDF ou página web)', style: 'width:360px',
@@ -369,6 +537,7 @@
         ]),
         el('td', { style: 'font-size:10px' }, [
           el('span', { class: 'tag', text: doc.kind || '?' }),
+          doc.extraction && doc.extraction.method === 'ocr' ? el('div', { style: 'font-size:9px;color:#c96', text: 'OCR' + (doc.extraction.confidence != null ? ' ' + doc.extraction.confidence + '/100' : '') }) : null,
           doc.extraction && doc.extraction.usedToUnicode ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'ToUnicode ✓' }) : null,
           doc.extraction && doc.extraction.imageOnly ? el('div', { style: 'font-size:9px;color:#c66', text: 'só imagem (sem OCR)' }) : null,
           doc.extraction && doc.extraction.encrypted ? el('div', { style: 'font-size:9px;color:#c66', text: 'cifrado' }) : null

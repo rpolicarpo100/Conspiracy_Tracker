@@ -24,7 +24,9 @@ export const PDF_LIMITS = {
   maxBytes: 12 * 1024 * 1024,
   maxChars: 200000,
   maxObjects: 20000,
-  maxStreamBytes: 8 * 1024 * 1024
+  maxStreamBytes: 8 * 1024 * 1024,
+  maxImages: 12,          // imagens recolhidas para OCR
+  maxPixels: 40e6         // por imagem: 40 MP (≈ 7000×5600)
 };
 
 /* inflate com tecto de saída: um Fluxo pode ser uma bomba de descompressão */
@@ -450,7 +452,7 @@ export function extractPdfText(buffer, opts) {
   if (text.length > o.maxChars) { text = text.slice(0, o.maxChars); warnings.push('texto cortado no limite de ' + o.maxChars + ' caracteres'); }
 
   if (!text) {
-    return empty(hasImages ? 'PDF sem camada de texto (digitalizado): não há OCR, o texto tem de ser transcrito por uma pessoa'
+    return empty(hasImages ? 'PDF sem camada de texto (digitalizado): aqui não há OCR — a recolha tenta-o se o motor estiver disponível, senão o texto tem de ser transcrito por uma pessoa'
       : 'nenhum texto encontrado nos fluxos analisados', {
       version, pages: pages.length, streams, imageOnly: hasImages,
       streamFailures: streamStats.failed,
@@ -472,5 +474,76 @@ export function extractPdfText(buffer, opts) {
   };
 }
 
+
+/* ---------------- imagens de página (para OCR de digitalizados) ----------------
+
+   Uma digitalização é, quase sempre, uma imagem DCTDecode (JPEG) ou FlateDecode
+   por página. Devolver os bytes da imagem evita ter de rasterizar o PDF — não há
+   aqui nenhum motor de render, nem dependência nativa.
+   O que não é suportado é DITO, não adivinhado: CCITT, JBIG2, JPX e imagens com
+   /DecodeParms (predictor) ficam listadas como não suportadas. */
+
+export function pdfPageImages(buffer, opts) {
+  const o = Object.assign({}, PDF_LIMITS, opts || {});
+  const out = { images: [], unsupported: [], pages: 0, reason: null };
+  if (!buffer || buffer.length < 8 || buffer.slice(0, 5).toString('latin1') !== '%PDF-') {
+    out.reason = 'não é um PDF';
+    return out;
+  }
+  if (buffer.length > o.maxBytes) { out.reason = 'PDF acima do limite'; return out; }
+  const src = buffer.toString('latin1');
+  if (/\/Encrypt\b/.test(src)) { out.reason = 'PDF cifrado: não se abre para OCR'; return out; }
+  const objects = parseObjects(src, o.maxObjects);
+  const pages = [...objects.values()].filter((ob) => /\/Type\s*\/Page\b/.test(ob.dict) && !/\/Type\s*\/Pages\b/.test(ob.dict));
+  out.pages = pages.length;
+  const seen = new Set();
+
+  const collect = (resDict, pageIndex, depth) => {
+    const xobjs = xobjectsFromResources(resDict, objects);
+    xobjs.forEach((id, name) => {
+      if (seen.has(id) || out.images.length + out.unsupported.length >= o.maxImages) return;
+      seen.add(id);
+      const ob = objects.get(id);
+      if (!ob) return;
+      if (/\/Subtype\s*\/Form/.test(ob.dict) && depth < 3) {
+        collect(dictSlice(ob.dict, '/Resources') || resDict, pageIndex, depth + 1);
+        return;
+      }
+      if (!/\/Subtype\s*\/Image/.test(ob.dict)) return;
+      const width = Number((ob.dict.match(/\/Width\s+(\d+)/) || [])[1]) || 0;
+      const height = Number((ob.dict.match(/\/Height\s+(\d+)/) || [])[1]) || 0;
+      const bpc = Number((ob.dict.match(/\/BitsPerComponent\s+(\d+)/) || [])[1]) || 8;
+      const cs = (ob.dict.match(/\/ColorSpace\s*\/(\w+)/) || [])[1] || null;
+      const filterRaw = (dictSlice(ob.dict, '/Filter') || '').trim();
+      const hasPred = /\/DecodeParms/.test(ob.dict);
+      const base = {
+        id, page: pageIndex + 1, name, width, height, bitsPerComponent: bpc, colorSpace: cs,
+        filter: filterRaw.replace(/[\[\]\/\s]+/g, ' ').trim() || 'nenhum'
+      };
+      const unsupported = (why) => out.unsupported.push(Object.assign(base, { why }));
+      if (!ob.data || !ob.data.length) return unsupported('imagem sem dados');
+      if (width * height > o.maxPixels) return unsupported('imagem com ' + width + '×' + height + ' píxeis: acima do limite');
+      if (bpc !== 8 && !/DCTDecode/.test(filterRaw)) return unsupported('bits por componente ' + bpc);
+      if (/\/DCTDecode/.test(filterRaw) && !hasPred) {
+        out.images.push(Object.assign(base, { mime: 'image/jpeg', data: ob.data }));
+        return;
+      }
+      if (/\/FlateDecode/.test(filterRaw) && !hasPred && (cs === 'DeviceRGB' || cs === 'DeviceGray' || cs === 'DeviceCMYK')) {
+        const raw = inflate(ob.data, o.maxStreamBytes);
+        if (!raw) return unsupported('fluxo de imagem ilegível');
+        out.images.push(Object.assign(base, { mime: 'raw', data: raw }));
+        return;
+      }
+      if (/CCITTFax|JBIG2|JPX/.test(filterRaw)) return unsupported('compressão ' + filterRaw + ' não suportada');
+      if (hasPred) return unsupported('imagem com /DecodeParms (predictor) não suportada');
+      return unsupported('filtro ' + filterRaw + ' não suportado');
+    });
+  };
+
+  const ordered = pages.length ? pages : [];
+  ordered.forEach((page, i) => collect(dictSlice(page.dict, '/Resources'), i, 0));
+  return out;
+}
+
 /* superfície interna exposta para testes e diagnóstico (não é API pública) */
-export const _internals = { parseObjects, parseToUnicode, fontsFromResources, streamText, dictSlice, xobjectsFromResources, globalFonts };
+export const _internals = { parseObjects, parseToUnicode, fontsFromResources, streamText, dictSlice, xobjectsFromResources, globalFonts, pdfPageImages };
