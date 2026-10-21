@@ -411,3 +411,7 @@ PASS orquestrador → 3 próximos passos em falta declarados
 PASS GET /api/projects/{id}/agent-runs → 3 execuções guardadas e ordenadas
 PASS grafo com cronologia e contradições na mesma resposta
 PASS eliminar conta → 200 · tests/deployed.mjs 6/6
+
+== 27. REGRESSÃO COMPLETA (2026-10-21, após P3)
+flow 14/14 · search 17/17 · agents 18/18 · apis 13/13 · smoke 0 erros · server 26/26 · evidence 17/17 · research 19/19 · graph 13/13 · agents-p3 16/16 · account-ui 13/13 · deployed 6/6
+Nota: os testes Playwright foram fixados ao caminho do Chromium de ~/.cache/ms-playwright (o /tmp/pw desaparece a cada reinício do ambiente).

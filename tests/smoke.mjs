@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const browser = await chromium.launch({ executablePath: '/tmp/pw/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const browser = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await browser.newPage({ viewport: { width: 1680, height: 1000 } });
 const errors = [], logs = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); else logs.push(m.type()+': '+m.text()); });

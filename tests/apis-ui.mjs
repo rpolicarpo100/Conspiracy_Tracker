@@ -1,6 +1,6 @@
 /* Interface de APIs: catálogo, auditoria real através do agente local, descoberta e API personalizada. */
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/tmp/pw/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 1000 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));

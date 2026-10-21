@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const B = await chromium.launch({ executablePath: '/tmp/pw/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1680, height: 1000 }, colorScheme: 'dark' });
 await p.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1400);

@@ -14,7 +14,7 @@ async function waitFor(page, fn, timeout) {
   }
 }
 
-const B = await chromium.launch({ executablePath: '/tmp/pw/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 980 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push(e.message));
