@@ -401,3 +401,13 @@ PASS agentes, contradições e cronologia aparecem no projecto com os estados re
 erros de runtime: 0 []
 
 13/13 passaram
+
+== 26. AGENTES NO SERVIÇO PUBLICADO (commit 3204f52, 2026-10-21)
+PASS /health → version 2.0.0-fase3b, commit 3204f52
+PASS GET /api/agents → 13 agentes (6 locais, 7 de IA) · versão de prompt a1
+PASS agente de IA sem chave validada → «nao-executado» com motivo · iaUsed:false (não inventa resultado)
+PASS auditor adversário → 2 achados: linguagem-absoluta (conclusão «100% provado») e prova-sem-data
+PASS orquestrador → 3 próximos passos em falta declarados
+PASS GET /api/projects/{id}/agent-runs → 3 execuções guardadas e ordenadas
+PASS grafo com cronologia e contradições na mesma resposta
+PASS eliminar conta → 200 · tests/deployed.mjs 6/6
