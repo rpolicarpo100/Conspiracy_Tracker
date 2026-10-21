@@ -138,6 +138,8 @@ docs/                      aceitação, esquema, benchmarks, capturas
   limites de abuso.
 - `docs/FORNECEDORES.md` — os 8 fornecedores de IA, cofre de chaves, como validar, resiliência e
   limites.
+- `docs/EVIDENCIA.md` — registo de provas, os nove estados das conclusões e as regras que impedem
+  tratar dez cópias de um comunicado como dez confirmações.
 - `docs/AUDITORIA-CODIGO.md` — matriz de auditoria (componente, estado real, evidência, risco,
   acção) e diagnóstico da disponibilidade.
 - `docs/TEST-RESULTS.txt` — saída integral dos testes.
@@ -156,6 +158,13 @@ navegador; com sessão, projectos e chaves ficam associados ao utilizador e isol
   apenas em máscara (`chav…123`) e validadas por uma chamada real antes de serem dadas como
   operacionais. Uma chave inválida é reportada como inválida (ex.: «credencial recusada (HTTP 401)»).
 - **Exportar** e **eliminar** a conta fazem-se na própria interface.
+- **Projectos de investigação** com pergunta, âmbito, data de referência, hipóteses (nunca promovidas
+  a facto), critérios de conclusão, orçamento, checkpoints, duplicação, arquivo e cancelamento.
+- **Registo de provas** por projecto: excerto obrigatório, hash SHA-256, URL canónico, tipo de fonte,
+  posição, estado de validação e limitações. Cópias do mesmo comunicado contam como **uma** origem.
+- **Conclusões com nove estados** validados no servidor: «confirmada» exige duas origens
+  independentes e uma prova primária, sem prova contrária activa; uma prova contrária obriga a
+  «contraditória»; retirar uma prova exige motivo e não apaga o histórico.
 
 Variáveis de ambiente relevantes (nunca com segredos no repositório): `APP_SECRET` (≥24 caracteres,
 obrigatório para guardar chaves), `ADMIN_EMAIL` (promove o primeiro registo com esse email),

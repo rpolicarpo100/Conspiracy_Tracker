@@ -9,9 +9,12 @@ import { createStore } from './store.mjs';
 import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser, parseCookies } from './auth.mjs';
 import { keyVault } from './crypto-keys.mjs';
 import { PROVIDERS, registryPublic, validateProvider, complete, breakerState } from './providers.mjs';
+import {
+  STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
+} from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase1';
+const APP_VERSION = '2.0.0-fase2';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -60,6 +63,62 @@ export async function createApi(opts) {
     if (!auth.csrfOk(req, a)) { err(res, 403, 'token CSRF ausente ou inválido'); return false; }
     return true;
   }
+  /* Campos do objecto de investigação aceites do cliente, com limites e sem
+     inventar valores por omissão falsos (o que não vem fica vazio, não «confirmado»). */
+  const strList = (v, max) => (Array.isArray(v) ? v.map((x) => String(x).trim().slice(0, 300)).filter(Boolean).slice(0, max) : undefined);
+  function projectFields(body, partial) {
+    const out = {};
+    const str = (k, max) => { if (body[k] !== undefined) out[k] = String(body[k]).slice(0, max); };
+    str('title', 200); str('question', 2000); str('objective', 2000); str('description', 4000);
+    str('referenceDate', 40); str('timeLimit', 120);
+    ['keywords', 'entities', 'excludedSources', 'prioritySources', 'subquestions',
+      'completionCriteria', 'languages'].forEach((k) => { const v = strList(body[k], 100); if (v) out[k] = v; });
+    if (Array.isArray(body.hypotheses)) {
+      out.hypotheses = body.hypotheses.slice(0, 50).map((h, i) => ({
+        id: (h && h.id) || 'h' + (i + 1),
+        text: String((h && h.text) || h || '').slice(0, 1000),
+        status: ['a-testar', 'suportada', 'refutada', 'inconclusiva'].includes(h && h.status) ? h.status : 'a-testar',
+        /* uma hipótese nasce fraca: o estado forte só existe nas alegações, com provas
+           ligadas e validadas pelo servidor. O cliente não pode promovê-la por aqui. */
+        state: ['hipotese', 'insuficiente', 'alegacao-atribuida'].includes(h && h.state) ? h.state : 'hipotese'
+      })).filter((h) => h.text);
+    }
+    if (body.budget && typeof body.budget === 'object') {
+      const b = body.budget;
+      out.budget = {
+        maxCalls: Math.max(0, Math.min(10000, Number(b.maxCalls) || 0)),
+        maxDocuments: Math.max(0, Math.min(10000, Number(b.maxDocuments) || 0)),
+        maxMinutes: Math.max(0, Math.min(10000, Number(b.maxMinutes) || 0)),
+        maxCost: Math.max(0, Math.min(100000, Number(b.maxCost) || 0))
+      };
+    }
+    if (body.scope && typeof body.scope === 'object') {
+      const sc = body.scope;
+      out.scope = {
+        geo: String(sc.geo || '').slice(0, 200),
+        languages: strList(sc.languages, 20) || [],
+        period: { from: (sc.period && sc.period.from) || null, to: (sc.period && sc.period.to) || null }
+      };
+    }
+    if (!partial) {
+      out.title = out.title || 'Sem título';
+      ['question', 'objective', 'description'].forEach((k) => { if (out[k] === undefined) out[k] = ''; });
+    }
+    return out;
+  }
+
+  /* projecto do utilizador (ou null): nunca confiar num id vindo do cliente */
+  function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
+  function claimFor(a, cid) {
+    const c = store.claimById(cid);
+    if (!c) return null;
+    return projectFor(a, c.projectId) ? c : null;
+  }
+  function evidenceFor(a, eid) {
+    const e = store.evidenceById(eid);
+    if (!e) return null;
+    return projectFor(a, e.projectId) ? e : null;
+  }
   function requireAdmin(a, res) {
     if (!a || a.user.role !== 'ADMIN') { err(res, 403, 'operação restrita a administradores'); return false; }
     return true;
@@ -98,7 +157,9 @@ export async function createApi(opts) {
       /* ---------- meta ---------- */
       if (p === '/api/meta') {
         return json(res, 200, {
-          ok: true, version: APP_VERSION,
+          ok: true, version: APP_VERSION, schemaVersion: store.schemaVersion(),
+          migrations: store.migrations().map((m) => ({ to: m.to, at: m.at, changes: m.changes })),
+          states: STATES.map((id) => ({ id, label: STATE_LABEL[id] })),
           providers: registryPublic(),
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           registration: {
@@ -256,14 +317,7 @@ export async function createApi(opts) {
         const a = await requireUser(req, res); if (!a) return;
         if (!requireCsrf(req, res, a)) return;
         const body = await readBody(req);
-        const prj = await store.createProject(a.user.id, {
-          title: String(body.title || 'Sem título').slice(0, 200),
-          question: String(body.question || '').slice(0, 2000),
-          objective: String(body.objective || '').slice(0, 2000),
-          description: String(body.description || '').slice(0, 4000),
-          scope: body.scope || undefined,
-          keywords: Array.isArray(body.keywords) ? body.keywords.slice(0, 50) : []
-        });
+        const prj = await store.createProject(a.user.id, projectFields(body));
         await store.audit({ type: 'project_created', actorId: a.user.id, subjectId: prj.id, action: 'create_project' });
         await store.count('projects_created');
         return json(res, 201, { ok: true, project: prj });
@@ -277,7 +331,7 @@ export async function createApi(opts) {
         if (!requireCsrf(req, res, a)) return;
         if (method === 'PATCH') {
           const body = await readBody(req);
-          const updated = await store.updateProject(id, a.user.id, body);
+          const updated = await store.updateProject(id, a.user.id, projectFields(body, true));
           await store.audit({ type: 'project_updated', actorId: a.user.id, subjectId: id, action: 'update_project', detail: { fields: Object.keys(body) } });
           return json(res, 200, { ok: true, project: updated });
         }
@@ -286,6 +340,181 @@ export async function createApi(opts) {
           await store.audit({ type: 'project_deleted', actorId: a.user.id, subjectId: id, action: 'delete_project' });
           return json(res, 200, { ok: true });
         }
+      }
+
+      /* ---------- ciclo de vida do projecto ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/(duplicate|archive|resume|cancel|checkpoints)$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const parts = p.split('/');
+        const pid = parts[3], action = parts[4];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        if (action === 'checkpoints') {
+          const body = await readBody(req);
+          const cp = await store.addCheckpoint(pid, a.user.id, body.label, a.user.id);
+          await store.audit({ type: 'project_checkpoint', actorId: a.user.id, subjectId: pid, action: 'checkpoint', detail: { label: cp.label } });
+          return json(res, 201, { ok: true, checkpoint: cp });
+        }
+        if (action === 'duplicate') {
+          const copy = await store.duplicateProject(pid, a.user.id);
+          await store.audit({ type: 'project_created', actorId: a.user.id, subjectId: copy.id, action: 'duplicate_project', detail: { from: pid } });
+          return json(res, 201, { ok: true, project: copy });
+        }
+        const status = { archive: 'archived', resume: 'active', cancel: 'cancelled' }[action];
+        const updated = await store.setProjectStatus(pid, a.user.id, status);
+        await store.audit({ type: 'project_status', actorId: a.user.id, subjectId: pid, action, detail: { status } });
+        return json(res, 200, { ok: true, project: updated });
+      }
+
+      /* ---------- registo de provas ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/evidence$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const list = store.evidenceOf(pid);
+        return json(res, 200, { ok: true, count: list.length, evidence: list });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/evidence$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const v = validateEvidence(body);
+        if (!v.ok) return err(res, 400, 'prova inválida: ' + v.errors.join('; '), { errors: v.errors });
+        const ev = v.evidence;
+        ev.dedupeKey = dedupeKey(ev);
+        ev.createdBy = a.user.id;
+        /* duplicado exacto: devolve o que existe em vez de inflacionar a contagem */
+        const dup = store.evidenceByDedupe(pid, ev.dedupeKey);
+        if (dup) {
+          return json(res, 200, {
+            ok: true, duplicate: true, evidence: dup,
+            note: 'já existia uma prova com o mesmo conteúdo e URL: não foi duplicada (contaria como duas origens sem o ser)'
+          });
+        }
+        const saved = await store.addEvidence(pid, ev);
+        await store.audit({ type: 'evidence_added', actorId: a.user.id, subjectId: saved.id,
+          action: 'add_evidence', detail: { projectId: pid, sourceType: ev.sourceType, stance: ev.stance, origin: ev.originKey } });
+        await store.count('evidence_added');
+        return json(res, 201, { ok: true, evidence: saved, origin: ev.originKey });
+      }
+      if (p.match(/^\/api\/evidence\/[^/]+$/) && (method === 'PATCH' || method === 'DELETE')) {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const eid = p.split('/')[3];
+        const ev = evidenceFor(a, eid);
+        if (!ev) return err(res, 404, 'prova não encontrada');
+        const body = await readBody(req);
+        if (method === 'DELETE') {
+          /* Não se apaga prova: retira-se com motivo, e fica registado. */
+          const reason = String(body.reason || '').trim();
+          if (reason.length < 5) return err(res, 400, 'retirar uma prova exige um motivo escrito (mínimo 5 caracteres)');
+          const out = await store.retractEvidence(eid, reason, a.user.id);
+          await store.audit({ type: 'evidence_retracted', actorId: a.user.id, subjectId: eid, action: 'retract_evidence',
+            reason, detail: { projectId: ev.projectId } });
+          return json(res, 200, { ok: true, evidence: out,
+            note: 'a prova foi retirada, não apagada: o histórico e as alegações associadas mantêm-se auditáveis' });
+        }
+        const patch = {};
+        if (body.validationState !== undefined) {
+          if (!STATES.includes(body.validationState)) return err(res, 400, 'validationState inválido', { allowed: STATES });
+          patch.validationState = body.validationState;
+        }
+        if (body.limitations !== undefined) patch.limitations = String(body.limitations).slice(0, 1000);
+        if (body.verificationDate !== undefined) {
+          const d = new Date(body.verificationDate);
+          if (isNaN(d.getTime())) return err(res, 400, 'verificationDate inválida');
+          patch.verificationDate = d.toISOString();
+        }
+        if (body.stance !== undefined) patch.stance = body.stance;
+        if (body.archiveUrl !== undefined) patch.archiveUrl = String(body.archiveUrl).slice(0, 1500);
+        if (!Object.keys(patch).length) return err(res, 400, 'nada para actualizar');
+        const out = await store.updateEvidence(eid, patch, a.user.id, 'actualizada');
+        await store.audit({ type: 'evidence_updated', actorId: a.user.id, subjectId: eid, action: 'update_evidence',
+          detail: { fields: Object.keys(patch) } });
+        return json(res, 200, { ok: true, evidence: out });
+      }
+
+      /* ---------- alegações e conclusões ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/claims$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const claims = store.claimsOf(pid).map((c) => {
+          const evs = store.evidenceOf(pid).filter((e) => (c.evidenceIds || []).includes(e.id));
+          return Object.assign({}, c, { factors: corroboration(evs), suggested: suggestedState(evs) });
+        });
+        return json(res, 200, { ok: true, claims });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/claims$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const text = String(body.text || '').trim();
+        if (text.length < 8) return err(res, 400, 'a alegação precisa de texto (mínimo 8 caracteres)');
+        const kind = ['facto', 'alegacao', 'hipotese', 'inferencia'].includes(body.kind) ? body.kind : 'facto';
+        const state = STATES.includes(body.state) ? body.state : 'hipotese';
+        if (!['hipotese', 'insuficiente', 'alegacao-atribuida'].includes(state)) {
+          return err(res, 409, 'uma alegação nova começa como hipótese/insuficiente/alegação atribuída; o estado forte é atribuído depois de reunir provas e é validado pelo servidor');
+        }
+        const claim = await store.createClaim(pid, {
+          text: text.slice(0, 2000), kind, state,
+          confidence: ['baixa', 'media', 'alta'].includes(body.confidence) ? body.confidence : null,
+          reasoning: String(body.reasoning || '').slice(0, 4000), createdBy: a.user.id
+        });
+        await store.audit({ type: 'claim_created', actorId: a.user.id, subjectId: claim.id, action: 'create_claim',
+          detail: { projectId: pid, kind, state } });
+        return json(res, 201, { ok: true, claim });
+      }
+      if (p.match(/^\/api\/claims\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const c = claimFor(a, p.split('/')[3]);
+        if (!c) return err(res, 404, 'alegação não encontrada');
+        const evs = store.evidenceOf(c.projectId).filter((e) => (c.evidenceIds || []).includes(e.id));
+        return json(res, 200, { ok: true, claim: c, evidence: evs, factors: corroboration(evs), suggested: suggestedState(evs) });
+      }
+      if (p.match(/^\/api\/claims\/[^/]+$/) && method === 'PATCH') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const c = claimFor(a, p.split('/')[3]);
+        if (!c) return err(res, 404, 'alegação não encontrada');
+        const body = await readBody(req);
+        const evs = store.evidenceOf(c.projectId).filter((e) => (c.evidenceIds || []).includes(e.id));
+        const patch = {};
+        if (body.evidenceId !== undefined) {
+          const ev = evidenceFor(a, body.evidenceId);
+          if (!ev || ev.projectId !== c.projectId) return err(res, 404, 'prova não encontrada neste projecto');
+          const on = body.link !== false;
+          const linked = await store.linkEvidence(c.id, ev.id, on);
+          await store.audit({ type: 'claim_evidence_link', actorId: a.user.id, subjectId: c.id, action: on ? 'link' : 'unlink',
+            detail: { evidenceId: ev.id } });
+          const evs2 = store.evidenceOf(c.projectId).filter((e) => (linked.evidenceIds || []).includes(e.id));
+          return json(res, 200, { ok: true, claim: linked, factors: corroboration(evs2), suggested: suggestedState(evs2) });
+        }
+        if (body.state !== undefined) {
+          if (!STATES.includes(body.state)) return err(res, 400, 'estado inválido', { allowed: STATES, labels: STATE_LABEL });
+          const verdict = evaluate(body.state, evs);
+          /* O servidor recusa estados que as provas não sustentam. A interface pode
+             pedir, mas não pode declarar «confirmada» o que está por provar. */
+          if (!verdict.ok) {
+            return err(res, 409, 'estado recusado: as provas não sustentam «' + body.state + '»', {
+              reasons: verdict.reasons, factors: verdict.factors, suggested: suggestedState(evs)
+            });
+          }
+          patch.state = body.state;
+        }
+        if (body.confidence !== undefined) patch.confidence = ['baixa', 'media', 'alta', null].includes(body.confidence) ? body.confidence : c.confidence;
+        if (body.reasoning !== undefined) patch.reasoning = String(body.reasoning).slice(0, 4000);
+        if (body.text !== undefined) patch.text = String(body.text).slice(0, 2000);
+        if (!Object.keys(patch).length) return err(res, 400, 'nada para actualizar');
+        const updated = await store.updateClaim(c.id, patch, a.user.id, body.state ? 'estado alterado' : 'actualizada');
+        await store.audit({ type: 'claim_updated', actorId: a.user.id, subjectId: c.id, action: 'update_claim',
+          detail: { from: c.history[c.history.length - 1].from, to: updated.state, fields: Object.keys(patch) } });
+        return json(res, 200, { ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs) });
       }
 
       /* ---------- fornecedores de IA ---------- */

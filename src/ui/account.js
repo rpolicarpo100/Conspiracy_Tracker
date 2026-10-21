@@ -12,7 +12,8 @@
   const DRAFT = { auth: {}, project: {}, key: {}, password: {} };   // valores sobrevivem a repintagens
   let S = {
     me: null, csrf: null, tab: 'account', projects: [], meta: null,
-    providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false
+    providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false,
+    detail: null            // projecto aberto: { project, evidence, claims }
   };
 
   async function api(path, opts) {
@@ -39,14 +40,22 @@
   }
 
   /* ---------------- arranque ---------------- */
+  /* Contador de geração: uma resposta antiga (de antes de sair ou de trocar de conta)
+     nunca pode sobrepor-se ao estado novo. Sem isto, um refresh lento de um utilizador
+     anterior repintava a lista de projectos do anterior por cima da sessão actual. */
+  let gen = 0;
   async function refresh() {
+    const my = ++gen;
     const [me, meta] = await Promise.all([api('/api/auth/me'), api('/api/meta')]);
+    if (my !== gen) return;                    // chegou tarde: deita-se fora
     S.me = (me.json && me.json.user) || null;
     S.csrf = (me.json && me.json.csrf) || S.csrf;
     S.meta = meta.json || null;
     if (S.me) {
       const pr = await api('/api/projects');
+      if (my !== gen) return;
       if (pr.ok) S.projects = pr.json.projects;
+      else S.projects = [];
       const pv = await api('/api/providers');
       if (pv.ok) S.providers = pv.json.providers;
       const se = await api('/api/auth/sessions');
@@ -57,14 +66,29 @@
         if (u.ok) S.users = u.json.users;
         if (a.ok) S.audit = a.json.events;
       }
+    } else {
+      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = [];
+      S.detail = null;
     }
+    if (my !== gen) return;
     paint();
   }
 
   /* ---------------- pintura ---------------- */
+  /* Uma falha ao desenhar o painel nunca deixa a área em branco nem engole o erro:
+     mostra-o (sem dados privados) e registra-o na consola. */
   function paint() {
     const root = document.getElementById('accroot');
     if (!root) return;
+    try { paintInto(root); }
+    catch (e) {
+      clear(root);
+      root.appendChild(el('div', { class: 'warnbox', text: 'Falha ao desenhar esta área: ' + e.message + '. O resto da aplicação continua a funcionar.' }));
+      if (typeof console !== 'undefined') console.error('[conta]', e);
+    }
+  }
+
+  function paintInto(root) {
     clear(root);
 
     if (!S.meta) {
@@ -217,6 +241,7 @@
   }
 
   function paintProjects(root) {
+    if (S.detail) { paintProjectDetail(root); return; }
     const f = DRAFT.project;
     root.appendChild(el('p', { style: 'font-size:11px', text: 'Projectos independentes por utilizador. Um projecto guarda a pergunta, o âmbito, as hipóteses e os limites — não confunde hipótese com facto.' }));
     root.appendChild(field('Título', { placeholder: 'ex.: Cadeia de participações em X', value: f.title || '', oninput: (e) => { f.title = e.target.value; } }));
@@ -244,16 +269,294 @@
         el('td', { style: 'font-size:10px', text: (p.question || '—').slice(0, 70) }),
         el('td', {}, [el('span', { class: 'tag ' + (p.status === 'draft' ? 'muted' : 'ok'), text: p.status })]),
         el('td', { style: 'font-size:10px', text: (p.createdAt || '').slice(0, 10) }),
-        el('td', {}, [el('button', {
-          class: 'btn sm', type: 'button', text: 'Eliminar',
-          onclick: async () => {
-            if (!confirm('Eliminar «' + p.title + '»?')) return;
-            await api('/api/projects/' + p.id, { method: 'DELETE' });
-            refresh();
-          }
-        })])
+        el('td', { style: 'white-space:nowrap' }, [
+          el('button', { class: 'btn sm primary', type: 'button', text: 'Abrir', onclick: () => openProject(p.id) }),
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Eliminar', style: 'margin-left:4px',
+            onclick: async () => {
+              if (!confirm('Eliminar «' + p.title + '»?')) return;
+              await api('/api/projects/' + p.id, { method: 'DELETE' });
+              refresh();
+            }
+          })
+        ])
       ])))
     ]));
+  }
+
+  /* ---------------- projecto aberto: provas e conclusões ---------------- */
+
+  async function openProject(id) {
+    const [p, ev, cl] = await Promise.all([
+      api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'), api('/api/projects/' + id + '/claims')
+    ]);
+    if (!p.ok) return note('Não foi possível abrir o projecto: ' + (p.error && p.error.message), 'bad');
+    S.detail = { project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [] };
+    paint();
+  }
+
+  async function reloadDetail() {
+    if (!S.detail) return;
+    await openProject(S.detail.project.id);
+  }
+
+  function stateTag(state) {
+    const ok = ['confirmada', 'corroborada-independente'].includes(state);
+    const bad = ['refutada', 'contraditoria', 'fonte-inacessivel'].includes(state);
+    return el('span', { class: 'tag ' + (ok ? 'ok' : bad ? 'bad' : 'warn'), text: state });
+  }
+
+  function paintProjectDetail(root) {
+    const d = S.detail, p = d.project;
+    root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:6px' }, [
+      el('button', { class: 'btn sm', type: 'button', text: '← Todos os projectos', onclick: () => { S.detail = null; paint(); } }),
+      el('span', { class: 'tag ' + (p.status === 'archived' ? 'muted' : 'ok'), text: p.status }),
+      el('span', { style: 'font-size:10px;color:var(--muted)', text: p.id })
+    ]));
+    root.appendChild(el('h3', { style: 'margin:6px 0;font-size:14px', text: p.title }));
+    root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: p.question || 'sem pergunta definida' }));
+
+    /* acções do ciclo de vida */
+    const act = (label, action, confirmMsg) => el('button', {
+      class: 'btn sm', type: 'button', text: label, style: 'margin-right:4px',
+      onclick: async () => {
+        if (confirmMsg && !confirm(confirmMsg)) return;
+        const r = await api('/api/projects/' + p.id + '/' + action, { method: 'POST', body: {} });
+        if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+        note('Acção «' + label + '» aplicada', 'ok'); await reloadDetail();
+      }
+    });
+    root.appendChild(el('div', { class: 'chips', style: 'margin:8px 0' }, [
+      act('Duplicar', 'duplicate'),
+      p.status === 'archived' ? act('Retomar', 'resume') : act('Arquivar', 'archive'),
+      act('Cancelar', 'cancel', 'Cancelar a investigação? O histórico mantém-se.'),
+      el('button', {
+        class: 'btn sm', type: 'button', text: 'Checkpoint',
+        onclick: async () => {
+          const label = prompt('Descrição do checkpoint:', 'revisão de provas');
+          if (!label) return;
+          const r = await api('/api/projects/' + p.id + '/checkpoints', { method: 'POST', body: { label } });
+          if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+          note('Checkpoint registado (' + r.json.checkpoint.evidenceCount + ' provas, ' + r.json.checkpoint.claimCount + ' alegações)', 'ok');
+          await reloadDetail();
+        }
+      })
+    ]));
+
+    /* âmbito e limites (edição directa) */
+    const f = DRAFT.detail || (DRAFT.detail = {});
+    const save = el('button', {
+      class: 'btn sm primary', type: 'button', text: 'Guardar âmbito',
+      onclick: async () => {
+        const body = {
+          objective: f.objective !== undefined ? f.objective : p.objective,
+          referenceDate: f.referenceDate !== undefined ? f.referenceDate : p.referenceDate,
+          timeLimit: f.timeLimit !== undefined ? f.timeLimit : p.timeLimit,
+          completionCriteria: f.completionCriteria !== undefined
+            ? String(f.completionCriteria).split('\n').map((x) => x.trim()).filter(Boolean) : p.completionCriteria
+        };
+        const r = await api('/api/projects/' + p.id, { method: 'PATCH', body });
+        if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+        note('Âmbito actualizado', 'ok'); await reloadDetail();
+      }
+    });
+    root.appendChild(el('div', { class: 'warnbox', style: 'margin:8px 0' }, [
+      el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'OBJECTIVO, DATA DE REFERÊNCIA, LIMITE E CRITÉRIOS DE CONCLUSÃO' }),
+      field('Objectivo', { value: p.objective || '', oninput: (e) => { f.objective = e.target.value; } }),
+      field('Data de referência', { placeholder: '2024-12-31', value: p.referenceDate || '', oninput: (e) => { f.referenceDate = e.target.value; } }),
+      field('Limite temporal', { placeholder: 'ex.: 30 dias, 40 chamadas', value: p.timeLimit || '', oninput: (e) => { f.timeLimit = e.target.value; } }),
+      field('Critérios de conclusão (um por linha)', {
+        value: (p.completionCriteria || []).join('\n'), oninput: (e) => { f.completionCriteria = e.target.value; }
+      }),
+      save
+    ]));
+
+    /* hipóteses */
+    root.appendChild(el('h4', { style: 'margin:12px 0 4px;font-size:12px', text: 'Hipóteses (' + (p.hypotheses || []).length + ')' }));
+    if (!(p.hypotheses || []).length) {
+      root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Sem hipóteses registadas. Uma hipótese não é um facto: fica «a-testar» até haver provas.' }));
+    } else {
+      root.appendChild(el('table', { class: 'listtable' }, [
+        el('thead', {}, [el('tr', {}, ['hipótese', 'estado', 'teste'].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, p.hypotheses.map((h) => el('tr', {}, [
+          el('td', { style: 'font-size:11px', text: h.text }),
+          el('td', {}, [stateTag(h.state)]),
+          el('td', {}, [el('select', {
+            onchange: async (e) => {
+              const hyps = p.hypotheses.map((x) => x.id === h.id ? Object.assign({}, x, { status: e.target.value }) : x);
+              const r = await api('/api/projects/' + p.id, { method: 'PATCH', body: { hypotheses: hyps } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              await reloadDetail();
+            }
+          }, ['a-testar', 'suportada', 'refutada', 'inconclusiva'].map((v) =>
+            el('option', { value: v, selected: h.status === v, text: v })))])
+        ])))
+      ]));
+    }
+    root.appendChild(addHypothesisForm);
+
+    /* provas */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Registo de provas (' + d.evidence.length + ')' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'Cópias do mesmo comunicado contam como UMA origem: a corroboração usa origens independentes, não ficheiros.' }));
+    if (d.evidence.length) {
+      root.appendChild(el('table', { class: 'listtable' }, [
+        el('thead', {}, [el('tr', {}, ['prova', 'tipo', 'posição', 'origem', 'estado', 'verificada', ''].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, d.evidence.map((ev) => el('tr', { style: ev.retractedAt ? 'opacity:.55' : '' }, [
+          el('td', { style: 'font-size:10px' }, [
+            el('b', { text: ev.title }),
+            el('div', { style: 'color:var(--muted)', text: (ev.canonicalUrl || ev.location || 'sem URL') + ' · ' + (ev.contentHash || '').slice(0, 10) + '…' }),
+            el('div', { style: 'color:var(--muted)', text: (ev.excerpt || '').slice(0, 110) })
+          ]),
+          el('td', { style: 'font-size:10px', text: ev.sourceType }),
+          el('td', { style: 'font-size:10px', text: ev.stance }),
+          el('td', { style: 'font-size:10px;color:var(--muted)', text: ev.originKey }),
+          el('td', {}, [stateTag(ev.validationState), ev.retractedAt ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'retirada' }) : null].filter(Boolean)),
+          el('td', { style: 'font-size:10px', text: ev.verificationDate ? ev.verificationDate.slice(0, 10) : '—' }),
+          el('td', {}, [ev.retractedAt ? null : el('button', {
+            class: 'btn sm', type: 'button', text: 'Anotar',
+            onclick: async () => {
+              const lim = prompt('Limitações desta prova:', ev.limitations || '');
+              if (lim == null) return;
+              const r = await api('/api/evidence/' + ev.id, { method: 'PATCH', body: { limitations: lim, verificationDate: new Date().toISOString() } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              await reloadDetail();
+            }
+          }), ev.retractedAt ? null : el('button', {
+            class: 'btn sm', type: 'button', text: 'Retirar', style: 'margin-left:4px',
+            onclick: async () => {
+              const reason = prompt('Motivo da retirada (fica registado; a prova não é apagada):', '');
+              if (!reason) return;
+              const r = await api('/api/evidence/' + ev.id, { method: 'DELETE', body: { reason } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              note('Prova retirada com motivo; histórico conservado.', 'ok'); await reloadDetail();
+            }
+          })].filter(Boolean))
+        ])))
+      ]));
+    }
+    root.appendChild(addEvidenceForm(p.id));
+
+    /* conclusões */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Conclusões e alegações (' + d.claims.length + ')' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'O servidor recusa estados que as provas não sustentam: «confirmada» exige duas origens independentes e uma prova primária, sem prova contrária activa.' }));
+    if (!d.claims.length) root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Sem conclusões registadas.' }));
+    d.claims.forEach((c) => {
+      const fa = c.factors || {};
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin:6px 0' }, [
+        el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+          stateTag(c.state),
+          el('b', { style: 'font-size:11px', text: c.text }),
+          el('span', { style: 'font-size:10px;color:var(--muted)', text: 'sugerido pelas provas: ' + c.suggested })
+        ]),
+        el('div', { style: 'font-size:10px;color:var(--muted);margin:4px 0' , text:
+          'origens independentes ' + (fa.independentOrigins || 0) + ' · favoráveis ' + (fa.favourable || 0) +
+          ' · contrárias ' + (fa.contrary || 0) + ' · primárias ' + (fa.primaryFavourable || 0) +
+          ' · cópias redundantes ' + (fa.copiesWithoutIndependentValue || 0) }),
+        el('div', { class: 'chips' }, [
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Aplicar estado sugerido (' + c.suggested + ')',
+            onclick: async () => {
+              const r = await api('/api/claims/' + c.id, { method: 'PATCH', body: { state: c.suggested } });
+              if (!r.ok) return note('Recusado pelo servidor: ' + (r.error.reasons || [r.error.message]).join('; '), 'bad');
+              note('Estado aplicado: ' + c.suggested, 'ok'); await reloadDetail();
+            }
+          }),
+          el('select', {
+            onchange: async (e) => {
+              const eid = e.target.value;
+              if (!eid) return;
+              const r = await api('/api/claims/' + c.id, { method: 'PATCH', body: { evidenceId: eid } });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              e.target.value = '';
+              await reloadDetail();
+            }
+          }, [el('option', { value: '', text: 'ligar prova…' })].concat(
+            d.evidence.filter((ev) => !ev.retractedAt).map((ev) =>
+              el('option', { value: ev.id, text: (ev.stance === 'contraria' ? '✗ ' : '✓ ') + ev.title.slice(0, 50) }))
+          )),
+          el('span', { style: 'font-size:10px;color:var(--muted)', text: (c.evidenceIds || []).length + ' prova(s) ligada(s)' })
+        ])
+      ]));
+    });
+    root.appendChild(addClaimForm(p.id));
+  }
+
+  const addHypothesisForm = el('div', { class: 'chips', style: 'margin-top:6px' }, [
+    el('input', {
+      placeholder: 'nova hipótese a testar', style: 'flex:1;min-width:220px',
+      oninput: (e) => { DRAFT.hyp = e.target.value; }
+    }),
+    el('button', {
+      class: 'btn sm', type: 'button', text: 'Adicionar hipótese',
+      onclick: async () => {
+        const text = (DRAFT.hyp || '').trim();
+        if (!text) return note('Escreva a hipótese', 'warn');
+        const p = S.detail.project;
+        const hyps = (p.hypotheses || []).concat([{ text, status: 'a-testar' }]);
+        const r = await api('/api/projects/' + p.id, { method: 'PATCH', body: { hypotheses: hyps } });
+        if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+        DRAFT.hyp = '';
+        await reloadDetail();
+      }
+    })
+  ]);
+
+  function addEvidenceForm(projectId) {
+    const f = DRAFT.evidence || (DRAFT.evidence = { sourceType: 'secundaria', stance: 'favoravel', extractionMethod: 'manual' });
+    const mk = (label, attrs) => field(label, Object.assign({ value: f[attrs.name] || '' }, attrs));
+    return el('div', { class: 'warnbox', style: 'margin-top:8px' }, [
+      el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'NOVA PROVA — o excerto é obrigatório: sem excerto não há o que verificar' }),
+      mk('Título', { name: 'title', placeholder: 'título do documento', oninput: (e) => { f.title = e.target.value; } }),
+      mk('URL original', { name: 'originalUrl', placeholder: 'https://…', oninput: (e) => { f.originalUrl = e.target.value; } }),
+      mk('Excerto citado', { name: 'excerpt', placeholder: 'o trecho exacto que sustenta a alegação', oninput: (e) => { f.excerpt = e.target.value; } }),
+      el('div', { class: 'chips' }, [
+        el('select', { onchange: (e) => { f.sourceType = e.target.value; } }, ['primaria', 'secundaria', 'documento-oficial', 'base-de-dados', 'comunicado', 'reproducao']
+          .map((v) => el('option', { value: v, selected: f.sourceType === v, text: 'tipo: ' + v }))),
+        el('select', { onchange: (e) => { f.stance = e.target.value; } }, ['favoravel', 'contraria', 'neutra']
+          .map((v) => el('option', { value: v, selected: f.stance === v, text: 'posição: ' + v }))),
+        el('select', { onchange: (e) => { f.extractionMethod = e.target.value; } }, ['manual', 'http', 'pdf', 'api', 'ocr']
+          .map((v) => el('option', { value: v, selected: f.extractionMethod === v, text: v }))),
+        el('button', {
+          class: 'btn sm primary', type: 'button', text: 'Registar prova',
+          onclick: async () => {
+            const body = {
+              title: f.title, originalUrl: f.originalUrl || null, excerpt: f.excerpt,
+              sourceType: f.sourceType, stance: f.stance, extractionMethod: f.extractionMethod,
+              syndicationOf: f.syndicationOf || null,
+              language: 'pt'
+            };
+            const r = await api('/api/projects/' + projectId + '/evidence', { method: 'POST', body });
+            if (!r.ok) return note('Recusada: ' + (r.error.errors || [r.error.message]).join('; '), 'bad');
+            const dup = r.json.duplicate ? ' (já existia: não foi duplicada)' : '';
+            DRAFT.evidence = { sourceType: f.sourceType, stance: f.stance, extractionMethod: f.extractionMethod };
+            note('Prova registada' + dup + ' · URL canónico: ' + r.json.evidence.canonicalUrl, 'ok');
+            await reloadDetail();
+          }
+        })
+      ])
+    ]);
+  }
+
+  function addClaimForm(projectId) {
+    const f = DRAFT.claim || (DRAFT.claim = {});
+    return el('div', { class: 'warnbox', style: 'margin-top:8px' }, [
+      el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'NOVA CONCLUSÃO — nasce como hipótese; o estado sobe só com provas que o sustentem' }),
+      field('Alegação', { placeholder: 'o que se afirma, em termos verificáveis', value: f.text || '', oninput: (e) => { f.text = e.target.value; } }),
+      el('div', { class: 'chips' }, [
+        el('select', { onchange: (e) => { f.kind = e.target.value; } }, ['facto', 'alegacao', 'hipotese', 'inferencia']
+          .map((v) => el('option', { value: v, selected: (f.kind || 'facto') === v, text: v }))),
+        el('button', {
+          class: 'btn sm primary', type: 'button', text: 'Registar conclusão',
+          onclick: async () => {
+            const r = await api('/api/projects/' + projectId + '/claims', { method: 'POST', body: { text: f.text, kind: f.kind || 'facto' } });
+            if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+            DRAFT.claim = {};
+            note('Conclusão registada como ' + r.json.claim.state, 'ok');
+            await reloadDetail();
+          }
+        })
+      ])
+    ]);
   }
 
   function paintKeys(root) {
@@ -390,5 +693,5 @@
     return host;
   }
 
-  VN.accountUI = { mount, refresh, getState: () => S, api };
+  VN.accountUI = { mount, refresh, paint, getState: () => S, api, openProject };
 })(typeof window !== 'undefined' ? window : globalThis);

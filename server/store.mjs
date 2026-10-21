@@ -9,11 +9,56 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+const SCHEMA_VERSION = 2;
+
 const EMPTY = () => ({
-  version: 1,
+  version: SCHEMA_VERSION,
   users: [], sessions: [], projects: [], credentials: [], usage: [],
-  audit: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
+  evidence: [], claims: [], runs: [],
+  audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
+
+/* Migrações por passo. Cada passo recebe a base e devolve o que mudou, para que
+   o registo em `migrations` diga exactamente o que foi alterado (sem inventar). */
+const MIGRATIONS = {
+  2: (db) => {
+    const changes = [];
+    ['evidence', 'claims', 'runs', 'migrations'].forEach((k) => {
+      if (!Array.isArray(db[k])) { db[k] = []; changes.push('criada a colecção ' + k); }
+    });
+    let touched = 0;
+    db.projects.forEach((p) => {
+      const before = JSON.stringify(p);
+      p.status = p.status || 'draft';
+      p.hypotheses = Array.isArray(p.hypotheses) ? p.hypotheses : [];
+      p.subquestions = Array.isArray(p.subquestions) ? p.subquestions : [];
+      p.completionCriteria = Array.isArray(p.completionCriteria) ? p.completionCriteria : [];
+      p.checkpoints = Array.isArray(p.checkpoints) ? p.checkpoints : [];
+      p.notes = Array.isArray(p.notes) ? p.notes : [];
+      p.referenceDate = p.referenceDate || null;
+      p.timeLimit = p.timeLimit || null;
+      p.budget = Object.assign({ maxCalls: 50, maxDocuments: 100, maxMinutes: 30, maxCost: 0 }, p.budget || {});
+      p.scope = Object.assign({ geo: '', period: { from: null, to: null }, languages: [] }, p.scope || {});
+      if (JSON.stringify(p) !== before) touched++;
+    });
+    if (touched) changes.push(touched + ' projecto(s) completados com os campos da v2');
+    return changes;
+  }
+};
+
+function migrate(db) {
+  const from = Number(db.version || 1);
+  const applied = [];
+  for (let v = from + 1; v <= SCHEMA_VERSION; v++) {
+    const step = MIGRATIONS[v];
+    if (!step) continue;
+    const changes = step(db) || [];
+    db.version = v;
+    applied.push({ to: v, at: new Date().toISOString(), changes });
+    db.migrations.push({ from: v - 1, to: v, at: applied[applied.length - 1].at, changes });
+  }
+  return { from, to: db.version, applied };
+}
 
 export function createStore(dir) {
   const root = dir || path.join(process.cwd(), '.data');
@@ -29,6 +74,12 @@ export function createStore(dir) {
       const raw = await fs.readFile(file, 'utf8');
       const parsed = JSON.parse(raw);
       db = Object.assign(EMPTY(), parsed);
+      const m = migrate(db);
+      if (m.applied.length) {
+        console.log('[store] migração aplicada:', m.from, '→', m.to,
+          m.applied.map((a) => a.changes.join('; ')).join(' | '));
+        await persist();
+      }
       loaded = true;
     } catch (e) {
       if (e.code !== 'ENOENT') {
@@ -84,6 +135,10 @@ export function createStore(dir) {
       db.sessions = db.sessions.filter((s) => s.userId !== uid);
       db.projects = db.projects.filter((p) => p.ownerId !== uid);
       db.credentials = db.credentials.filter((c) => c.userId !== uid);
+      const mine = new Set(db.projects.filter((p) => p.ownerId === uid).map((p) => p.id));
+      db.evidence = db.evidence.filter((e) => !mine.has(e.projectId));
+      db.claims = db.claims.filter((c) => !mine.has(c.projectId));
+      db.runs = db.runs.filter((r) => !mine.has(r.projectId));
       await persist();
     },
 
@@ -139,7 +194,7 @@ export function createStore(dir) {
       if (!p) return null;
       const allowed = ['title', 'question', 'objective', 'description', 'scope', 'keywords', 'entities',
         'excludedSources', 'prioritySources', 'hypotheses', 'subquestions', 'completionCriteria',
-        'budget', 'status', 'notes'];
+        'budget', 'status', 'notes', 'referenceDate', 'timeLimit', 'languages'];
       allowed.forEach((k) => { if (patch[k] !== undefined) p[k] = patch[k]; });
       p.updatedAt = new Date().toISOString();
       await persist(); return p;
@@ -176,6 +231,115 @@ export function createStore(dir) {
       db.credentials = db.credentials.filter((c) => !(c.userId === userId && c.provider === provider));
       if (db.credentials.length === before) return false;
       await persist(); return true;
+    },
+
+    /* --- ciclo de vida do projecto --- */
+    async duplicateProject(pid, ownerId) {
+      const src = db.projects.find((p) => p.id === pid && (!ownerId || p.ownerId === ownerId));
+      if (!src) return null;
+      const now = new Date().toISOString();
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.id = id('prj');
+      copy.title = (src.title || 'Sem título') + ' (cópia)';
+      copy.status = 'draft';
+      copy.createdAt = now; copy.updatedAt = now; copy.archivedAt = null;
+      copy.checkpoints = [{ id: id('chk'), at: now, label: 'duplicado de ' + src.id, by: ownerId }];
+      db.projects.push(copy); await persist(); return copy;
+    },
+    async setProjectStatus(pid, ownerId, status) {
+      const p = db.projects.find((x) => x.id === pid && (!ownerId || x.ownerId === ownerId));
+      if (!p) return null;
+      p.status = status;
+      p.updatedAt = new Date().toISOString();
+      p.archivedAt = status === 'archived' ? p.updatedAt : null;
+      await persist(); return p;
+    },
+    async addCheckpoint(pid, ownerId, label, by) {
+      const p = db.projects.find((x) => x.id === pid && (!ownerId || x.ownerId === ownerId));
+      if (!p) return null;
+      const cp = { id: id('chk'), at: new Date().toISOString(), label: String(label || '').slice(0, 300), by: by || null,
+        evidenceCount: db.evidence.filter((e) => e.projectId === p.id).length,
+        claimCount: db.claims.filter((c) => c.projectId === p.id).length };
+      p.checkpoints.push(cp);
+      p.updatedAt = cp.at;
+      await persist(); return cp;
+    },
+
+    /* --- registo de provas (append-only com retirada explícita) --- */
+    async addEvidence(projectId, ev) {
+      const e = Object.assign({ id: 'ev-' + crypto.randomBytes(8).toString('base64url'),
+        projectId, createdAt: new Date().toISOString(), retractedAt: null, retractReason: null,
+        verificationDate: null, claimIds: [], history: [] }, ev);
+      e.history.push({ at: e.createdAt, action: 'criada', by: e.createdBy || null });
+      db.evidence.push(e); await persist(); return e;
+    },
+    evidenceOf(projectId) { return db.evidence.filter((e) => e.projectId === projectId); },
+    evidenceById(eid) { return db.evidence.find((e) => e.id === eid) || null; },
+    evidenceByDedupe(projectId, key) { return db.evidence.find((e) => e.projectId === projectId && e.dedupeKey === key) || null; },
+    async updateEvidence(eid, patch, by, action) {
+      const e = db.evidence.find((x) => x.id === eid); if (!e) return null;
+      Object.assign(e, patch);
+      e.history.push({ at: new Date().toISOString(), action: action || 'actualizada', by: by || null,
+        fields: Object.keys(patch) });
+      await persist(); return e;
+    },
+    async retractEvidence(eid, reason, by) {
+      const e = db.evidence.find((x) => x.id === eid); if (!e) return null;
+      if (e.retractedAt) return e;
+      e.retractedAt = new Date().toISOString(); e.retractReason = String(reason).slice(0, 500);
+      e.history.push({ at: e.retractedAt, action: 'retirada', by: by || null, reason: e.retractReason });
+      // retirar uma prova não a apaga: as alegações que dependiam dela são reavaliadas
+      db.claims.filter((c) => (c.evidenceIds || []).includes(eid)).forEach((c) => {
+        c.history.push({ at: e.retractedAt, action: 'prova retirada', by: by || null, evidenceId: eid,
+          note: 'o estado deve ser revisto: ' + (c.state || 'insuficiente') });
+      });
+      await persist(); return e;
+    },
+
+    /* --- alegações/conclusões --- */
+    async createClaim(projectId, data) {
+      const now = new Date().toISOString();
+      const c = Object.assign({ id: 'cl-' + crypto.randomBytes(8).toString('base64url'), projectId,
+        text: '', kind: 'facto', state: 'hipotese', confidence: null, reasoning: '',
+        evidenceIds: [], createdAt: now, updatedAt: now, history: [] }, data || {});
+      c.history.push({ at: now, action: 'criada', by: c.createdBy || null, state: c.state });
+      db.claims.push(c); await persist(); return c;
+    },
+    claimsOf(projectId) { return db.claims.filter((c) => c.projectId === projectId); },
+    claimById(cid) { return db.claims.find((c) => c.id === cid) || null; },
+    async updateClaim(cid, patch, by, action) {
+      const c = db.claims.find((x) => x.id === cid); if (!c) return null;
+      const prev = c.state;
+      Object.assign(c, patch);
+      c.updatedAt = new Date().toISOString();
+      c.history.push({ at: c.updatedAt, action: action || 'actualizada', by: by || null,
+        from: prev, to: c.state, fields: Object.keys(patch) });
+      await persist(); return c;
+    },
+    async linkEvidence(cid, eid, on) {
+      const c = db.claims.find((x) => x.id === cid); const e = db.evidence.find((x) => x.id === eid);
+      if (!c || !e) return null;
+      const has = c.evidenceIds.includes(eid);
+      if (on && !has) c.evidenceIds.push(eid);
+      if (!on && has) c.evidenceIds = c.evidenceIds.filter((x) => x !== eid);
+      if (on && !e.claimIds.includes(cid)) e.claimIds.push(cid);
+      if (!on) e.claimIds = e.claimIds.filter((x) => x !== cid);
+      await persist(); return c;
+    },
+
+    /* --- execuções de pesquisa (registadas, retomáveis) --- */
+    async createRun(projectId, data) {
+      const now = new Date().toISOString();
+      const r = Object.assign({ id: 'run-' + crypto.randomBytes(8).toString('base64url'), projectId,
+        profile: 'normal', status: 'pending', step: 0, steps: [], stopReason: null,
+        startedAt: now, finishedAt: null, sourcesConsulted: [], budget: {} }, data || {});
+      db.runs.push(r); await persist(); return r;
+    },
+    runsOf(projectId) { return db.runs.filter((r) => r.projectId === projectId); },
+    runById(rid) { return db.runs.find((r) => r.id === rid) || null; },
+    async updateRun(rid, patch) {
+      const r = db.runs.find((x) => x.id === rid); if (!r) return null;
+      Object.assign(r, patch); await persist(); return r;
     },
 
     /* --- utilização de IA (apenas o que o fornecedor reportou) --- */
@@ -216,6 +380,8 @@ export function createStore(dir) {
       persist();
     },
     counters() { return Object.assign({}, db.metrics.counters); },
+    schemaVersion() { return db.version; },
+    migrations() { return (db.migrations || []).slice(); },
     persist
   };
 }

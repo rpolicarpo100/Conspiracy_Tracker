@@ -108,3 +108,77 @@ acusação de omissão.
 Validação dura antes de qualquer carregamento. Rejeita: relação sem fonte, sem excerto, confirmada sem
 revisor/método/data, ficheiro que se declara fictício, imagem sem licença. Aceita com aviso: entidade
 sem identificador de desambiguação (risco de homónimo), documentos sem hash.
+
+---
+
+# Esquema do servidor (v2)
+
+O servidor deixou de ser um simples guarda de contas: tem esquema versionado, migrações por passo e
+registos de provas e conclusões. Ficheiro único `DATA_DIR/db.json`, escrita atómica
+(`write` + `rename`), modo `0600`.
+
+## Versão e migrações
+
+```json
+{ "version": 2,
+  "migrations": [ { "from": 1, "to": 2, "at": "2026-10-21T…", "changes": ["criada a colecção evidence", "…"] } ] }
+```
+
+- `version: 1` → `2` cria `evidence`, `claims`, `runs`, `migrations` e completa cada projecto com
+  `status`, `hypotheses`, `subquestions`, `completionCriteria`, `checkpoints`, `notes`,
+  `referenceDate`, `timeLimit`, `budget` e `scope`.
+- A migração corre no arranque, antes de qualquer pedido; o que mudou fica em `migrations` e é
+  exposto em `GET /api/meta` (`schemaVersion`, `migrations`).
+- Um ficheiro ilegível **não é apagado**: é renomeado para `db.json.broken-<timestamp>` e a base
+  recomeça vazia (comportamento registado na consola do servidor).
+- `GET /ready` verifica escrita no disco e informa se os dados são duráveis entre deploys.
+
+## Colecções
+
+| Colecção | Conteúdo |
+| --- | --- |
+| `users`, `sessions` | contas (scrypt) e sessões (token em SHA-256, expiração 12 h) |
+| `projects` | objecto de investigação (ver abaixo) |
+| `evidence` | registo de provas (ver `docs/EVIDENCIA.md`) |
+| `claims` | conclusões com estado de 9 valores, provas ligadas e histórico |
+| `credentials` | chaves de IA cifradas (AES-256-GCM) + máscara |
+| `runs` | execuções de pesquisa (perfil, passo, estado, motivo de paragem, fontes consultadas) |
+| `usage` | uso de IA reportado pelo fornecedor (sem prompt nem resposta) |
+| `audit` | eventos de auditoria (append-only, últimos 50 000) |
+| `metrics` | contadores agregados |
+
+## Projecto (objecto de investigação)
+
+```json
+{ "id": "prj-…", "ownerId": "usr-…", "title": "…",
+  "question": "…", "objective": "…", "description": "…",
+  "scope": { "geo": "PT", "languages": ["pt","en"], "period": { "from": "2020-01-01", "to": null } },
+  "referenceDate": "2024-12-31", "timeLimit": "30 dias",
+  "keywords": [], "entities": [],
+  "prioritySources": [], "excludedSources": [],
+  "hypotheses": [ { "id": "h1", "text": "…", "status": "a-testar", "state": "hipotese" } ],
+  "subquestions": [], "completionCriteria": [],
+  "budget": { "maxCalls": 50, "maxDocuments": 100, "maxMinutes": 30, "maxCost": 0 },
+  "status": "draft | active | archived | cancelled",
+  "notes": [], "checkpoints": [ { "id": "chk-…", "at": "…", "label": "…", "evidenceCount": 3, "claimCount": 1 } ],
+  "createdAt": "…", "updatedAt": "…", "archivedAt": null }
+```
+
+- Uma hipótese só pode estar em `hipotese`, `insuficiente` ou `alegacao-atribuida`: o cliente não a
+  promove a facto (testado). O campo `status` (`a-testar`, `suportada`, `refutada`, `inconclusiva`)
+  descreve o andamento do teste, não a verdade da hipótese.
+- Acções: `POST /api/projects/{id}/duplicate | archive | resume | cancel | checkpoints`.
+- `DELETE /api/projects/{id}` remove o projecto; provas, alegações e execuções são removidas com ele
+  e com a conta (`deleteUser` limpa as quatro colecções).
+
+## Execuções (`runs`) — registo, ainda sem motor
+
+```json
+{ "id": "run-…", "projectId": "prj-…", "profile": "rapida|normal|profunda|exaustiva",
+  "status": "pending|running|done|stopped|failed|cancelled", "step": 0, "steps": [],
+  "stopReason": null, "startedAt": "…", "finishedAt": null, "sourcesConsulted": [], "budget": {} }
+```
+
+As colecções e métodos existem e são apagados com o projecto; a escrita de passos pelo motor de
+pesquisa ainda não está ligada (o motor de 20 passos é trabalho da fase seguinte). Não há, por isso,
+execuções reais registadas — e nenhuma é simulada.

@@ -52,12 +52,13 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Componente | Estado real | Evidência | Risco | Acção |
 | --- | --- | --- | --- | --- |
 | CRUD de projectos | Criar, listar, ler, actualizar, eliminar, por dono | `server/api.mjs`; suite 26/26 e UI | P1 concluído | — |
-| Modelo de investigação completo | Parcial: título, pergunta, objectivo, descrição, âmbito, palavras-chave. **Faltam** hipóteses, subperguntas, fontes incl./excl., critérios de conclusão, orçamento, limite temporal, histórico, notas, documentos, provas, entidades, relações, cronologia, relatório | `store.createProject` | P2 | Próxima fase: alargar o esquema + migração versionada |
-| Duplicar/arquivar/retomar/cancelar/exportar projecto | **Não implementado** | — | P2 | — |
+| Modelo de investigação completo | **Implementado**: título, pergunta, objectivo, descrição, âmbito (geo/período/línguas), data de referência, limite temporal, palavras-chave, entidades, fontes prioritárias/excluídas, hipóteses (com estado testado), subperguntas, critérios de conclusão, orçamento, notas, checkpoints. Provas, alegações e execuções passaram a colecções próprias | `tests/evidence.mjs` («projecto guarda o objecto de investigação completo»); `docs/SCHEMA.md` §Projecto | P2 concluído | Ligar `runs` ao motor de pesquisa |
+| Duplicar/arquivar/retomar/cancelar | **Implementado e testado**: `POST …/duplicate` (título «(cópia)», checkpoint), `archive`/`resume`/`cancel` com `archivedAt`, `checkpoints` com contagens reais; outro utilizador recebe 404 | `tests/evidence.mjs` | P2 concluído | — |
+| Exportar projecto/relatório | **Não implementado** (só exportação da conta em JSON) | — | P2 | Relatório de 18 secções em PDF/CSV/JSON |
 | Persistência | Atómica (ficheiro JSON + `rename`), `DATA_DIR` configurável | `server/store.mjs` | P1 | — |
 | **Persistência em produção** | **Não garantida**: plano gratuito sem disco; dados perdem-se em cada deploy, `/api/meta` reporta `durableBetweenDeploys:false` | `server/api.mjs` | **P0 em produção** | Montar disco persistente (plano pago) ou base de dados externa; declarar a limitação na interface (já declarada) |
 | Backups/rollback | Rollback por deploy do Render (funciona); backup de dados **não** existe em produção | — | P1 | Copiar `store.json` de forma agendada para fora da instância |
-| Migrações | Campo `version: 1` no ficheiro, sem migradores por passo | `server/store.mjs` | P2 | Escrever migradores antes de alterar o esquema dos projectos |
+| Migrações | **Implementadas**: `version: 1 → 2` com migradores por passo, registo do que mudou em `migrations`, exposto em `/api/meta`; ficheiro ilegível é preservado (`db.json.broken-*`) | `tests/evidence.mjs` («esquema v1 é migrado para v2») | P2 concluído | Próximo passo exige migrador para o motor de pesquisa |
 | Retenção | **Não implementada** (sem purga de auditoria, sessões expiradas ou uso) | — | P1 | Definir prazos (auditoria 180 d, sessões 30 d, uso 90 d) e implementar |
 
 ## Parte E — Fornecedores de IA e chaves
@@ -84,7 +85,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Recolha real de páginas | `/api/fetch` com limites de tamanho, timeout e bloqueio SSRF | `tests/real-fetch.mjs`; sondagem pública 6 771 B com hash | P2 concluído | — |
 | 13 agentes com I/O estruturado | Protótipo local com guardas e *budget*; sem persistência de execuções | `tests/agents.mjs` 18/18 | P2 | Fase P3: `agent_runs`, versão de prompt, estado, logs |
 | Pipeline de 20 passos (pesquisa profunda) | **Parcial**: interpretação, variantes de consulta, recolha, extracção básica. Faltam deduplicação, verificação de datas/origem/integridade, contra-provas, lacunas, grafo, relatório rastreável, revisão humana | `src/core/research.js` | P2 | Fase P2 |
-| Registo de provas (ID único, hash, datas, excerto, estado) | **Não implementado** no servidor (existe modelo local) | — | P2 | Fase P2 — é o alicerce do relatório rastreável |
+| Registo de provas (ID único, hash, datas, excerto, estado) | **Implementado e testado**: excerto obrigatório, SHA-256 do excerto, URL canónico (sem UTM/fragmento), datas de publicação/acontecimento/recolha/verificação, tipo de fonte, posição, método de extracção, limitações, histórico por prova | `tests/evidence.mjs` 17/17 · `docs/EVIDENCIA.md` | P2 concluído | Verificação automática de acessibilidade e extracção de PDF/OCR |
+| Corroboração independente e duplicados | **Implementado e testado**: `originKey` por `syndicationOf`/domínio/hash; 10 cópias de um comunicado = 1 origem; duplicado exacto devolvido em vez de contado; factores expostos em cada conclusão | `tests/evidence.mjs` («dez cópias… dão UMA origem») | P2 concluído | Pesos de fiabilidade por fonte |
+| Estados das conclusões (9) e recusa de promoção | **Implementado e testado**: `confirmada` exige 2 origens + 1 primária + sem contradição; prova contrária activa força «contraditória»; conclusão nasce fraca; sugestão nunca é aplicada automaticamente | `tests/evidence.mjs`; interface em `docs/shot-18-provas.png` | P2 concluído | — |
+| Retirada de provas sem perda de histórico | **Implementado e testado**: `DELETE` exige motivo, marca `retractedAt`, mantém a prova na lista e anota a retirada nas alegações dependentes | `tests/evidence.mjs` | P2 concluído | — |
 | Perfis de profundidade Rápida/Normal/Profunda/Exaustiva | Parcial (limites por perfil no motor local); sem exposição do motivo de paragem na UI | `src/core/agents.js` | P2 | Mostrar «parou porque…» e fontes efectivamente consultadas |
 | Conectores declarados (cobertura, licença, limites…) | Catálogo real auditado (12 APIs, 3 tentativas) | `docs/APIS-auditoria.json`; `docs/APIS.md` | P2 concluído | — |
 | Conteúdo web/PDF como não confiável | Guardas de injecção no motor de agentes (testes locais) | `tests/agents.mjs` | P0 na fase P2 | Revalidar quando a extracção de PDF entrar |
@@ -106,6 +110,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 - **P0**: persistência em produção (sem disco ⇒ perda de dados em cada deploy); MFA ausente para ADMIN.
 - **P1**: recuperação de palavra-passe; retenção/purga; backups; motivo obrigatório no acesso
   administrativo; reautenticação em acções sensíveis.
-- **P2**: esquema completo de investigação; registo de provas; pipeline de pesquisa profunda;
-  router com preferências/quotas; migrações versionadas; `frame-ancestors`.
+- **P2 (feito nesta fase)**: esquema completo de investigação, registo de provas, corroboração por
+  origens independentes, nove estados validados no servidor, retirada com motivo, duplicar/arquivar/
+  retomar/cancelar, migração v1→v2.
+- **P2 (em falta)**: pipeline de pesquisa profunda de 20 passos ligado a `runs`; relatório de 18
+  secções; grafo a partir de provas; verificação automática de acessibilidade; router com
+  preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

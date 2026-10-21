@@ -49,6 +49,15 @@ async function fill(sel, index, value) {
   }, [sel, index, value]);
   await p.waitForTimeout(120);
 }
+async function fillByPlaceholder(placeholder, value) {
+  await p.evaluate(([ph, v]) => {
+    const inp = [...document.querySelectorAll('#accroot input')].find((i) => (i.placeholder || '').includes(ph));
+    if (!inp) throw new Error('campo com placeholder «' + ph + '» não encontrado');
+    inp.value = v;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  }, [placeholder, value]);
+  await p.waitForTimeout(120);
+}
 async function clickText(sel, text) {
   for (let i = 0; i < 12; i++) {
     const ok = await p.evaluate(([s, t2]) => {
@@ -63,6 +72,7 @@ async function clickText(sel, text) {
 }
 
 await p.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+
 await p.waitForTimeout(1200);
 const email = 'ui' + Date.now().toString(36) + '@ex.pt';
 
@@ -215,6 +225,82 @@ await t('utilizador comum não vê a área de administração', async () => {
   return 'sem separador · métricas/utilizadores/auditoria → 403 no servidor';
 });
 
+async function waitText(pattern, label, timeout) {
+  /* `waitForFunction` avalia uma string e a CSP (sem 'unsafe-eval') recusa-a:
+     o padrão é passado como argumento para um evaluate normal. */
+  const t0 = Date.now();
+  for (;;) {
+    const hit = await p.evaluate(
+      (src) => new RegExp(src).test((document.getElementById('accroot') || {}).textContent || ''),
+      pattern.source
+    );
+    if (hit) return true;
+    if (Date.now() - t0 > (timeout || 20000)) {
+      const txt = await p.textContent('#accroot');
+      const st = await p.evaluate(() => {
+        const s2 = window.VN.accountUI.getState();
+        return { tab: s2.tab, projects: (s2.projects || []).length, detail: !!s2.detail, me: s2.me && s2.me.email };
+      });
+      const fs2 = await import('node:fs');
+      fs2.writeFileSync('/tmp/panel-debug.txt', String(txt));
+      throw new Error(label + ' — estado: ' + JSON.stringify(st) + ' — painel em /tmp/panel-debug.txt');
+    }
+    await p.waitForTimeout(200);
+  }
+}
+
+await t('projecto aberto mostra provas, origens independentes e estado sugerido', async () => {
+  await clickText('#accroot .btn', 'Projectos');
+  /* recarregar do servidor: o teste não depende do momento em que a sessão anterior pintou */
+  await p.evaluate(() => window.VN.accountUI.refresh());
+  await waitText(/Abrir/, 'lista de projectos sem botão Abrir', 15000);
+  await clickText('#accroot .btn', 'Abrir');
+  await waitText(/Registo de provas/, 'detalhe do projecto não abriu');
+
+  /* prova primária */
+  await fillByPlaceholder('título do documento', 'Relatório oficial');
+  await fillByPlaceholder('https://', 'https://exemplo.pt/relatorio?utm_source=boletim');
+  await fillByPlaceholder('o trecho exacto', 'O relatório confirma a transferência de 12 milhões de euros.');
+  await clickText('#accroot .btn', 'Registar prova');
+  await waitText(/Prova registada/, 'prova não foi aceite');
+  const txt1 = await p.textContent('#accroot');
+  if (!/host:exemplo\.pt/.test(txt1)) throw new Error('origem não mostrada na lista de provas');
+  if (!/utm_source/.test(txt1) === false) throw new Error('o URL canónico devia estar sem UTM');
+
+  /* mesma prova outra vez (o formulário fica limpo depois de guardar): não duplica */
+  await fillByPlaceholder('título do documento', 'Relatório oficial');
+  await fillByPlaceholder('https://', 'https://exemplo.pt/relatorio');   // mesmo URL canónico, sem UTM
+  await fillByPlaceholder('o trecho exacto', 'O relatório confirma a transferência de 12 milhões de euros.');
+  await clickText('#accroot .btn', 'Registar prova');
+  try { await waitFor(() => /já existia/.test(document.getElementById('accmsg').textContent), 20000); }
+  catch { throw new Error('duplicado não foi reconhecido — mensagem: ' + (await p.textContent('#accmsg'))); }
+
+  /* conclusão */
+  await fillByPlaceholder('o que se afirma', 'A transferência de 12 milhões de euros ocorreu em 2021');
+  await clickText('#accroot .btn', 'Registar conclusão');
+  await waitText(/A transferência de 12 milhões/, 'conclusão não apareceu no painel');
+  /* ligar a prova à conclusão (a ligação é explícita, não automática) */
+  await p.evaluate(() => {
+    const sel = [...document.querySelectorAll('#accroot select')]
+      .find((s2) => [...s2.options].some((o) => /ligar prova/.test(o.textContent)));
+    if (!sel) throw new Error('sem selector de ligação de provas');
+    const opt = [...sel.options].find((o) => o.value);
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await waitText(/origens independentes 1/, 'factores de corroboração não visíveis');
+  const txt2 = await p.textContent('#accroot');
+  if (!/sugerido pelas provas: insuficiente/.test(txt2)) throw new Error('estado sugerido incorreto: ' + (txt2.match(/sugerido pelas provas: \w[-\w]*/) || ['?'])[0]);
+  return 'prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»';
+});
+
+/* captura final: conclusão com factores de corroboração visíveis */
+await p.evaluate(() => {
+  const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Conclusões e alegações/.test(x.textContent));
+  if (h) h.scrollIntoView({ block: 'start' });
+});
+await p.waitForTimeout(300);
+await p.screenshot({ path: '/home/user/docs/shot-18-provas.png' });
 await p.screenshot({ path: '/home/user/docs/shot-17-conta.png' });
 await B.close();
 srv.kill('SIGTERM');

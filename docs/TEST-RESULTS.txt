@@ -204,3 +204,43 @@ PASS DELETE /api/auth/account com palavra-passe → 200 · projectos e sessões 
 PASS POST /api/providers/groq/key com cofre inactivo → 503 needsEnv=APP_SECRET (não finge guardar)
 PASS tests/deployed.mjs → 6/6 (grafo 69/126, pesquisa, /api/fetch 200/6 771 B, VIES 80/80/83, 403 cross-origin, SSRF recusado)
 NOTA: nenhuma resposta 503 do Render foi observada nesta sessão; a primeira resposta após inactividade demorou 13,46 s.
+
+== 15. FASE 2: PROVAS, CORROBORAÇÃO E CONCLUSÕES (tests/evidence.mjs)
+
+== P2 · PROVAS, CORROBORAÇÃO E CONCLUSÕES (tests/evidence.mjs)
+
+PASS projecto guarda o objecto de investigação completo → pergunta, âmbito, hipótese (hipotese), critérios, orçamento e data de referência presentes
+PASS hipótese não sobe a facto sem passar pelas regras do servidor → estado forçado no corpo do pedido é ignorado
+PASS prova primária é aceite com hash, URL canónico e origem → hash 00500897c7cf… · canónico https://exemplo.pt/relatorio · origem host:exemplo.pt
+PASS prova sem excerto é recusada (não se verifica o que não se citou) → 400 · excerpt é obrigatório: uma prova sem excerto não pode ser verificada
+PASS duplicado exacto não inflaciona a contagem de origens → devolve a prova existente (ev-i0kxiN4dtns) e mantém 1 registo
+PASS dez cópias de um comunicado dão UMA origem independente → 10 registos · 1 origem · 9 cópias redundantes · servidor recusa «corroborada independente» (409): exige pelo menos 2 origens independentes (tem 1)
+PASS servidor recusa «confirmada» sem prova primária e origens independentes → recusado com 1 origem (exige pelo menos 2 origens independentes (tem 1)…) · aceite com 2 origens e 1 primária
+PASS prova contrária torna a conclusão «contraditória» e não desaparece → «confirmada» recusada (409): existe prova contrária activa: o estado correcto é «contraditória» · «contraditória» aceite
+PASS prova pode ser anotada (limitações, data de verificação) com histórico → limitações, data de verificação e histórico de 2 entradas
+PASS retirar prova exige motivo e mantém o registo auditável → retirada com motivo · prova conservada · alegação notificada no histórico
+PASS prova de outro utilizador não é acessível nem associável → provas e alegações isoladas · ligação cruzada recusada com 404
+PASS estado inválido é recusado com a lista dos nove estados → 9 estados permitidos · «verdade-absoluta» recusado
+PASS alegação nova não pode nascer «confirmada» → 409 · começa sempre como hipótese/insuficiente/alegação atribuída
+PASS duplicar, arquivar, retomar e cancelar projecto → cópia, arquivo, retoma, cancelamento · B recebe 404
+PASS checkpoint regista o estado com contagens reais → provas 13 · alegações 4
+PASS auditoria registou provas e alegações sem conteúdo sensível → eventos de provas e alegações presentes · sem palavras-passe nem URLs com UTM
+PASS esquema v1 é migrado para v2 com registo do que mudou → v1 → v2 · 1 projecto(s) completados com os campos da v2
+
+17/17 passaram
+
+== 16. INTERFACE DE PROVAS (tests/account-ui.mjs, 10 testes)
+CONTA E ADMINISTRAÇÃO — INTERFACE
+PASS botão Conta abre a área de autenticação → formulário de entrada visível (Entrar. Sem conta, os dados de investigação continuam a vive…)
+PASS registo pela interface cria sessão e mostra o email → sessão criada para uimvifa1uw@ex.pt
+PASS política de palavra-passe é aplicada pelo servidor, não pela interface → registo com «123» → 400 (palavra-passe fraca: pelo menos 10 caracteres, uma minúscula)
+PASS projecto criado na interface aparece na lista → projecto visível na tabela
+PASS separador de chaves mostra o estado do cofre e recusa guardar sem APP_SECRET? (cofre activo) → 8 fornecedores listados · cofre activo
+PASS chave de IA: guardada com máscara e validada contra o fornecedor real → máscara «chav…123» · Groq falhou em «auth»: credencial recusada (HTTP 401)uimvifa1uw@ex
+PASS sessão terminada esconde os dados privados → formulário de autenticação reposto, sem dados privados e sessão inválida no servidor
+PASS administrador vê métricas reais e auditoria → utilizadores: 2 · auditoria com eventos reais · indisponíveis declarados
+PASS utilizador comum não vê a área de administração → sem separador · métricas/utilizadores/auditoria → 403 no servidor
+PASS projecto aberto mostra provas, origens independentes e estado sugerido → prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»
+erros de runtime: 0 []
+
+10/10 passaram
