@@ -47,9 +47,9 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: d7686ea Verificação da fase 3C no serviço público: acessibilidade, filtro, exportação e orçamento
-- árvore de trabalho: com alterações locais
-- último bloco de resultados: §29 — FASE 3D — MEMÓRIA, RESUMO DESCARREGÁVEL, CÓPIA DE SEGURANÇA, HOMÓNIMOS E CAMINHO
+- último commit: ad207d5 Verificação da fase 3D no serviço público: memória, resumo, homónimos, cópia e reposição
+- árvore de trabalho: limpa
+- último bloco de resultados: §30 — FASE 3D NO SERVIÇO PÚBLICO (commit 971145a, versão 2.0.0-fase3d)
 - documentação: 18 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, BENCHMARKS.md, DECISOES.md, ESTADO-ATUAL.md, EVIDENCIA.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md)
 
 ### Coerência
