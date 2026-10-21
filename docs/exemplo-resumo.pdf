@@ -7,45 +7,46 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
 endobj
 3 0 obj
-<< /Length 3468 >>
+<< /Length 3583 >>
 stream
 BT /F2 17.00 Tf 1 0 0 1 48.00 768.89 Tm (Resumo da investigação) Tj ET
-BT /F1 8.20 Tf 1 0 0 1 48.00 756.69 Tm (Teste · 2026-10-21) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 756.69 Tm (Demonstração - dados fictícios · 2026-10-21) Tj ET
 0.75 0.78 0.82 RG 0.6 w 48 751.29 m 547.28 751.29 l S
-BT /F1 9.80 Tf 1 0 0 1 48.00 729.49 Tm (Pergunta: Quem financiou?) Tj ET
-BT /F1 8.20 Tf 1 0 0 1 48.00 716.39 Tm (Gerado em 2026-10-21 19:47 UTC · dados do próprio projecto · 4 avisos de leitura \(ver primeira secção\)) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 48.00 729.49 Tm (Pergunta: Quem financiou a fundação?) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 716.39 Tm (Gerado em 2026-10-21 19:55 UTC · dados do próprio projecto · 4 avisos de leitura \(ver primeira secção\)) Tj ET
 BT /F2 12.60 Tf 1 0 0 1 48.00 692.39 Tm (Estado em números) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 679.19 Tm (Conclusões: 1 · confirmada: 1) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 666.79 Tm (Provas: 1 activas · 0 retiradas · 1 origens independentes · 0 sem verificação) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 654.39 Tm (Fontes inacessíveis: 0) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 679.19 Tm (Conclusões: 1 · corroborada independente: 1) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 666.79 Tm (Provas: 2 activas · 0 retiradas · 2 origens independentes · 0 sem verificação) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 654.39 Tm (Fontes inacessíveis: 1) Tj ET
 BT /F1 9.80 Tf 1 0 0 1 56.00 641.99 Tm (Relações: 1 \(0 inferidas\)) Tj ET
 BT /F1 9.80 Tf 1 0 0 1 56.00 629.59 Tm (Execuções: 1) Tj ET
 BT /F1 9.80 Tf 1 0 0 1 56.00 617.19 Tm (Memória: 2 entradas) Tj ET
 BT /F2 12.60 Tf 1 0 0 1 48.00 597.99 Tm (Conclusões e o que as sustenta) Tj ET
 BT /F1 9.80 Tf 1 0 0 1 48.00 584.79 Tm (1. A empresa financiou a fundação em 2019.) Tj ET
-BT /F1 8.20 Tf 1 0 0 1 48.00 571.69 Tm (estado: confirmada \(ACIMA do sustentado: insuficiente\) · provas: 1 · origens independentes: 1 · contrárias: 0) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 571.69 Tm (estado: corroborada independente · provas: 2 · origens independentes: 2 · contrárias: 1) Tj ET
 BT /F2 12.60 Tf 1 0 0 1 48.00 548.69 Tm (Provas registadas) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 535.49 Tm (- Doc oficial - primaria · insuficiente · acesso: acessivel · 2020-05-01) Tj ET
-BT /F1 8.20 Tf 1 0 0 1 48.00 523.89 Tm (https://a.pt/1) Tj ET
-BT /F2 12.60 Tf 1 0 0 1 48.00 503.89 Tm (Relações registadas) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 490.69 Tm (- A -> B · financed · 1 prova\(s\) · 1 origem\(ns\)) Tj ET
-BT /F2 12.60 Tf 1 0 0 1 48.00 470.69 Tm (Decisões e lacunas \(memória\)) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 457.49 Tm (- decisão: Limitar a Portugal - âmbito definido com o cliente) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 444.29 Tm (- lacuna: Falta o registo de 2018 - pedir à conservatória) Tj ET
-BT /F2 12.60 Tf 1 0 0 1 48.00 424.29 Tm (Custos e ferramentas) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 411.09 Tm (- run-1 · normal · aguarda-revisao-humana · 1/1 passos · parou: sem chave de IA) Tj ET
-BT /F1 8.20 Tf 1 0 0 1 48.00 399.49 Tm (chamadas: 2 · custo reportado: 0.002 · há chamadas cujo custo o fornecedor não reportou: o total real é igual ou superior ao registado) Tj ET
-BT /F2 12.60 Tf 1 0 0 1 48.00 379.49 Tm (Próximos passos) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 366.29 Tm (- rever 1 conclusão\(ões\) cujo estado está acima do que as provas sustentam) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 353.09 Tm (- procurar contra-provas para 1 conclusão\(ões\) sem qualquer prova contrária) Tj ET
-BT /F2 12.60 Tf 1 0 0 1 48.00 333.09 Tm (Avisos de leitura) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 319.89 Tm (- um resumo não é prova: cada afirmação aponta a prova registada que a sustenta) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 306.69 Tm (- os estados indicam o que as provas sustentam, não uma verdade absoluta) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 293.49 Tm (- o que não está registado aparece como «Não disponível» em vez de ser preenchido) Tj ET
-BT /F1 9.80 Tf 1 0 0 1 56.00 280.29 Tm (- cópias do mesmo texto contam como uma só origem independente) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 535.49 Tm (- Registo comercial \(fictício\) - primaria · insuficiente · acesso: acessivel · 2020-05-01) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 523.89 Tm (https://exemplo.pt/1) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 510.69 Tm (- Notícia \(fictícia\) - secundaria · insuficiente · acesso: inacessivel · 2020-06-02) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 499.09 Tm (https://outro-exemplo.pt/2) Tj ET
+BT /F2 12.60 Tf 1 0 0 1 48.00 479.09 Tm (Relações registadas) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 465.89 Tm (- Empresa X -> Fundação Y · financed · 1 prova\(s\) · 1 origem\(ns\)) Tj ET
+BT /F2 12.60 Tf 1 0 0 1 48.00 445.89 Tm (Decisões e lacunas \(memória\)) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 432.69 Tm (- decisão: Limitar a Portugal - âmbito acordado com o cliente) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 419.49 Tm (- lacuna: Falta o registo de 2018 - pedir à conservatória) Tj ET
+BT /F2 12.60 Tf 1 0 0 1 48.00 399.49 Tm (Custos e ferramentas) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 386.29 Tm (- run-1 · normal · aguarda-revisao-humana · 20/20 passos) Tj ET
+BT /F1 8.20 Tf 1 0 0 1 48.00 374.69 Tm (chamadas: 2 · custo reportado: 0.002 · há chamadas cujo custo o fornecedor não reportou: o total real é igual ou superior ao registado) Tj ET
+BT /F2 12.60 Tf 1 0 0 1 48.00 354.69 Tm (Próximos passos) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 341.49 Tm (- tratar 1 fonte\(s\) inacessível\(eis\): arquivar ou substituir) Tj ET
+BT /F2 12.60 Tf 1 0 0 1 48.00 321.49 Tm (Avisos de leitura) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 308.29 Tm (- um resumo não é prova: cada afirmação aponta a prova registada que a sustenta) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 295.09 Tm (- os estados indicam o que as provas sustentam, não uma verdade absoluta) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 281.89 Tm (- o que não está registado aparece como «Não disponível» em vez de ser preenchido) Tj ET
+BT /F1 9.80 Tf 1 0 0 1 56.00 268.69 Tm (- cópias do mesmo texto contam como uma só origem independente) Tj ET
 0.85 0.87 0.90 RG 0.5 w 48 42 m 547.28 42 l S
-BT /F1 8.2 Tf 1 0 0 1 48 30 Tm (Meridiano - resumo gerado a partir dos dados registados: um resumo nao substitui as provas.) Tj ET
-BT /F1 8.2 Tf 1 0 0 1 477.28 30 Tm (pagina 1 de 1) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 48 30 Tm (Meridiano - resumo gerado a partir dos dados registados: um resumo não substitui as provas.) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 477.28 30 Tm (página 1 de 1) Tj ET
 endstream
 endobj
 4 0 obj
@@ -58,7 +59,7 @@ endobj
 << /Type /Catalog /Pages 5 0 R >>
 endobj
 7 0 obj
-<< /Title (Resumo da investigação) /Producer (Meridiano) /CreationDate (D:20261021194727Z) >>
+<< /Title (Resumo da investigação) /Producer (Meridiano) /CreationDate (D:20261021195547Z) >>
 endobj
 xref
 0 8
@@ -66,12 +67,12 @@ xref
 0000000015 00000 n 
 0000000112 00000 n 
 0000000214 00000 n 
-0000003734 00000 n 
-0000003876 00000 n 
-0000003933 00000 n 
-0000003982 00000 n 
+0000003849 00000 n 
+0000003991 00000 n 
+0000004048 00000 n 
+0000004097 00000 n 
 trailer
 << /Size 8 /Root 6 0 R /Info 7 0 R >>
 startxref
-4091
+4206
 %%EOF

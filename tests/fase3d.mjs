@@ -269,7 +269,7 @@ await t('resumo MD/CSV/PDF saem com o aviso e o nome do projecto', async () => {
   ok(pdf.buf.slice(0, 5).toString() === '%PDF-', 'assinatura PDF');
   ok(pdf.buf.toString('latin1').includes('%%EOF'), 'PDF sem fim');
   ok(pdf.buf.toString('latin1').includes('Conclus'), 'PDF sem as conclusões');
-  ok(/um resumo nao substitui as provas/.test(pdf.buf.toString('latin1')), 'PDF sem o aviso no rodapé');
+  ok(/um resumo não substitui as provas/.test(pdf.buf.toString('latin1')), 'PDF sem o aviso no rodapé');
   const invalido = await A.call('GET', '/api/projects/' + pid + '/summary?format=docx');
   ok(invalido.status === 400, 'formato inválido aceite');
 });

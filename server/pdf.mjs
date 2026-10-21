@@ -145,9 +145,9 @@ export function renderPdf(doc) {
   const footer = (i) => [
     '0.85 0.87 0.90 RG 0.5 w ' + MARGIN.left + ' ' + (MARGIN.bottom - 12) + ' m ' + (A4.w - MARGIN.right) + ' ' + (MARGIN.bottom - 12) + ' l S',
     'BT /F1 ' + SIZE.small + ' Tf 1 0 0 1 ' + MARGIN.left + ' ' + (MARGIN.bottom - 24) + ' Tm (' +
-      escapePdf('Meridiano - resumo gerado a partir dos dados registados: um resumo nao substitui as provas.') + ') Tj ET',
+      escapePdf('Meridiano - resumo gerado a partir dos dados registados: um resumo não substitui as provas.') + ') Tj ET',
     'BT /F1 ' + SIZE.small + ' Tf 1 0 0 1 ' + (A4.w - MARGIN.right - 70) + ' ' + (MARGIN.bottom - 24) + ' Tm (' +
-      escapePdf('pagina ' + (i + 1) + ' de ' + total) + ') Tj ET'
+      escapePdf('página ' + (i + 1) + ' de ' + total) + ') Tj ET'
   ];
 
   /* montagem dos objectos */
