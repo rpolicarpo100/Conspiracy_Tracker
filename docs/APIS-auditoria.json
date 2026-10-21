@@ -1,0 +1,2818 @@
+{
+  "generatedAt": "2026-10-21T16:10:52.668Z",
+  "method": "auditoria automática via agente local; 3 dimensões com pesos declarados em src/core/apis.js",
+  "attempts": 3,
+  "durationMs": 18887,
+  "weights": {
+    "security": [
+      [
+        "https",
+        25,
+        "todo o pedido é feito por TLS (https)"
+      ],
+      [
+        "httpsRedirect",
+        10,
+        "redireccionamentos mantêm https"
+      ],
+      [
+        "hsts",
+        10,
+        "cabeçalho Strict-Transport-Security presente"
+      ],
+      [
+        "browserSafe",
+        10,
+        "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+      ],
+      [
+        "robots",
+        10,
+        "robots.txt permite o caminho pedido"
+      ],
+      [
+        "noKeyInUrl",
+        15,
+        "não exige chave na query string"
+      ],
+      [
+        "headers",
+        10,
+        "Content-Security-Policy / X-Content-Type-Options presentes"
+      ],
+      [
+        "noCredentials",
+        10,
+        "nenhuma credencial foi necessária nesta auditoria"
+      ]
+    ],
+    "reliability": [
+      [
+        "availability",
+        40,
+        "número de pedidos bem sucedidos em 3 tentativas"
+      ],
+      [
+        "latency",
+        25,
+        "latência mediana"
+      ],
+      [
+        "consistency",
+        15,
+        "tipo de conteúdo estável entre tentativas"
+      ],
+      [
+        "errorSemantics",
+        15,
+        "erro devolve 4xx (não 5xx nem 200 com erro)"
+      ]
+    ],
+    "usefulness": [
+      [
+        "curated",
+        60,
+        "valor declarado e justificado para a investigação"
+      ],
+      [
+        "structure",
+        20,
+        "resposta é máquina-legível e traz os campos esperados"
+      ],
+      [
+        "coverage",
+        20,
+        "cobre entidades e ligações reais (não só agregados)"
+      ]
+    ]
+  },
+  "results": [
+    {
+      "id": "gleif",
+      "name": "GLEIF — LEI (Legal Entity Identifier)",
+      "group": "societário",
+      "url": "https://api.gleif.org/api/v1/lei-records?page%5Bsize%5D=1",
+      "docs": "https://www.gleif.org/en/lei-data/gleif-api",
+      "licence": "Dados abertos CC0 (GLEIF)",
+      "auth": "nenhuma",
+      "answers": "Identificador único internacional de entidades legais, nome, país, endereço registado, entidade-mãe (relação de reporte).",
+      "limits": "Não traz beneficiário efectivo nem capital; a relação «ultimate parent» é declarada pela própria entidade.",
+      "auditedAt": "2026-10-21T16:10:36.065Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 3194,
+          "type": "application/vnd.api+json",
+          "sha256": "fbab189370343720",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 3194,
+          "type": "application/vnd.api+json",
+          "sha256": "fbab189370343720",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 3194,
+          "type": "application/vnd.api+json",
+          "sha256": "fbab189370343720",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/vnd.api+json",
+        "cache-control": "private, must-revalidate",
+        "date": "Wed, 21 Oct 2026 16:10:34 GMT",
+        "strict-transport-security": "max-age=63072000; includeSubdomains; preload",
+        "content-security-policy": "default-src 'self' 'unsafe-inline' https://*.gleif.org;",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      },
+      "scores": {
+        "security": 100,
+        "reliability": 95,
+        "usefulness": 93
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 10,
+            "text": "2 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 284 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 15,
+            "text": "recurso inexistente devolve 404 (erro honesto)"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 52.8,
+            "text": "Liga sucursais e grupos entre países pelo mesmo identificador — resolve homónimos de empresas."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «data.0.id» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 100,
+        "reliability": 95,
+        "usefulness": 92.8
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "aprovada",
+      "verdictWhy": "Todas as dimensões ≥ 75.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "vies",
+      "name": "VIES — validação de NIF intracomunitário",
+      "group": "societário",
+      "url": "https://ec.europa.eu/taxation_customs/vies/rest-api/ms/PT/vat/500000000",
+      "docs": "https://ec.europa.eu/taxation_customs/vies/#/technical-information",
+      "licence": "Serviço público da Comissão Europeia (uso razoável)",
+      "auth": "nenhuma",
+      "answers": "Se um número de IVA está registado e activo, e o nome e endereço associados no momento da consulta.",
+      "limits": "Só valida; não devolve histórico nem participações. O nome pode vir incompleto. Guardar o resultado com data — muda com o tempo.",
+      "auditedAt": "2026-10-21T16:10:37.850Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 486,
+          "type": "application/json",
+          "sha256": "8f9953ce64470dae",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 486,
+          "type": "application/json",
+          "sha256": "e6f85d95f7793ea9",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 486,
+          "type": "application/json",
+          "sha256": "cca230370099912a",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "date": "Wed, 21 Oct 2026 16:10:36 GMT",
+        "server": "Europa"
+      },
+      "scores": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 83
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 0,
+            "text": "sem CSP/XCTO/Referrer-Policy"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 327 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 43.199999999999996,
+            "text": "Confirma existência legal de uma contraparte antes de aceitar um nome como identidade."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «isValid» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 83.19999999999999
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "aprovada",
+      "verdictWhy": "Todas as dimensões ≥ 75.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "wikidata",
+      "name": "Wikidata — entidades e identificadores",
+      "group": "referência",
+      "url": "https://www.wikidata.org/w/rest.php/v1/search/page?q=funda%C3%A7%C3%A3o&limit=1",
+      "docs": "https://www.wikidata.org/wiki/Wikidata:REST_API",
+      "licence": "CC0",
+      "auth": "nenhuma",
+      "answers": "Identificadores estáveis (Q…) que ligam a mesma pessoa/empresa em bases diferentes; ligações a registos oficiais por propriedade.",
+      "limits": "Conteúdo editável por qualquer pessoa. Nunca é fonte primária: serve para desambiguar e para chegar ao registo oficial. O robots.txt proíbe /w/ a rastreadores — o acesso é feito ao abrigo da política de cliente de API, declarada na tarefa.",
+      "auditedAt": "2026-10-21T16:10:38.518Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 185,
+          "type": "application/json",
+          "sha256": "7328be1cc2f9db12",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 185,
+          "type": "application/json",
+          "sha256": "7328be1cc2f9db12",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 185,
+          "type": "application/json",
+          "sha256": "7328be1cc2f9db12",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "163",
+        "cache-control": "no-cache",
+        "date": "Wed, 21 Oct 2026 16:10:38 GMT",
+        "strict-transport-security": "max-age=106384710; includeSubDomains; preload",
+        "x-content-type-options": "nosniff",
+        "access-control-allow-origin": "*",
+        "x-request-id": "644007b9-6940-4a51-b4f6-40814c9c5c14",
+        "server": "mw-api-ext.codfw.main-5b7654987f-gczwv",
+        "vary": "x-restbase-compat, Accept-Encoding"
+      },
+      "scores": {
+        "security": 95,
+        "reliability": 80,
+        "usefulness": 74
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "CORS declarado: *"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt proíbe /w/rest.php/v1/search/page para rastreadores; pedido feito como cliente de API com UA identificado, por decisão registada do operador"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 5,
+            "text": "1 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 165 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 48,
+            "text": "Resolve homónimos e dá o mapa de identificadores de outras bases — o passo que evita fundir duas pessoas erradas."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «pages» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 6,
+            "text": "dados agregados: não descreve entidades"
+          }
+        ]
+      },
+      "points": {
+        "security": 95,
+        "reliability": 80,
+        "usefulness": 74
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "condicional",
+      "verdictWhy": "Dimensão mais fraca em 74/100 — usar com as ressalvas listadas.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "dados-gov",
+      "name": "dados.gov.pt — catálogo de dados abertos",
+      "group": "nacional",
+      "url": "https://dados.gov.pt/api/1/datasets/?page_size=1",
+      "docs": "https://dados.gov.pt/pt/docapi/",
+      "licence": "Dados abertos (ver licença de cada conjunto)",
+      "auth": "nenhuma",
+      "answers": "Índice de conjuntos de dados públicos portugueses (contratos, subsídios, efetivos) com URL de descarga.",
+      "limits": "Catálogo, não dados: a licença e a qualidade variam por conjunto. Muitos conjuntos estão desactualizados.",
+      "auditedAt": "2026-10-21T16:10:41.377Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 6771,
+          "type": "application/json",
+          "sha256": "11e6edc32f8f2e70",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 6771,
+          "type": "application/json",
+          "sha256": "11e6edc32f8f2e70",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 6771,
+          "type": "application/json",
+          "sha256": "11e6edc32f8f2e70",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "3497",
+        "cache-control": "no-store",
+        "date": "Wed, 21 Oct 2026 16:10:39 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; frame-ancestors 'self'",
+        "x-content-type-options": "nosniff, nosniff",
+        "x-frame-options": "SAMEORIGIN, SAMEORIGIN",
+        "referrer-policy": "strict-origin-when-cross-origin, strict-origin-when-cross-origin",
+        "server": "GreenLeprechaun",
+        "vary": "Accept-Encoding, Origin, Cookie"
+      },
+      "scores": {
+        "security": 100,
+        "reliability": 74,
+        "usefulness": 90
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 10,
+            "text": "3 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 19,
+            "text": "mediana 507 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 50.4,
+            "text": "Porta de entrada para os dados administrativos que documentam transferências públicas."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «total» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 100,
+        "reliability": 74,
+        "usefulness": 90.4
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "condicional",
+      "verdictWhy": "Dimensão mais fraca em 74/100 — usar com as ressalvas listadas.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "dr",
+      "name": "Diário da República — pesquisa",
+      "group": "nacional",
+      "url": "https://diariodarepublica.pt/dr/pesquisa?q=funda%C3%A7%C3%A3o",
+      "docs": "https://diariodarepublica.pt/dr/ajuda",
+      "licence": "Consulta pública (termos do IMPIC/INCM)",
+      "auth": "nenhuma",
+      "answers": "Actos societários publicados: constituição, alterações de capital, gerentes, fusões, dissoluções.",
+      "limits": "A listagem é gerada no cliente (a extracção automática não vê resultados). É prova documental, não dado estruturado.",
+      "auditedAt": "2026-10-21T16:10:43.094Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 2346,
+          "type": "text/html; charset=utf-8",
+          "sha256": "0794abe5f8088cfd",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 2346,
+          "type": "text/html; charset=utf-8",
+          "sha256": "0794abe5f8088cfd",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 2346,
+          "type": "text/html; charset=utf-8",
+          "sha256": "0794abe5f8088cfd",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-cache",
+        "date": "Wed, 21 Oct 2026 16:10:42 GMT",
+        "strict-transport-security": "max-age=31536000;includeSubDomains",
+        "content-security-policy": "base-uri 'self'; child-src * gap:; frame-src * gap:; connect-src *; default-src 'self' 'unsafe-inline' *.google-analytics.com *.hotjar.com *.googletagmanager.com *.dre.pt *.diariodarepublica.pt *.hotjar.io *.doubleclick.net *.knightlab.com *.google.com *.google.pt gap: 'unsafe-inline' 'unsafe-eval'; font-src 'self' fonts.gstatic.com themes.googleusercontent.com data:; img-src * data: blob:; script-src 'unsafe-inline' * 'unsafe-inline' 'unsafe-eval'; style-src 'self' *.gstatic.com 'unsafe-inline'; frame-ancestors *.incm.pt *.dre.pt *.diariodarepublica.pt 'self' gap:; report-to outsystems-csp-report; report-uri /SecurityUtils/rest/Report/ReportViolations?Params=voHTPIRgslNWWiDPr4ws8af52LTkHb8JGqUCvQAsEKJpwoADzx6KTZRaAxOXwOpS%2FT5ddNQsLazh8NdtGF7HkA%3D%3D;",
+        "x-content-type-options": "nosniff",
+        "server": "CloudFront",
+        "vary": "Accept-Encoding"
+      },
+      "scores": {
+        "security": 100,
+        "reliability": 80,
+        "usefulness": 85
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 10,
+            "text": "2 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 161 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 57,
+            "text": "É a fonte primária portuguesa para participações e órgãos sociais — o que se cita num relatório."
+          },
+          {
+            "key": "structure",
+            "points": 8,
+            "text": "documento legível por humanos (text/html; charset=utf-8) — extracção automática limitada"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 100,
+        "reliability": 80,
+        "usefulness": 85
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "aprovada",
+      "verdictWhy": "Todas as dimensões ≥ 75.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "base",
+      "name": "Portal BASE — contratos públicos",
+      "group": "nacional",
+      "url": "https://www.base.gov.pt/Base4/pt/pesquisa/?type=contratos&texto=500000000",
+      "docs": "https://www.base.gov.pt/Base4/pt/ayuda/",
+      "licence": "Dados abertos do Estado (ver termos do BASE)",
+      "auth": "nenhuma",
+      "answers": "Contratos públicos: adjudicante, adjudicatário, objecto, valor, data, procedimento.",
+      "limits": "Interface sem API documentada estável; a listagem exige JavaScript. Para volume, usar os ficheiros abertos do portal.",
+      "auditedAt": "2026-10-21T16:10:45.785Z",
+      "runs": [
+        {
+          "status": "falhou",
+          "http": null,
+          "bytes": null,
+          "type": null,
+          "sha256": null,
+          "tlsError": true,
+          "note": "certificado TLS não verificável (UNABLE_TO_VERIFY_LEAF_SIGNATURE) — a recolha não é feita"
+        },
+        {
+          "status": "falhou",
+          "http": null,
+          "bytes": null,
+          "type": null,
+          "sha256": null,
+          "tlsError": true,
+          "note": "certificado TLS não verificável (UNABLE_TO_VERIFY_LEAF_SIGNATURE) — a recolha não é feita"
+        },
+        {
+          "status": "falhou",
+          "http": null,
+          "bytes": null,
+          "type": null,
+          "sha256": null,
+          "tlsError": true,
+          "note": "certificado TLS não verificável (UNABLE_TO_VERIFY_LEAF_SIGNATURE) — a recolha não é feita"
+        }
+      ],
+      "headers": {},
+      "scores": {
+        "security": 80,
+        "reliability": 15,
+        "usefulness": 75
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 0,
+            "text": "sem CSP/XCTO/Referrer-Policy"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          },
+          {
+            "key": "tlsChain",
+            "points": 0,
+            "text": "cadeia de certificados incompleta ou inválida: o pedido é recusado pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 0,
+            "text": "0/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 0,
+            "text": "latência não medida (sem corpo/tempos)"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 55.2,
+            "text": "Liga empresas a dinheiro público com valor e data — a relação financeira mais verificável em PT."
+          },
+          {
+            "key": "structure",
+            "points": 0,
+            "text": "sem resposta para avaliar estrutura"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 80,
+        "reliability": 15,
+        "usefulness": 75.2
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "rejeitada",
+      "verdictWhy": "Falha bloqueante: certificado TLS não verificável",
+      "fatal": [
+        "certificado TLS não verificável"
+      ],
+      "probeOk": false
+    },
+    {
+      "id": "eurostat",
+      "name": "Eurostat — estatísticas europeias",
+      "group": "referência",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nama_10_gdp?format=JSON&geo=PT&time=2020",
+      "docs": "https://wikis.ec.europa.eu/display/EUROSTATHELP/API+-+Getting+started",
+      "licence": "Reutilização livre com atribuição (Comissão Europeia)",
+      "auth": "nenhuma",
+      "answers": "Séries macro (PIB, emprego, comércio) por país/região — contexto para dimensionar valores atípicos.",
+      "limits": "Agregados estatísticos, nunca entidades. Não serve para afirmar nada sobre uma empresa concreta.",
+      "auditedAt": "2026-10-21T16:10:47.389Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 19140,
+          "type": "application/json",
+          "sha256": "b9e5ef4615e3af20",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 19140,
+          "type": "application/json",
+          "sha256": "b9e5ef4615e3af20",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 19140,
+          "type": "application/json",
+          "sha256": "b9e5ef4615e3af20",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "date": "Wed, 21 Oct 2026 16:10:46 GMT",
+        "access-control-allow-origin": "*"
+      },
+      "scores": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 53
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "CORS declarado: *"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 0,
+            "text": "sem CSP/XCTO/Referrer-Policy"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 196 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 27,
+            "text": "Útil para contexto e proporções, não para relações entre entidades."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «dimension» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 6,
+            "text": "dados agregados: não descreve entidades"
+          }
+        ]
+      },
+      "points": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 53
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "fora-do-ambito",
+      "verdictWhy": "Tecnicamente sólida (segurança 80, fiabilidade 80), mas a utilidade é 53/100: descreve agregados, não entidades ou ligações.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "worldbank",
+      "name": "World Bank — indicadores",
+      "group": "referência",
+      "url": "https://api.worldbank.org/v2/country/PT?format=json",
+      "docs": "https://datahelpdesk.worldbank.org/knowledgebase/topics/125589",
+      "licence": "CC BY 4.0",
+      "auth": "nenhuma",
+      "answers": "País/região, rendimento, indicadores de desenvolvimento.",
+      "limits": "País como unidade. Nenhuma entidade, nenhuma relação societária.",
+      "auditedAt": "2026-10-21T16:10:47.881Z",
+      "runs": [
+        {
+          "status": "erro-http",
+          "http": 403,
+          "bytes": 25495,
+          "type": "text/html; charset=UTF-8",
+          "sha256": "a8799fa15452edef",
+          "tlsError": false,
+          "note": "HTTP 403"
+        },
+        {
+          "status": "erro-http",
+          "http": 403,
+          "bytes": 25495,
+          "type": "text/html; charset=UTF-8",
+          "sha256": "123030ceda14cb8a",
+          "tlsError": false,
+          "note": "HTTP 403"
+        },
+        {
+          "status": "erro-http",
+          "http": 403,
+          "bytes": 25495,
+          "type": "text/html; charset=UTF-8",
+          "sha256": "7025832740991f3b",
+          "tlsError": false,
+          "note": "HTTP 403"
+        }
+      ],
+      "headers": {
+        "content-type": "text/html; charset=UTF-8",
+        "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+        "date": "Wed, 21 Oct 2026 16:10:47 GMT",
+        "x-frame-options": "SAMEORIGIN",
+        "referrer-policy": "same-origin",
+        "server": "cloudflare"
+      },
+      "scores": {
+        "security": 85,
+        "reliability": 64,
+        "usefulness": 29
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 5,
+            "text": "1 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 24,
+            "text": "exige credenciais (HTTP 403): não é avaria, mas também não é uma fonte verificável sem chave"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 28 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 22.8,
+            "text": "Contexto macro apenas; baixa relevância para ligações societárias."
+          },
+          {
+            "key": "structure",
+            "points": 0,
+            "text": "corpo recebido mas não é JSON — não é utilizável por um agente"
+          },
+          {
+            "key": "coverage",
+            "points": 6,
+            "text": "dados agregados: não descreve entidades"
+          }
+        ]
+      },
+      "points": {
+        "security": 85,
+        "reliability": 64,
+        "usefulness": 28.8
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "fora-do-ambito",
+      "verdictWhy": "Tecnicamente sólida (segurança 85, fiabilidade 64), mas a utilidade é 29/100: descreve agregados, não entidades ou ligações.",
+      "fatal": [],
+      "probeOk": false
+    },
+    {
+      "id": "data-europa",
+      "name": "data.europa.eu — hub de dados da UE",
+      "group": "referência",
+      "url": "https://data.europa.eu/api/hub/search/search?q=fundo",
+      "docs": "https://data.europa.eu/en/developers",
+      "licence": "Varia por conjunto; metadados abertos",
+      "auth": "nenhuma",
+      "answers": "Metadados de conjuntos de dados europeus (incluindo contratos e beneficiários de fundos).",
+      "limits": "Metadados, não dados. A qualidade e a licença variam por conjunto.",
+      "auditedAt": "2026-10-21T16:10:50.084Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 295466,
+          "type": "application/json",
+          "sha256": "b919267a11e69cca",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 320776,
+          "type": "application/json",
+          "sha256": "5268af21153de4ca",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 295466,
+          "type": "application/json",
+          "sha256": "b919267a11e69cca",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "295466",
+        "date": "Wed, 21 Oct 2026 16:10:48 GMT",
+        "strict-transport-security": "max-age=63072000; includeSubdomains; preload",
+        "x-content-type-options": "nosniff",
+        "access-control-allow-origin": "*",
+        "server": "CloudFront"
+      },
+      "scores": {
+        "security": 95,
+        "reliability": 74,
+        "usefulness": 66
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "CORS declarado: *"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 5,
+            "text": "1 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 19,
+            "text": "mediana 580 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 39.6,
+            "text": "Ajuda a localizar fundos e beneficiários publicados por vários Estados."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «result» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 6,
+            "text": "dados agregados: não descreve entidades"
+          }
+        ]
+      },
+      "points": {
+        "security": 95,
+        "reliability": 74,
+        "usefulness": 65.6
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "condicional",
+      "verdictWhy": "Dimensão mais fraca em 66/100 — usar com as ressalvas listadas.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "ted",
+      "name": "TED — contratação pública da UE",
+      "group": "europeu",
+      "url": "https://api.ted.europa.eu/v3/notices/search",
+      "docs": "https://docs.ted.europa.eu/api/latest/",
+      "licence": "Reutilização livre (Comissão Europeia)",
+      "auth": "nenhuma (POST)",
+      "answers": "Anúncios de concursos e adjudicações acima dos limiares europeus.",
+      "limits": "Só aceita POST com corpo próprio: um agente GET é recusado (405) — não é falha da fonte.",
+      "auditedAt": "2026-10-21T16:10:51.687Z",
+      "runs": [
+        {
+          "status": "erro-http",
+          "http": 405,
+          "bytes": 64,
+          "type": "application/json",
+          "sha256": "fd5c00533a4eeed6",
+          "tlsError": false,
+          "note": "HTTP 405"
+        },
+        {
+          "status": "erro-http",
+          "http": 405,
+          "bytes": 64,
+          "type": "application/json",
+          "sha256": "fd5c00533a4eeed6",
+          "tlsError": false,
+          "note": "HTTP 405"
+        },
+        {
+          "status": "erro-http",
+          "http": 405,
+          "bytes": 64,
+          "type": "application/json",
+          "sha256": "fd5c00533a4eeed6",
+          "tlsError": false,
+          "note": "HTTP 405"
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+        "date": "Wed, 21 Oct 2026 16:10:50 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains, max-age=31536000; includeSubDomains",
+        "content-security-policy": "default-src 'self' ted.europa.eu tedweb.api.ted.europa.eu api.ted.europa.eu europa.eu webtools.europa.eu jackson.webtools.europa.eu gisco-services.ec.europa.eu analytics.webanalytics.op.europa.eu dashboard.tech.ec.europa.eu *.token.awswaf.com *.captcha.awswaf.com *.captcha-sdk.awswaf.com blob: data: 'unsafe-inline' 'unsafe-eval'",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Origin, Origin"
+      },
+      "scores": {
+        "security": 100,
+        "reliability": 80,
+        "usefulness": 87
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 10,
+            "text": "HSTS activo"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 10,
+            "text": "2 cabeçalho(s) de endurecimento presentes"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (HTTP 405)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 219 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 46.800000000000004,
+            "text": "Contratos europeus ligam adjudicatários a valores e datas com identificadores estáveis."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 100,
+        "reliability": 80,
+        "usefulness": 86.80000000000001
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "aprovada",
+      "verdictWhy": "Todas as dimensões ≥ 75.",
+      "fatal": [],
+      "probeOk": true
+    },
+    {
+      "id": "eu-sanctions",
+      "name": "EU — lista consolidada de sanções (XML/FSF)",
+      "group": "sanções",
+      "url": "https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw",
+      "docs": "https://finance.ec.europa.eu/eu-and-world/sanctions-restrictive-measures/overview-sanctions-and-related-resources_en",
+      "licence": "Documento oficial (reutilização com atribuição)",
+      "auth": "nenhuma",
+      "answers": "Pessoas e entidades sujeitas a medidas restritivas da UE, com identificadores e fundamentos.",
+      "limits": "Ficheiro com ~19 MB (acima do limite do agente): recolher manualmente ou com limite elevado. Uma ausência não iliba — há sanções de outros países.",
+      "auditedAt": "2026-10-21T16:10:51.687Z",
+      "runs": [],
+      "headers": {},
+      "scores": {
+        "security": 65,
+        "reliability": 15,
+        "usefulness": 74
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 0,
+            "text": "chave na query string (fica em registos e referrers)"
+          },
+          {
+            "key": "headers",
+            "points": 0,
+            "text": "sem CSP/XCTO/Referrer-Policy"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 0,
+            "text": "não auditada automaticamente: ficheiro de ≈19.5 MB excede o limite de 2 MB do agente"
+          },
+          {
+            "key": "availability",
+            "points": 0,
+            "text": "0/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 0,
+            "text": "latência não medida (sem corpo/tempos)"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado (recolha manual necessária)"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 54,
+            "text": "Liga pessoas e empresas a um estado jurídico oficial e datado — nunca a uma suspeita."
+          },
+          {
+            "key": "structure",
+            "points": 0,
+            "text": "sem resposta para avaliar estrutura"
+          },
+          {
+            "key": "coverage",
+            "points": 20,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 65,
+        "reliability": 15,
+        "usefulness": 74
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "nao-auditada",
+      "verdictWhy": "Fiável e segura segundo o que foi possível medir, mas demasiado grande para o agente (≈19.5 MB): recolher manualmente.",
+      "fatal": [],
+      "probeOk": false
+    },
+    {
+      "id": "apis-guru",
+      "name": "APIs.guru — catálogo de APIs (descoberta)",
+      "group": "descoberta",
+      "url": "https://api.apis.guru/v2/providers.json",
+      "docs": "https://apis.guru/api-doc/",
+      "licence": "CC0 (metadados OpenAPI)",
+      "auth": "nenhuma",
+      "answers": "Lista de fornecedores e especificações OpenAPI — é a fonte usada pelo agente de descoberta desta aplicação.",
+      "limits": "Metadados de terceiros: não garante que a API esteja viva, gratuita ou permitida. Cada candidato tem de ser auditado.",
+      "auditedAt": "2026-10-21T16:10:52.668Z",
+      "runs": [
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 14057,
+          "type": "application/json",
+          "sha256": "8bb6fa3c30899c29",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 14057,
+          "type": "application/json",
+          "sha256": "8bb6fa3c30899c29",
+          "tlsError": false,
+          "note": null
+        },
+        {
+          "status": "recolhida",
+          "http": 200,
+          "bytes": 14057,
+          "type": "application/json",
+          "sha256": "8bb6fa3c30899c29",
+          "tlsError": false,
+          "note": null
+        }
+      ],
+      "headers": {
+        "content-type": "application/json",
+        "etag": "W/\"cb9b6ae159da08d65cedbe162b2da532\"",
+        "last-modified": "Mon, 18 Aug 2025 10:51:48 GMT",
+        "date": "Wed, 21 Oct 2026 16:10:52 GMT",
+        "server": "cloudflare"
+      },
+      "scores": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 72
+      },
+      "reasons": {
+        "security": [
+          {
+            "key": "https",
+            "points": 25,
+            "text": "TLS em todos os pedidos"
+          },
+          {
+            "key": "httpsRedirect",
+            "points": 10,
+            "text": "sem downgrade de protocolo"
+          },
+          {
+            "key": "hsts",
+            "points": 0,
+            "text": "sem HSTS (não impede o uso, apenas endurece)"
+          },
+          {
+            "key": "browserSafe",
+            "points": 10,
+            "text": "sem CORS: não utilizável directamente no navegador (usar agente local)"
+          },
+          {
+            "key": "robots",
+            "points": 10,
+            "text": "robots.txt permite o pedido"
+          },
+          {
+            "key": "noKeyInUrl",
+            "points": 15,
+            "text": "nenhuma chave na URL"
+          },
+          {
+            "key": "headers",
+            "points": 0,
+            "text": "sem CSP/XCTO/Referrer-Policy"
+          },
+          {
+            "key": "noCredentials",
+            "points": 10,
+            "text": "nenhuma credencial introduzida pelo agente"
+          }
+        ],
+        "reliability": [
+          {
+            "key": "availability",
+            "points": 40,
+            "text": "3/3 pedidos com a resposta esperada (2xx)"
+          },
+          {
+            "key": "latency",
+            "points": 25,
+            "text": "mediana 269 ms"
+          },
+          {
+            "key": "consistency",
+            "points": 15,
+            "text": "tipo de conteúdo estável"
+          },
+          {
+            "key": "errorSemantics",
+            "points": 0,
+            "text": "não testado"
+          }
+        ],
+        "usefulness": [
+          {
+            "key": "curated",
+            "points": 42,
+            "text": "Permite descobrir APIs e obter a sua especificação para teste automático — sem inventar endpoints."
+          },
+          {
+            "key": "structure",
+            "points": 20,
+            "text": "JSON válido e campo «data» presente"
+          },
+          {
+            "key": "coverage",
+            "points": 10,
+            "text": "descreve entidades e/ou ligações"
+          }
+        ]
+      },
+      "points": {
+        "security": 80,
+        "reliability": 80,
+        "usefulness": 72
+      },
+      "weights": {
+        "security": [
+          [
+            "https",
+            25,
+            "todo o pedido é feito por TLS (https)"
+          ],
+          [
+            "httpsRedirect",
+            10,
+            "redireccionamentos mantêm https"
+          ],
+          [
+            "hsts",
+            10,
+            "cabeçalho Strict-Transport-Security presente"
+          ],
+          [
+            "browserSafe",
+            10,
+            "CORS explícito ou ausente sem credenciais (sem wildcard+credenciais)"
+          ],
+          [
+            "robots",
+            10,
+            "robots.txt permite o caminho pedido"
+          ],
+          [
+            "noKeyInUrl",
+            15,
+            "não exige chave na query string"
+          ],
+          [
+            "headers",
+            10,
+            "Content-Security-Policy / X-Content-Type-Options presentes"
+          ],
+          [
+            "noCredentials",
+            10,
+            "nenhuma credencial foi necessária nesta auditoria"
+          ]
+        ],
+        "reliability": [
+          [
+            "availability",
+            40,
+            "número de pedidos bem sucedidos em 3 tentativas"
+          ],
+          [
+            "latency",
+            25,
+            "latência mediana"
+          ],
+          [
+            "consistency",
+            15,
+            "tipo de conteúdo estável entre tentativas"
+          ],
+          [
+            "errorSemantics",
+            15,
+            "erro devolve 4xx (não 5xx nem 200 com erro)"
+          ]
+        ],
+        "usefulness": [
+          [
+            "curated",
+            60,
+            "valor declarado e justificado para a investigação"
+          ],
+          [
+            "structure",
+            20,
+            "resposta é máquina-legível e traz os campos esperados"
+          ],
+          [
+            "coverage",
+            20,
+            "cobre entidades e ligações reais (não só agregados)"
+          ]
+        ]
+      },
+      "verdict": "condicional",
+      "verdictWhy": "Dimensão mais fraca em 72/100 — usar com as ressalvas listadas.",
+      "fatal": [],
+      "probeOk": true
+    }
+  ]
+}

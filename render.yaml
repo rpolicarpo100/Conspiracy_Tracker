@@ -1,0 +1,18 @@
+# Render Blueprint — serviço web (Node) para o Meridiano.
+# O servidor serve os ficheiros estáticos e o agente local em /api/fetch.
+services:
+  - type: web
+    name: meridiano
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund
+    startCommand: node tools/serve.mjs
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: AGENT_BUDGET
+        value: "60"          # pedidos ao agente local por IP em 10 minutos

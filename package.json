@@ -1,0 +1,26 @@
+{
+  "name": "vn-visual-investigation-network",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rede de investigação visual: grafo de entidades, relações tipificadas e provas documentais, com pesquisa profunda, agentes de recolha e auditoria de APIs",
+  "license": "MIT",
+  "dependencies": {
+    "cytoscape": "^3.34.4",
+    "cytoscape-fcose": "^2.2.0"
+  },
+  "devDependencies": {
+    "d3-force": "^3.0.0",
+    "graphology": "^0.25.4",
+    "playwright": "^1.48.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "dev": "node tools/serve.mjs",
+    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs",
+    "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs",
+    "audit:apis": "node tools/audit-catalog.mjs --attempts=3"
+  }
+}

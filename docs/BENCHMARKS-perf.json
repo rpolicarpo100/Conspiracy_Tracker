@@ -1,0 +1,57 @@
+{
+  "ranAt": "2026-10-21T15:41:35.161Z",
+  "browser": "Chromium (headless)",
+  "viewport": "1600x950",
+  "results": {
+    "redeReal": {
+      "sementeMs": 84,
+      "redeCompletaMs": 377,
+      "expandirMs": 23,
+      "filtroMs": 26,
+      "caminhosMs": 2,
+      "caminhosEncontrados": 12,
+      "fpsDeslocamento": 39,
+      "nosRenderizados": 69,
+      "ligacoesRenderizadas": 126,
+      "heapMB": 10
+    },
+    "escala": [
+      {
+        "nos": 500,
+        "ligacoes": 1249,
+        "sincronizacaoMs": 614,
+        "layoutConcentricoMs": 316,
+        "fpsModoCompleto": 9,
+        "fpsModoLite": 25,
+        "degradacaoAutomatica": true
+      },
+      {
+        "nos": 1000,
+        "ligacoes": 2499,
+        "sincronizacaoMs": 1205,
+        "layoutConcentricoMs": 551,
+        "fpsModoCompleto": 3,
+        "fpsModoLite": 6,
+        "degradacaoAutomatica": true
+      },
+      {
+        "nos": 2000,
+        "ligacoes": 4999,
+        "sincronizacaoMs": 2684,
+        "layoutConcentricoMs": 1330,
+        "fpsModoCompleto": 0,
+        "fpsModoLite": 3,
+        "degradacaoAutomatica": true
+      },
+      {
+        "nos": 5000,
+        "ligacoes": 12499,
+        "sincronizacaoMs": 7466,
+        "layoutConcentricoMs": 3939,
+        "fpsModoCompleto": 0,
+        "fpsModoLite": 1,
+        "degradacaoAutomatica": true
+      }
+    ]
+  }
+}

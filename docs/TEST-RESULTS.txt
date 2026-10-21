@@ -1,0 +1,96 @@
+MERIDIANO · RESULTADOS DE TESTE
+Executado em 2026-10-21T15:42:58Z · Chromium 130 headless · servidor local :8080
+
+== 1. FLUXO DE ACEITAÇÃO (tests/flow.mjs)
+RESULTADOS
+PASS 1. Pesquisar entidade (1811 ms) 13 resultados; aberto: Meridiano Infraestruturas, S.A.
+PASS 2. Nó com representação visual (8 ms) imagem embutida + proveniência declarada
+PASS 3. Expandir relações documentadas (1477 ms) 14 → 28 entidades carregadas
+PASS 4. Identificar significado da ligação (3 ms) r-126 = "Foi assessorada por" (dotted)
+PASS 5. Consultar fonte da relação (542 ms) painel com fonte, localização, excerto e 1 acções
+PASS 6. Distinguir facto / alegação / não verificado (2 ms) {"factos":58,"alegacoes":3,"naoVerif":6,"contraditas":5,"estilos":["confirmed","probable","alleged","unverified","contradicted"]}
+PASS 7. Filtrar por período e categoria (256 ms) {"before":57,"period":27,"outside":0,"fam":8,"wrongFam":0,"back":57}
+PASS 8. Encontrar caminhos entre duas entidades (522 ms) {"n":12,"best":137,"explored":1017}
+PASS 9. Inspeccionar cronologia (1003 ms) {"anos":24,"min":2003,"max":2026,"comRelacoes":15,"semData":8}
+PASS 10. Exportar relatório com provas (35 ms) {"refsRel":252,"refsDoc":203,"excertos":250,"metodo":true,"aviso":true} · 245365 bytes
+PASS 11. Livro de provas com hash encadeado (6 ms) {"ok1":true,"hash":"85ee1e54caae","detectou":true,"problemas":1}
+PASS 12. Validador de IA rejeita afirmações sem prova (3 ms) {"rejeitadas":1,"aceites":1}
+PASS 13. Portão de dados reais recusa falta de prova (3 ms) {"recusou":true,"erros":4,"esqueletoValido":true}
+PASS 14. Sem erros de runtime (0 ms) nenhum erro
+
+14/14 passaram · erros de consola: 0
+
+== 2. PESQUISA PROFUNDA (tests/search.mjs)
+PESQUISA PROFUNDA
+PASS índice construído e dimensionado → {"documents":195,"tokens":1146,"vocabulary":1146,"entities":69,"relations":126}
+PASS acentos e maiúsculas irrelevantes → topo igual nos três: p-vitor
+PASS gralha corrigida e assinalada (nunca silenciosa) → 10 resultados aproximados · encontrado em: tipo de relação, excerto | aproximado: «accionsta» → accionista (78% de sem
+PASS frase exacta só devolve a frase → 1 resultados, todos com a frase
+PASS filtro tipo:pessoa → 4 entidades, 10 ligações, sem violações
+PASS filtro estado:não-verificado e estado:alegado → 3 alegadas · 6 não verificadas
+PASS filtro temporal ano:2016-2018 → 33 resultados, todos dentro de 2016–2018
+PASS exclusão -termo → 41 → 39
+PASS pesquisa alargada é avisada → 19 resultados com aviso de alargamento
+PASS excertos com destaque e contexto → 4/4 com <mark> · ex.: «Beneficiário efectivo registado: Nadia Krasniqi, n. 1981, residente no Luxembur
+PASS ligações entre resultados (registadas, não inferidas) → 3 directas (r-007:Participação accionista em, r-028:Celebrou contrato com, r-052:Pagou montante a) · 8 vizinhos comuns · distância 2
+PASS nenhuma fusão de homónimos em pesquisa aproximada → 5 entidades distintas, 0 por aproximação (assinaladas)
+PASS zero resultados: sugestões + registo negativo disponível → sugestão: aldoeravam→aldevaran
+PASS desempenho: 40 pesquisas seguidas → 0.3 ms por pesquisa (média de 40, índice em memória)
+PASS paleta: teclado, grupos e ações → 13 linhas · grupos: Entidades · 18 / Ligações e excertos · 21 / Ligações entre resultados · registadas · Enter abriu: Lurdes Antunes
+PASS página de pesquisa: fachas, ligações e exportação → fachas: 15 · exportação accionada
+PASS sem erros de runtime → nenhum
+
+17/17 passaram · erros: 0
+
+== 3. AGENTES DE RECOLHA — NÚCLEO (tests/agents.mjs)
+AGENTES DE RECOLHA
+PASS simulação por omissão: nada é pedido → estado simulada · 0 pedidos · plano com 4 verificações declaradas
+PASS execução real: evidência com hash SHA-256 e tipo → sha256 c913b3f3a4c4b925… · 51 B · etag "abc123"
+PASS robots.txt respeitado (não pede caminho proibido) → robots.txt proíbe este caminho (/proibido/pagina) — a recolha não é feita
+PASS limite de ritmo entre pedidos ao mesmo servidor → 121 ms entre pedidos
+PASS HTTP 404 registado como erro de fonte → erro-http · HTTP 404
+PASS resposta acima do limite é rejeitada → resposta acima do limite de 2048 kB
+PASS tempo limite respeitado → tempo limite excedido (1200 ms)
+PASS extractores: json, html-table, csv, regex → json + tabela + csv + regex correctos
+PASS livro de provas: entradas de recolha com hash encadeado → 11 recolhas registadas, 8 com SHA-256, cadeia intacta (11 entradas)
+PASS endereço privado recusado quando a guarda está activa → endereço privado/local proibido (SSRF)
+PASS metadados internos (cloud metadata) recusados → endereço privado/local proibido (SSRF)
+PASS limite de pedidos por execução → 5 pedidos recusados por limite de 20
+PASS agente local: recolha com hash verificado do lado do cliente → HTTP 200 · sha256 confirmado nos dois lados · 51 B
+PASS agente local recusa endereço privado (SSRF) mesmo com pedido directo ao endpoint → endereço privado/local proibido (SSRF)
+PASS agente local respeita robots.txt do destino → endereço privado/local proibido (SSRF)
+
+15/15 passaram
+
+== 4. AGENTES DE RECOLHA — INTERFACE (tests/agents-ui.mjs)
+AGENTES — INTERFACE
+PASS separador «Agentes de recolha» com guardas visíveis → 3 tarefas de exemplo · guardas listadas
+PASS simulação: nada sai da máquina e todos os estados são «Simulada» → 3 simuladas · 0 pedidos a domínios externos
+PASS guarda SSRF aplicada pelo agente local (execução real recusada) → estado Recusada com motivo «endereço privado/local proibido (SSRF)»
+PASS livro de provas regista as recolhas (e a cadeia continua válida) → 3 entrada(s) de recolha no livro · Integridade confirmada: 5 entradas, cadeia intacta
+PASS nenhum resultado de recolha entrou no grafo → modelo intacto: 69 entidades / 126 relações
+erros de runtime: 0 []
+
+5/5 passaram
+
+== 5. RECOLHA REAL CONTRA FONTE PÚBLICA (tests/real-fetch.mjs, requer internet)
+RECOLHA REAL (fonte pública)
+estado       recolhida
+HTTP         200
+tipo         application/json
+bytes        10311
+sha256       789bc75cb95c1f5ac36b91a1bcfe76ac1e2fab29e1d8458e3e251709bcbb0b78
+hash cliente confere com o do agente
+extracção    {"total":20960,"primeiroTitulo":"Custo do empregador em Portugal: TSU da entidade empregadora e 14 prestações (outubro 2026)"}
+robots       {"rules":0,"delay":null}
+erros        nenhum
+
+== 6. DESEMPENHO (tests/perf.mjs → docs/BENCHMARKS-perf.json)
+rede real: semente 84 ms · completa 377 ms · expandir 23 ms · filtro 26 ms · caminhos 2 ms · fps 39 · heap 10 MB
+escala  500 nós / 1249 ligações: sincronização 614 ms · layout 316 ms · fps completo 9 · fps leve 25
+escala 1000 nós / 2499 ligações: sincronização 1205 ms · layout 551 ms · fps completo 3 · fps leve 6
+escala 2000 nós / 4999 ligações: sincronização 2684 ms · layout 1330 ms · fps completo 0 · fps leve 3
+escala 5000 nós / 12499 ligações: sincronização 7466 ms · layout 3939 ms · fps completo 0 · fps leve 1
+
+== 7. FUMAÇO VISUAL (tests/smoke.mjs)
+ERRORS: 0
