@@ -299,3 +299,14 @@ PASS pesquisa sem chave de IA pára com motivo escrito e o relatório declara o 
 erros de runtime: 0 []
 
 11/11 passaram
+
+== 20. MOTOR E RELATÓRIO NO SERVIÇO PUBLICADO (commit 0f1840e, 2026-10-21)
+PASS /health → version 2.0.0-fase2b · /api/meta → research {steps:20, profiles:4, promptVersion:p1, reportSections:18}
+PASS /api/meta → keyVault ok:false «APP_SECRET tem 5 caracteres e o mínimo são 24» (o valor não é revelado)
+PASS POST /api/projects/{id}/runs sem chave de IA → execução «stopped» com motivo «sem-fornecedor-de-ia-validado»
+PASS passo 1 registado como «nao-executado» com explicação legível · aiUsed:false (não finge ter usado IA)
+PASS GET /api/projects/{id}/report → 18 secções · 8 com dados · 10 declaradas «Não disponível»
+PASS GET …/report?format=md → 18 secções em Markdown
+PASS POST /api/providers/groq/key com cofre inactivo → 503 needsEnv=APP_SECRET (com o comprimento do segredo, nunca o valor)
+PASS eliminar conta → 200 · tests/deployed.mjs 6/6
+AÇÃO NECESSÁRIA: definir APP_SECRET com 24+ caracteres no painel do Render (o actual tem 5).
