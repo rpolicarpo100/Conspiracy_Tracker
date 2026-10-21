@@ -1,5 +1,7 @@
 # ESTADO ATUAL — o que existe, o que falta, o que está bloqueado
 
+Relatório de entrega desta fase: `docs/ENTREGA-FASE3G.md` (18 pontos + tabela medida).
+
 Este ficheiro é o ponto único de verdade sobre o estado do trabalho. Foi escrito para que ninguém
 (eu incluído, numa sessão futura) tenha de reconstruir o contexto de memória.
 
