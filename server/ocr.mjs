@@ -40,8 +40,23 @@ export const OCR_LIMITS = {
 
 /* ---------------- estado do motor (sem rede) ---------------- */
 
+const hasData = (dir) => {
+  try { return fs.readdirSync(dir).some((f) => /^[a-z]{2,3}\.traineddata(\.gz)?$/.test(f)); }
+  catch { return false; }
+};
+
+// Ordem: configuração explícita → dados de execução → cópia versionada no
+// repositório (vendor/ocr, instalada por tools/fetch-ocr-data.mjs). A cópia
+// versionada é o que faz o OCR funcionar num serviço onde não é possível mexer
+// nas variáveis de ambiente — e continua a não haver rede em runtime.
 function langPathOf() {
   if (process.env.OCR_LANG_PATH) return path.resolve(process.env.OCR_LANG_PATH);
+  if (process.env.DATA_DIR) {
+    const run = path.resolve(process.env.DATA_DIR, 'ocr');
+    if (hasData(run)) return run;
+  }
+  const vendored = path.resolve('vendor/ocr');
+  if (hasData(vendored)) return vendored;
   if (process.env.DATA_DIR) return path.resolve(process.env.DATA_DIR, 'ocr');
   return path.resolve('data/ocr');
 }
@@ -82,8 +97,9 @@ export function ocrStatus(force) {
     status.available = true;
     status.reason = 'dados de língua vêm de um CDN de terceiros: autorizado explicitamente pela instalação';
   } else {
-    status.reason = 'sem dados de língua em ' + langPath + ' — descarregue-os no build ' +
-      '(node tools/fetch-ocr-data.mjs) ou defina OCR_ALLOW_CDN=1 para aceitar o CDN de terceiros';
+    status.reason = 'sem dados de língua em ' + langPath + ' — obtenha-os com ' +
+      'npm run ocr:data (grava em vendor/ocr, com integridade npm) ou defina OCR_ALLOW_CDN=1 ' +
+      'para aceitar o CDN de terceiros';
   }
   cachedStatus = status;
   return status;

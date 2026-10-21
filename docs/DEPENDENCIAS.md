@@ -83,8 +83,17 @@ testado no ambiente de produção).
 
 - `tesseract.js` 7 num worker, um pedido de cada vez, fila com tecto (**recusa com motivo** em vez de
   fila infinita), 45 s por imagem, 6 imagens por documento, 120 s por pedido.
-- Dados de língua **locais**, descarregados no build com `sha512` conferido contra o registo npm; sem
-  dados e sem `OCR_ALLOW_CDN=1`, o OCR está **indisponível** e diz porquê (testado nos dois estados).
+- Dados de língua **locais**. Ordem de procura: `OCR_LANG_PATH` → `<DATA_DIR>/ocr` → **`vendor/ocr`**
+  (cópia de referência **versionada** no repositório, 4,2 MB comprimidos, obtida com
+  `npm run ocr:data`, que confere o `sha512` publicado no registo npm e registra o `sha256` no
+  `manifest.json`). Sem dados e sem `OCR_ALLOW_CDN=1`, o OCR está **indisponível** e diz porquê
+  (testado nos dois estados).
+
+  Porque é que a cópia é versionada: a primeira publicação com OCR dependia de uma variável de
+  ambiente do serviço e do build; em produção a variável não existia e o OCR declarou-se
+  indisponível — comportamento honesto, funcionalidade ausente. A 4,2 MB de dados fixos e
+  verificáveis no repositório resolvem isso sem rede em runtime e sem depender de configuração que
+  não controlo.
 - **`errorHandler` obrigatório**: sem ele, o tesseract lança dentro do worker e **derruba o
   processo**. Descoberto por um teste que lhe entregou um PDF disfarçado de imagem — o servidor
   morreu. Corrigido e coberto por teste (assinatura PNG/JPEG obrigatória antes de chegar ao motor).

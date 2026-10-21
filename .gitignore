@@ -21,6 +21,10 @@ tests/_*.mjs
 # bibliotecas de sistema extraídas sem root para o Chromium (tools/setup-ui-env.sh)
 .local/lib/
 
-# dados de língua do OCR: obtidos por tools/fetch-ocr-data.mjs, nunca versionados
+# dados de língua do OCR: os de execução nunca são versionados...
 *.traineddata
 *.traineddata.gz
+# ...mas a cópia de referência em vendor/ocr É versionada (é o que faz o OCR
+# funcionar num serviço onde não se pode mexer em variáveis de ambiente).
+!vendor/ocr/*.traineddata.gz
+!vendor/ocr/manifest.json

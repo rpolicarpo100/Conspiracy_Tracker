@@ -41,9 +41,10 @@ instalada, o teste diz que a comparação não foi feita, em vez de fingir que p
 
 `server/ocr.mjs` usa `tesseract.js` 7 (WebAssembly) num worker. Decisões que importam:
 
-- **Rede zero em runtime**: os dados de língua (`por`, `eng`) estão em disco, descarregados no build
-  por `tools/fetch-ocr-data.mjs` com o `sha512` conferido contra o registo npm e `sha256` registado
-  num manifesto. Sem dados locais, o OCR está **indisponível** e diz porquê (`/api/meta` →
+- **Rede zero em runtime**: os dados de língua (`por`, `eng`) estão em disco — por omissão a cópia
+  versionada `vendor/ocr/` (obtida e verificável com `npm run ocr:data`, que confere o `sha512` do
+  registo npm e grava o `sha256` no `manifest.json`); `OCR_LANG_PATH` e `<DATA_DIR>/ocr` têm
+  precedência para quem quiser mantê-los fora do repositório. Sem dados locais, o OCR está **indisponível** e diz porquê (`/api/meta` →
   `documents.ocr.available=false, reason`).
 - **Sem confiança, sem valor**: a confiança é medida por página; abaixo de **55/100** a página é
   assinalada e o resultado inteiro declara-se «pista, não transcrição». O texto entra na recolha com

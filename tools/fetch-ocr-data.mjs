@@ -27,7 +27,7 @@ const arg = (name, def) => {
   return hit ? hit.split('=').slice(1).join('=') : def;
 };
 const LANGS = String(arg('langs', 'por,eng')).split(',').map((s) => s.trim()).filter(Boolean);
-const OUT = path.resolve(arg('out', process.env.OCR_LANG_PATH || (process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'ocr') : 'data/ocr')));
+const OUT = path.resolve(arg('out', process.env.OCR_LANG_PATH || 'vendor/ocr'));
 const FORCE = args.includes('--force');
 const VARIANT = '4.0.0_best_int';
 

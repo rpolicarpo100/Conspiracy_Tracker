@@ -1,0 +1,29 @@
+{
+ "source": "registry.npmjs.org",
+ "variant": "4.0.0_best_int",
+ "generatedAt": "2026-10-21T21:06:00.879Z",
+ "languages": {
+  "por": {
+   "package": "@tesseract.js-data/por",
+   "version": "1.0.0",
+   "tarball": "https://registry.npmjs.org/@tesseract.js-data/por/-/por-1.0.0.tgz",
+   "integrity": "sha512-sQ7GqYUgKaMmV0vNujYoXLlXUp2e5RGGkJxQ3L59kUOaupIugLJeb1dqhrfgyb71XQw7ltdSuXdQIoaoS/rpsQ==",
+   "variant": "4.0.0_best_int",
+   "sha256": "dacebc1386ddaaf8389f81094236cca0d690897cde693d48cbdaa881c86e2b4c",
+   "bytes": 1392239,
+   "licence": "Apache-2.0 (tessdata)",
+   "fetchedAt": "2026-10-21T21:06:00.563Z"
+  },
+  "eng": {
+   "package": "@tesseract.js-data/eng",
+   "version": "1.0.0",
+   "tarball": "https://registry.npmjs.org/@tesseract.js-data/eng/-/eng-1.0.0.tgz",
+   "integrity": "sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg==",
+   "variant": "4.0.0_best_int",
+   "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+   "bytes": 2952873,
+   "licence": "Apache-2.0 (tessdata)",
+   "fetchedAt": "2026-10-21T21:06:00.877Z"
+  }
+ }
+}
