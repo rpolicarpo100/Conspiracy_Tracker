@@ -94,7 +94,8 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Execuções (`runs`) persistentes e retomáveis | **Implementado** (runner síncrono com orçamento; retoma só passos em falta) | `tests/research.mjs` | P2 concluído | Mover para fila persistente e *worker* |
 | Conteúdo web como não confiável | **Implementado no motor**: regra no prompt de sistema + detecção de padrões de injecção por documento recolhido | `tests/research.mjs` («conteúdo que dá ordens ao agente») | P0 concluído para HTML | Revalidar com PDF/OCR |
 | Custos instrumentados | Parcial: tokens reportados pelo fornecedor; custo marcado «não reportado» | secção 17 do relatório | P2 | Tabela de preços verificada |
-| Registo de provas (ID único, hash, datas, excerto, estado) | **Implementado e testado**: excerto obrigatório, SHA-256 do excerto, URL canónico (sem UTM/fragmento), datas de publicação/acontecimento/recolha/verificação, tipo de fonte, posição, método de extracção, limitações, histórico por prova | `tests/evidence.mjs` 17/17 · `docs/EVIDENCIA.md` | P2 concluído | Verificação automática de acessibilidade e extracção de PDF/OCR |
+| Registo de provas (ID único, hash, datas, excerto, estado) | **Implementado e testado**: excerto obrigatório, SHA-256 do excerto, URL canónico (sem UTM/fragmento), datas de publicação/acontecimento/recolha/verificação, tipo de fonte, posição, método de extracção, limitações, histórico por prova | `tests/evidence.mjs` 17/17 · `docs/EVIDENCIA.md` | P2 concluído | Extracção de PDF/OCR |
+| Verificação de acesso às fontes | **Implementada e testada**: GET sem cookies/credenciais, guardas SSRF (IPv4/IPv6 internos, DNS, redireccionamentos revalidados), sem contornar paywall/CAPTCHA, conteúdo não guardado, 60 verificações/hora, estado em `evidence.access`, sugestão `fonte-inacessivel` exige decisão humana | `tests/fase3c.mjs` (8 testes) · `docs/ACESSO-FONTES.md` | P2 concluído | — |
 | Corroboração independente e duplicados | **Implementado e testado**: `originKey` por `syndicationOf`/domínio/hash; 10 cópias de um comunicado = 1 origem; duplicado exacto devolvido em vez de contado; factores expostos em cada conclusão | `tests/evidence.mjs` («dez cópias… dão UMA origem») | P2 concluído | Pesos de fiabilidade por fonte |
 | Estados das conclusões (9) e recusa de promoção | **Implementado e testado**: `confirmada` exige 2 origens + 1 primária + sem contradição; prova contrária activa força «contraditória»; conclusão nasce fraca; sugestão nunca é aplicada automaticamente | `tests/evidence.mjs`; interface em `docs/shot-18-provas.png` | P2 concluído | — |
 | Retirada de provas sem perda de histórico | **Implementado e testado**: `DELETE` exige motivo, marca `retractedAt`, mantém a prova na lista e anota a retirada nas alegações dependentes | `tests/evidence.mjs` | P2 concluído | — |
@@ -103,7 +104,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Conteúdo web/PDF como não confiável | Guardas de injecção no motor de agentes (testes locais) | `tests/agents.mjs` | P0 na fase P2 | Revalidar quando a extracção de PDF entrar |
 | Grafo visual sobre o conjunto fictício | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado | P2 concluído | — |
 | **Grafo a partir de provas (servidor)** | **Implementado**: 16 tipos de entidade, 24 tipos de relação em 7 famílias, aresta só com prova, confiança calculada por origens independentes, inferência declarada com raciocínio, co-ocorrência devolvida como candidato marcado, homónimos não fundidos sem desambiguador | `tests/graph.mjs` 13/13 | **P0 concluído** | Caminhos, cronologia sincronizada, vista de contradições |
-| Grafo na interface | SVG próprio: zoom, arrasto, procura, filtros por tipo, co-ocorrências a pedido, proveniência ao clicar, legenda com 4 avisos | `tests/account-ui.mjs` («grafo das provas desenha…») · `docs/shot-21-grafo.png` | P2 concluído | Exportação do grafo |
+| Grafo na interface | SVG próprio: zoom, arrasto, procura, filtros por tipo, co-ocorrências a pedido, proveniência ao clicar, legenda com 4 avisos | `tests/account-ui.mjs` («grafo das provas desenha…») · `docs/shot-21-grafo.png` | P2 concluído | — |
+| Filtro temporal do grafo | **Implementado e testado**: `periodFrom`/`periodTo`, datas validadas (impossíveis → 400), relações sem período e com período aberto ficam incluídas e contadas na resposta | `tests/fase3c.mjs` · `docs/GRAFO.md` §10 | P3 concluído | Caminhos com restrições |
+| Exportação do grafo | **Implementada e testada**: JSON/SVG/DOT no servidor com proveniência e avisos, PNG no browser; cada exportação auditada | `tests/fase3c.mjs` (5 testes) · `docs/exemplo-exportacao-grafo.svg` · `docs/shot-24-exportacao-svg.png` | P3 concluído | — |
+| Orçamento dos agentes | **Implementado e testado**: 40 execuções/projecto/dia (locais), 8 (IA), 120 por conta; `429` antes de executar, aviso a 2 restantes, `resetsAt` | `tests/fase3c.mjs` · `docs/AGENTES-P3.md` §7 | P3 concluído | Fila persistente de execuções |
 | Secção 11 do relatório (Relações) | Deixou de estar «indisponível» quando há relações: lista-as com provas, origens e avisos | `tests/graph.mjs` e `tests/research.mjs` | P2 concluído | — |
 
 ## Parte G — Interface, acessibilidade e higiene
@@ -132,7 +136,8 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 - **P3 (feito agora)**: 13 agentes com execuções persistidas, auditor adversário com 10 regras,
   caminho entre entidades, cronologia e vista de contradições. Corrigida a chave de origem: uma cópia
   sindicada deixa de contar como origem independente (era um furo real na corroboração).
-- **P3 (em falta)**: filtro por período no grafo, caminhos com restrições, exportação do grafo.
-- **P2 (em falta)**: verificação automática de acessibilidade; extracção de PDF/OCR; descoberta
+- **P3 (em falta)**: caminhos com restrições (datas/tipos), fusão assistida de homónimos,
+  extracção automática de entidades, fila persistente de execuções.
+- **P2 (em falta)**: extracção de PDF/OCR; descoberta
   automática de fontes; router com preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

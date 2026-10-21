@@ -77,3 +77,16 @@ Estados possíveis, e o que significam:
 - **Encadeamento automático** (o orquestrador a decidir a ordem): hoje o utilizador escolhe o agente.
 - **Agentes locais a escreverem sugestões no projecto** (por exemplo subperguntas propostas): hoje só
   devolvem o resultado no histórico, sem tocar no objecto de investigação.
+
+
+## 7. Orçamento de execuções (implementado)
+
+Cada agente tem um tecto por projecto e por janela de 24 h: **40 execuções** para agentes locais e
+**8** para agentes de IA (que custam dinheiro); a conta tem ainda um tecto global de **120**.
+
+- a verificação acontece **antes** de executar: esgotado o orçamento, a API responde `429` com
+  `quota` (limite, usado, restante, `resetsAt`) e o evento `agent_run_blocked` fica na auditoria;
+- a partir de 2 execuções restantes, a resposta traz um aviso (`warn`) e a interface mostra-o na
+  coluna «orçamento»;
+- `GET /api/projects/{id}/agent-runs` devolve `quotas` para os 13 agentes e as regras
+  (`quotaRules`), para que a interface não invente números.

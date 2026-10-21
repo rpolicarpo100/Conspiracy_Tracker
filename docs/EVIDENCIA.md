@@ -123,3 +123,15 @@ Todas exigem sessão e CSRF quando alteram estado; provas e conclusões de outro
   18 secções do serviço; a ligação está desenhada mas não implementada.
 - **Cronologia automática** (`eventDate` → linha temporal) e **vista de contradições** no grafo:
   pendentes.
+
+
+## Verificação de acesso (estado observado, não presumido)
+
+Cada prova pode guardar o resultado de uma verificação de acessibilidade feita **agora**
+(`access`): estado (`acessivel` / `inacessivel` / `bloqueado`), HTTP, tipo de conteúdo, data e
+razão. Regras completas em `docs/ACESSO-FONTES.md`.
+
+O que importa para a evidência: a verificação **não promove nem despromove** o estado de validação.
+Uma fonte que deixou de responder produz `suggestion: "fonte-inacessivel"` com
+`requiresHuman: true` — a decisão é humana, registada na auditoria (`evidence_access_checked`).
+E um 200 não valida o excerto: prova que a página responde, não que o texto citado está lá.

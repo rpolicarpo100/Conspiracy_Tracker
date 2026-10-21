@@ -65,6 +65,24 @@ transaccionou, doou), `contractual` (contrato, procedimento, fornecimento), `leg
 investigada por, litígio, sanção, pronúncia, acusação), `affiliation` (membro, reunião documentada,
 família, lobbying, participação), `documental` (mencionada em, documentada em, autoria).
 
+### Verificação de acesso (`evidence.access`)
+
+Campo opcional, escrito apenas por `POST /api/evidence/{id}/check-access`:
+
+```js
+access: {
+  status: 'acessivel' | 'inacessivel' | 'bloqueado',
+  stateLabel: 'acessível', httpStatus: 200, contentType: 'text/html',
+  bytes: 18342, truncated: false, ms: 412, checkedAt: '2026-10-21T19:22:31.004Z',
+  finalUrl: 'https://exemplo.pt/artigo', reason: null,
+  redirects: [{ from, to, status }], method: 'GET (sem cookies, …)', limitations: ['…']
+}
+accessSuggestion: { suggestion: 'fonte-inacessivel'|null, requiresHuman: bool, note: '…' }
+```
+
+Não altera `validationState`: é um facto observado sobre a resposta do servidor de origem, não uma
+reavaliação da prova.
+
 ### Estados de verificação
 
 | Chave | Etiqueta | Exige | Traço no grafo |

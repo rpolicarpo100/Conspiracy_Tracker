@@ -102,17 +102,44 @@ Todas exigem sessão (CSRF nas que alteram estado); grafos e relações de outro
   provas favoráveis **e** contrárias, com a posição de cada prova. A ausência de contradições é
   apresentada como lacuna por preencher, não como confirmação.
 
-## 10. O que ainda não está feito
+## 10. Filtro temporal (implementado)
 
-- **Filtro por período na interface**: o `period` das arestas já entra na cronologia, mas o grafo
-  ainda não se filtra por data.
+`GET /api/projects/{id}/graph?periodFrom=2021&periodTo=2023` recorta o grafo pelas datas
+**declaradas** nas relações. Regras:
+
+- os parâmetros chamam-se `periodFrom`/`periodTo` (ou `desde`/`ate`) para nunca colidirem com
+  `from`/`to`, que no grafo são ids de entidades do cálculo de caminho;
+- datas aceites: `AAAA`, `AAAA-MM`, `AAAA-MM-DD`; datas impossíveis (`2020-02-30`, mês 13) e
+  janelas invertidas devolvem `400` — não são ignoradas em silêncio;
+- uma relação **sem período** não pode ser excluída por data: fica incluída e é contada em
+  `filter.relationsWithoutPeriod`;
+- um período **aberto** («desde 2019») não tem fim inventado: sobrepõe-se à janela e é contado em
+  `filter.relationsOpenPeriod`;
+- a resposta traz `filter` com `relationsIncluded`, `relationsExcludedByPeriod`,
+  `relationsWithoutPeriod`, `relationsOpenPeriod` e a nota que explica a inclusão;
+- a cronologia acompanha o filtro (`timeline.filter.excludedByPeriod`).
+
+## 11. Exportação (implementada)
+
+| Formato | Onde é gerado | O que leva |
+| --- | --- | --- |
+| JSON | servidor (`/graph/export?format=json`) | nós, arestas com provas, confiança justificada, origens, candidatos, avisos, filtro aplicado, autoria |
+| SVG | servidor (`?format=svg`) | desenho determinístico + legenda + avisos «uma linha não é prova» e o filtro aplicado |
+| DOT | servidor (`?format=dot`) | grafo com `evidence_ids`, `style=dashed` nas inferências, cor por família |
+| PNG | browser (botão «PNG») | rasteriza o desenho visível a 2×, com o fundo do serviço |
+
+Todas exigem sessão; cada exportação é registada em auditoria (`graph_exported`, com formato,
+nós, arestas e filtro). O SVG escapa conteúdo hostil (testado com `<script>` num nome).
+
+Exemplo real gerado pelo servidor: `docs/exemplo-exportacao-grafo.svg` (dados fictícios,
+filtro 2021–2023, 1 relação fora do período).
+
+## 12. O que ainda não está feito
+
 - **Pesquisa de caminhos com restrições** (por intervalo de datas, por tipo de relação, por excluir
   inferências): hoje é o caminho mais curto sem filtros.
-- **Exportação do grafo** (SVG/PNG/JSON com proveniência).
-- **Fusão assistida de homónimos** quando o utilizador tem o identificador.
-- **Extracção automática de entidades**: continuam declaradas por quem regista a prova.
-- **Exportação do grafo** (SVG/PNG/JSON com proveniência): não implementada.
 - **Fusão assistida de homónimos**: o servidor recusa fundir sem identificador; falta a operação
   explícita de fusão quando o utilizador *tem* o identificador.
-- **Extracção automática de entidades de documentos**: as entidades são declaradas por quem regista a
-  prova (ou devolvidas como candidatos pelo passo 9/10 do motor, que ainda não as escreve).
+- **Extracção automática de entidades**: as entidades são declaradas por quem regista a prova (ou
+  devolvidas como candidatos pelo passo 9/10 do motor, que ainda não as escreve).
+- **Filtro por tipo de entidade/relação no servidor**: hoje é feito na interface, escondendo nós.

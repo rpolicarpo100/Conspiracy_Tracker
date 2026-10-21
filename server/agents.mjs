@@ -303,3 +303,45 @@ export async function executeAgent(deps, agentId, ctx, opts) {
   run.status = 'concluido';
   return { ok: true, run };
 }
+
+/* ---------------- orçamento de execuções ----------------
+   Cada agente tem um tecto por projecto por dia e cada conta tem um tecto
+   global diário. O limite é verificado ANTES de executar e o resultado diz
+   quanto resta e quando reinicia — não se para a meio sem avisar. */
+export const QUOTAS = {
+  window: 'últimas 24 horas',
+  localPerAgentPerProject: 40,
+  aiPerAgentPerProject: 8,
+  perUser: 120,
+  warnAtRemaining: 2
+};
+
+export function quotaState({ runs, userId, projectId, agentId }) {
+  const agent = agentById(agentId);
+  if (!agent) return { allowed: false, reason: 'agente desconhecido' };
+  const since = Date.now() - 24 * 3600 * 1000;
+  const recent = (runs || []).filter((r) => {
+    const t = Date.parse(r.startedAt || r.createdAt || 0);
+    return Number.isFinite(t) && t >= since;
+  });
+  const mine = recent.filter((r) => r.projectId === projectId && r.agentId === agentId);
+  const userRuns = recent.filter((r) => (r.createdBy || r.userId) === userId);
+  const agentLimit = agent.kind === 'ai' ? QUOTAS.aiPerAgentPerProject : QUOTAS.localPerAgentPerProject;
+  const oldest = mine.slice().sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)))[0];
+  const resetsAt = oldest ? new Date(Date.parse(oldest.startedAt) + 24 * 3600 * 1000).toISOString() : null;
+  const agentRemaining = Math.max(0, agentLimit - mine.length);
+  const userRemaining = Math.max(0, QUOTAS.perUser - userRuns.length);
+  const allowed = agentRemaining > 0 && userRemaining > 0;
+  const remaining = Math.min(agentRemaining, userRemaining);
+  return {
+    allowed,
+    scope: agentRemaining <= userRemaining ? 'agente+projecto' : 'utilizador',
+    agentId, kind: agent.kind,
+    limits: { perAgentPerProject: agentLimit, perUser: QUOTAS.perUser, window: QUOTAS.window },
+    used: { agent: mine.length, user: userRuns.length },
+    remaining, resetsAt,
+    warn: allowed && remaining <= QUOTAS.warnAtRemaining ? 'restam ' + remaining + ' execução(ões) nesta janela de 24 h' : null,
+    reason: allowed ? null : 'orçamento de execuções esgotado nesta janela de 24 h (' +
+      (agentRemaining === 0 ? 'limite do agente neste projecto' : 'limite diário da conta') + ')'
+  };
+}

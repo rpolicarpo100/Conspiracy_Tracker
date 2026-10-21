@@ -11,14 +11,16 @@ import { keyVault } from './crypto-keys.mjs';
 import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, isPrivateHost } from './providers.mjs';
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
 import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
-import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES } from './graph.mjs';
-import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION } from './agents.mjs';
+import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES, periodWindow, relationInWindow } from './graph.mjs';
+import { graphToSvg, graphToDot, graphExportPayload } from './graph-export.mjs';
+import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_REDIRECTS } from './access.mjs';
+import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3b';
+const APP_VERSION = '2.0.0-fase3c';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -28,6 +30,17 @@ function json(res, code, obj, extraHeaders) {
   }, extraHeaders || {});
   res.writeHead(code, headers);
   res.end(JSON.stringify(obj));
+}
+
+/* exportações: ficheiro com aviso de proveniência nos cabeçalhos */
+function jsonOrFile(res, code, body, type, filename) {
+  res.writeHead(code, {
+    'content-type': type,
+    'content-disposition': 'attachment; filename="' + filename + '"',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff'
+  });
+  res.end(body);
 }
 
 function err(res, code, message, extra) {
@@ -147,7 +160,7 @@ export async function createApi(opts) {
   }
 
   /* Cronologia a partir de provas e relações: cada evento aponta a sua prova. */
-  function timelineOf(store, pid) {
+  function timelineOf(store, pid, win) {
     const evs = store.evidenceOf(pid).filter((e) => !e.retractedAt);
     const eventos = evs.filter((e) => e.eventDate || e.publicationDate).map((e) => ({
       data: e.eventDate || e.publicationDate,
@@ -161,8 +174,16 @@ export async function createApi(opts) {
       relacao: r.id,
       ate: r.period.to || null
     }));
-    const tudo = eventos.concat(rels).sort((a, b) => String(a.data).localeCompare(String(b.data)));
-    return { eventos: tudo, total: tudo.length, nota: tudo.length ? null : 'sem datas registadas: nada a ordenar (não se inventam datas)' };
+    const todos = eventos.concat(rels).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    if (!win || !win.applied) return { eventos: todos, total: todos.length, filter: { applied: false },
+      nota: todos.length ? null : 'sem datas registadas: nada a ordenar (não se inventam datas)' };
+    const dentro = [], fora = [];
+    todos.forEach((e) => (relationInWindow({ from: e.data, to: e.data }, win) === false ? fora : dentro).push(e));
+    return {
+      eventos: dentro, total: dentro.length,
+      filter: { applied: true, from: win.from, to: win.to, excludedByPeriod: fora.length },
+      nota: dentro.length ? null : 'nenhum evento datado dentro do período pedido (não se inventam datas)'
+    };
   }
 
   /* Recolha de documentos para o motor: mesma disciplina do agente local
@@ -243,6 +264,28 @@ export async function createApi(opts) {
   }
 
   /* projecto do utilizador (ou null): nunca confiar num id vindo do cliente */
+  /* limite simples por utilizador: a verificação de acesso faz pedidos de rede
+     a endereços escolhidos pelo utilizador, por isso não pode ser ilimitada */
+  function makeLimiter(maxPerHour) {
+    const hits = new Map();
+    return {
+      allowed(userId, n) {
+        const now = Date.now();
+        const list = (hits.get(userId) || []).filter((t) => now - t < 3600 * 1000);
+        hits.set(userId, list);
+        return list.length + (n || 1) <= maxPerHour;
+      },
+      hit(userId) {
+        const now = Date.now();
+        const list = (hits.get(userId) || []).filter((t) => now - t < 3600 * 1000);
+        list.push(now); hits.set(userId, list);
+      },
+      used(userId) { return (hits.get(userId) || []).filter((t) => Date.now() - t < 3600 * 1000).length; },
+      maxPerHour
+    };
+  }
+  const accessLimiter = makeLimiter(60);
+
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
     const c = store.claimById(cid);
@@ -257,6 +300,62 @@ export async function createApi(opts) {
   function requireAdmin(a, res) {
     if (!a || a.user.role !== 'ADMIN') { err(res, 403, 'operação restrita a administradores'); return false; }
     return true;
+  }
+
+  /* contradições: arestas com prova contrária e conclusões em conflito */
+  function contradicoesOf(pid, g) {
+    const evById = new Map(store.evidenceOf(pid).map((e) => [e.id, e]));
+    const out = g.edges.filter((e) => e.confidence.level === 'contraditoria').map((e) => ({
+      tipo: 'relacao', id: e.id, descricao: e.fromName + ' → ' + e.toName + ' (' + e.label + ')',
+      provas: e.evidenceIds.map((id) => {
+        const ev = evById.get(id);
+        return ev ? { id, titulo: ev.title, posicao: ev.stance } : { id };
+      })
+    }));
+    store.claimsOf(pid).forEach((c) => {
+      const evs = store.evidenceOf(pid).filter((e) => (c.evidenceIds || []).includes(e.id) && !e.retractedAt);
+      const fav = evs.filter((e) => e.stance === 'favoravel');
+      const con = evs.filter((e) => e.stance === 'contraria');
+      if (fav.length && con.length) {
+        out.push({
+          tipo: 'conclusao', id: c.id, descricao: c.text, estado: c.state,
+          provas: fav.map((e) => ({ id: e.id, titulo: e.title, posicao: 'favoravel' }))
+            .concat(con.map((e) => ({ id: e.id, titulo: e.title, posicao: 'contraria' })))
+        });
+      }
+    });
+    return out;
+  }
+
+  /* grafo do projecto, opcionalmente recortado por período declarado */
+  function projectGraph(prj, pid, win) {
+    return buildGraph({
+      project: prj, evidence: store.evidenceOf(pid), relations: store.relationsOf(pid),
+      claims: store.claimsOf(pid), window: win
+    });
+  }
+
+  /* janela temporal vinda da query. Nomes explícitos (periodFrom/periodTo, ou
+     desde/ate) para nunca colidir com «from»/«to», que no grafo são ids de
+     entidades para o cálculo de caminho. Inválida é recusada, não ignorada. */
+  function windowFrom(url) {
+    const g = (k, alt) => url.searchParams.get(k) != null ? url.searchParams.get(k) : url.searchParams.get(alt);
+    return periodWindow({ from: g('periodFrom', 'desde'), to: g('periodTo', 'ate') });
+  }
+
+  /* Verificação de acesso: um GET por prova, sem conteúdo guardado. */
+  async function runAccessCheck(ev, a) {
+    const target = ev.canonicalUrl || ev.originalUrl || null;
+    const r = await checkAccess(target, { timeoutMs: 10000 });
+    const suggestion = accessSuggestion(r);
+    const check = {
+      status: r.status, stateLabel: r.stateLabel, httpStatus: r.httpStatus, contentType: r.contentType,
+      bytes: r.bytes, truncated: r.truncated, ms: r.ms, checkedAt: r.checkedAt, finalUrl: r.finalUrl,
+      reason: r.reason, redirects: r.redirects, method: r.method, limitations: r.limitations
+    };
+    const updated = await store.updateEvidence(ev.id, { access: check, accessSuggestion: suggestion },
+      a ? a.user.id : null, 'acesso verificado');
+    return { evidence: updated, check, suggestion };
   }
 
   const api = { store, vault, auth, version: APP_VERSION };
@@ -307,7 +406,13 @@ export async function createApi(opts) {
           privacy: {
             adminAccess: 'os administradores podem consultar projectos e execuções para suporte, segurança e operação; cada acesso fica registado na auditoria',
             storage: 'os dados são guardados no servidor da aplicação; no plano gratuito do Render o disco é efémero'
-          }
+          },
+          accessChecks: {
+            states: ACCESS_STATE_LABEL, method: ACCESS_METHOD, maxRedirects: MAX_REDIRECTS,
+            limits: { porUtilizadorPorHora: 60, porPedido: 10 },
+            policy: 'verifica uma página por prova, sem contornar paywalls/registos/CAPTCHAs, sem guardar conteúdo e sem alterar estados de validação'
+          },
+          quotas: { agentes: QUOTAS, exportacao: 'JSON/SVG/DOT no servidor; PNG gerado no browser a partir do desenho' }
         });
       }
 
@@ -574,6 +679,58 @@ export async function createApi(opts) {
         return json(res, 200, { ok: true, evidence: out });
       }
 
+      /* ---------- verificação de acesso às fontes (uma página, a pedido) ----------
+         Não contorna barreiras, não guarda conteúdo, não muda estados sozinho. */
+      if (p.match(/^\/api\/evidence\/[^/]+\/check-access$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const eid = p.split('/')[3];
+        const ev = evidenceFor(a, eid);
+        if (!ev) return err(res, 404, 'prova não encontrada');
+        if (ev.retractedAt) return err(res, 409, 'a prova está retirada: não se verifica o acesso de prova retirada');
+        if (!accessLimiter.allowed(a.user.id)) return err(res, 429, 'demasiadas verificações de acesso nesta hora');
+        accessLimiter.hit(a.user.id);
+        const out = await runAccessCheck(ev, a);
+        await store.audit({ type: 'evidence_access_checked', actorId: a.user.id, subjectId: eid, action: 'check_access',
+          ip: ipOf(req), detail: { projectId: ev.projectId, status: out.check.status, httpStatus: out.check.httpStatus } });
+        await store.count('access_checks');
+        return json(res, 200, { ok: true, evidence: out.evidence, check: out.check, suggestion: out.suggestion });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/check-access$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const limit = Math.max(1, Math.min(10, Number(body.limit) || 5));
+        const all = store.evidenceOf(pid).filter((e) => !e.retractedAt);
+        let pool = all;
+        if (Array.isArray(body.evidenceIds) && body.evidenceIds.length) {
+          const want = new Set(body.evidenceIds.map(String));
+          pool = all.filter((e) => want.has(e.id));
+        }
+        /* só se verifica o que tem endereço: inventar um endereço é pior do que não verificar */
+        const withoutUrl = pool.filter((e) => !(e.canonicalUrl || e.originalUrl)).length;
+        pool = pool.filter((e) => e.canonicalUrl || e.originalUrl).slice(0, limit);
+        if (!pool.length) return err(res, 400, 'nenhuma prova com URL para verificar', { withoutUrl });
+        if (!accessLimiter.allowed(a.user.id, pool.length)) return err(res, 429, 'demasiadas verificações de acesso nesta hora', { requested: pool.length });
+        const results = [];
+        for (const ev of pool) {
+          accessLimiter.hit(a.user.id);
+          const out = await runAccessCheck(ev, a);
+          results.push({ id: ev.id, title: ev.title, check: out.check, suggestion: out.suggestion });
+          await store.audit({ type: 'evidence_access_checked', actorId: a.user.id, subjectId: ev.id, action: 'check_access',
+            ip: ipOf(req), detail: { projectId: pid, bulk: true, status: out.check.status, httpStatus: out.check.httpStatus } });
+        }
+        await store.count('access_checks_bulk');
+        const counts = results.reduce((acc, r) => { acc[r.check.status] = (acc[r.check.status] || 0) + 1; return acc; }, {});
+        return json(res, 200, {
+          ok: true, checked: results.length, counts, results,
+          skipped: { withoutUrl, remainingInProject: Math.max(0, all.filter((e) => e.canonicalUrl || e.originalUrl).length - results.length) },
+          note: 'verificação de estado, não de conteúdo: o resultado não altera o estado de validação de nenhuma prova'
+        });
+      }
+
       /* ---------- alegações e conclusões ---------- */
       if (p.match(/^\/api\/projects\/[^/]+\/claims$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
@@ -668,7 +825,9 @@ export async function createApi(opts) {
         const a = await requireUser(req, res); if (!a) return;
         const pid = p.split('/')[3];
         if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
-        return json(res, 200, { ok: true, runs: store.agentRunsOf(pid), agents: AGENTS.map((ag) => ag.id) });
+        const quotas = {};
+        AGENTS.forEach((ag) => { quotas[ag.id] = quotaState({ runs: store.data.agentRuns || [], userId: a.user.id, projectId: pid, agentId: ag.id }); });
+        return json(res, 200, { ok: true, runs: store.agentRunsOf(pid), agents: AGENTS.map((ag) => ag.id), quotas, quotaRules: QUOTAS });
       }
       if (p.match(/^\/api\/projects\/[^/]+\/agents\/[^/]+\/run$/) && method === 'POST') {
         const a = await requireUser(req, res); if (!a) return;
@@ -682,6 +841,12 @@ export async function createApi(opts) {
           project: prj, evidence: store.evidenceOf(pid), claims: store.claimsOf(pid),
           relations: store.relationsOf(pid), runs: store.runsOf(pid)
         };
+        const quota = quotaState({ runs: store.data.agentRuns || [], userId: a.user.id, projectId: pid, agentId });
+        if (!quota.allowed) {
+          await store.audit({ type: 'agent_run_blocked', actorId: a.user.id, subjectId: agentId, action: 'run_agent',
+            detail: { projectId: pid, reason: quota.reason, used: quota.used } });
+          return err(res, 429, quota.reason, { quota });
+        }
         const ai = agentAiRunner(a.user);
         const out = await executeAgent({ store }, agentId, ctx, { ai });
         const saved = await store.addAgentRun(pid, out.run, a.user.id);
@@ -691,7 +856,8 @@ export async function createApi(opts) {
             findings: saved.findings ? saved.findings.length : null, reason: saved.reason || null }
         });
         await store.count('agent_runs');
-        return json(res, 201, { ok: true, run: saved, aiUsed: !!ai });
+        const quotaAfter = quotaState({ runs: store.data.agentRuns || [], userId: a.user.id, projectId: pid, agentId });
+        return json(res, 201, { ok: true, run: saved, aiUsed: !!ai, quota: quotaAfter });
       }
 
       /* ---------- grafo a partir de provas ---------- */
@@ -700,43 +866,50 @@ export async function createApi(opts) {
         const pid = p.split('/')[3];
         const prj = projectFor(a, pid);
         if (!prj) return err(res, 404, 'projecto não encontrado');
-        const g = buildGraph({
-          project: prj, evidence: store.evidenceOf(pid), relations: store.relationsOf(pid), claims: store.claimsOf(pid)
-        });
-        /* contradições: arestas com prova contrária e conclusões em conflito */
-        const evById = new Map(store.evidenceOf(pid).map((e) => [e.id, e]));
-        const contradicoes = g.edges.filter((e) => e.confidence.level === 'contraditoria').map((e) => ({
-          tipo: 'relacao', id: e.id, descricao: e.fromName + ' → ' + e.toName + ' (' + e.label + ')',
-          provas: e.evidenceIds.map((id) => {
-            const ev = evById.get(id);
-            return ev ? { id, titulo: ev.title, posicao: ev.stance } : { id };
-          })
-        }));
-        store.claimsOf(pid).forEach((c) => {
-          const evs = store.evidenceOf(pid).filter((e) => (c.evidenceIds || []).includes(e.id) && !e.retractedAt);
-          const fav = evs.filter((e) => e.stance === 'favoravel');
-          const con = evs.filter((e) => e.stance === 'contraria');
-          if (fav.length && con.length) {
-            contradicoes.push({
-              tipo: 'conclusao', id: c.id, descricao: c.text, estado: c.state,
-              provas: fav.map((e) => ({ id: e.id, titulo: e.title, posicao: 'favoravel' }))
-                .concat(con.map((e) => ({ id: e.id, titulo: e.title, posicao: 'contraria' })))
-            });
-          }
-        });
-        /* caminho mais curto (BFS) entre duas entidades, se pedido */
-        let caminho = null;
-        const from = url.searchParams.get('from'), to = url.searchParams.get('to');
-        if (from && to) {
-          caminho = shortestPath(g, from, to);
-        }
+        const w = windowFrom(url);
+        if (!w.ok) return err(res, 400, 'filtro temporal inválido: ' + w.error);
+        const g = projectGraph(prj, pid, w.window);
         return json(res, 200, {
           ok: true, graph: g,
           entityTypes: ENTITY_TYPES, relationTypes: RELATION_TYPES,
-          contradicoes, caminho,
-          timeline: timelineOf(store, pid)
+          contradicoes: contradicoesOf(pid, g),
+          caminho: (url.searchParams.get('from') && url.searchParams.get('to'))
+            ? shortestPath(g, url.searchParams.get('from'), url.searchParams.get('to')) : null,
+          timeline: timelineOf(store, pid, w.window),
+          filter: g.filter,
+          access: { method: ACCESS_METHOD, maxRedirects: MAX_REDIRECTS, states: ACCESS_STATE_LABEL }
         });
       }
+
+      /* ---------- exportação do grafo (JSON / SVG / DOT) ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/graph\/export$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const format = String(url.searchParams.get('format') || 'json').toLowerCase();
+        if (!['json', 'svg', 'dot'].includes(format)) return err(res, 400, 'formato inválido', { allowed: ['json', 'svg', 'dot'] });
+        const w = windowFrom(url);
+        if (!w.ok) return err(res, 400, 'filtro temporal inválido: ' + w.error);
+        const g = projectGraph(prj, pid, w.window);
+        const base = 'meridiano-' + String(prj.id).replace(/[^a-zA-Z0-9-_]/g, '') + '-grafo' +
+          (w.window.applied ? '-' + (w.window.from || 'inicio') + '_' + (w.window.to || 'fim') : '');
+        let body, type, filename;
+        if (format === 'svg') { body = graphToSvg(g, { width: 1100, height: 720 }); type = 'image/svg+xml; charset=utf-8'; filename = base + '.svg'; }
+        else if (format === 'dot') { body = graphToDot(g); type = 'text/vnd.graphviz; charset=utf-8'; filename = base + '.dot'; }
+        else {
+          body = JSON.stringify(graphExportPayload(g, { format: 'json', generatedBy: a.user.id }), null, 2);
+          type = 'application/json; charset=utf-8'; filename = base + '.json';
+        }
+        await store.audit({
+          type: 'graph_exported', actorId: a.user.id, subjectId: pid, action: 'export_graph',
+          detail: { projectId: pid, format, nodes: g.stats.nodes, edges: g.stats.edges,
+            from: w.window.from, to: w.window.to, bytes: Buffer.byteLength(body) }
+        });
+        await store.count('graph_exports');
+        return jsonOrFile(res, 200, body, type, filename);
+      }
+
       if (p.match(/^\/api\/projects\/[^/]+\/relations$/) && method === 'POST') {
         const a = await requireUser(req, res); if (!a) return;
         if (!requireCsrf(req, res, a)) return;

@@ -415,3 +415,44 @@ PASS eliminar conta → 200 · tests/deployed.mjs 6/6
 == 27. REGRESSÃO COMPLETA (2026-10-21, após P3)
 flow 14/14 · search 17/17 · agents 18/18 · apis 13/13 · smoke 0 erros · server 26/26 · evidence 17/17 · research 19/19 · graph 13/13 · agents-p3 16/16 · account-ui 13/13 · deployed 6/6
 Nota: os testes Playwright foram fixados ao caminho do Chromium de ~/.cache/ms-playwright (o /tmp/pw desaparece a cada reinício do ambiente).
+
+== 27. FASE 3C — FILTRO TEMPORAL, EXPORTAÇÃO E ACESSIBILIDADE DAS FONTES (2026-10-21)
+
+Cofre de chaves em produção com APP_SECRET configurado pelo proprietário do serviço:
+/ready → keyVault {ok:true, mode:"aes-256-gcm"}; /api/meta → versão 2.0.0-fase3b em produção.
+Sonda real em produção (conta descartável, criada e eliminada):
+  · registo 201 · guardar chave de teste (inválida) 200 → máscara devolvida, chave em claro
+    NUNCA devolvida (procurada nas respostas: ausente) · teste de ligação → HTTP 401
+    «credencial recusada (HTTP 401)», estado do fornecedor passa a `error` com lastError;
+  · agente de IA com chave não validada → `nao-executado`, motivo «sem fornecedor de IA validado»;
+  · exportação da conta 200 sem chave em claro; eliminação da conta 200; login posterior 401.
+  Conclusão: o cofre está operacional; a IA continua desligada por falta de chave válida (decisão
+  do proprietário, não do código).
+
+Novo: tests/fase3c.mjs — 28 asserções, todas verdes.
+  · 8 de segurança do verificador de acesso (IPv4/IPv6/IPv4-mapeado internos, file://,
+    credenciais na URL, SSRF por DNS, redireccionamento para rede interna, 403 → inacessível
+    com sugestão humana, 200 sem validar conteúdo, tempo esgotado, corte de corpo, ficheiro
+    declarado enorme nem é transferido);
+  · 2 de filtro temporal (datas impossíveis recusadas; fora do período sai, sem período fica e é
+    contado, período aberto sobrepõe-se);
+  · 4 de exportação (SVG com legenda/aviso/filtro, escape de `<script>`, DOT com evidence_ids,
+    disposição determinística);
+  · 11 de API (exportação exige sessão e é auditada; formato/filtro inválidos → 400; cronologia
+    acompanha o filtro; SVG/DOT com tipo certo; isolamento entre contas → 404; verificação não
+    muda validationState; lote limitado a 10; prova retirada → 409; orçamento bloqueia com
+    resetsAt; aviso a 2 restantes; meta publica a política);
+  · 3 de orçamento de agentes.
+
+Correcções que os testes provocaram (não eram cosméticas):
+  1. `relationInWindow` tratava um período aberto («desde 2019») como um ponto, excluindo-o de
+     janelas posteriores — isso afirmava um fim que as provas não declaram. Agora o lado em falta
+     é infinito e a relação é incluída e contada em `relationsOpenPeriod`;
+  2. o leitor de corpos lia o primeiro bloco inteiro antes de verificar o limite (um bloco grande
+     passava inteiro); agora corta por blocos e um ficheiro com content-length > 50× o limite
+     nem é transferido (`downloadSkipped: true`);
+  3. `periodWindow` aceitava `2020-02-30` e `2020-13` (regex sem calendário real).
+
+Interface: tests/account-ui.mjs 14/14 (novo teste de filtro/exportação/acesso), 0 erros de
+runtime; capturas docs/shot-23-filtro-exportacao.png e docs/shot-24-exportacao-svg.png.
+Regressão: server 26/26 · evidence 17/17 · graph 13/13 · agents-p3 16/16.

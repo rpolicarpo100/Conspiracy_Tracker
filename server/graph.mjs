@@ -120,10 +120,92 @@ export function edgeConfidence(rels, evidenceList) {
   return { level: 'uma-so-origem', rationale: 'uma só origem: não sustenta conclusão, só a existência documentada da relação' };
 }
 
-export function buildGraph({ project, evidence, relations, claims }) {
+/* Janela temporal declarada pelo utilizador. Regra de honestidade: uma relação
+   sem período não pode ser excluída por data — fica incluída e é contada à
+   parte, para que o filtro nunca pareça ter verificado o que não verificou. */
+const realDate = (v) => {
+  if (!/^\d{4}(-\d{2}(-\d{2})?)?$/.test(v)) return false;
+  if (v.length === 4) return true;
+  const [y, m] = v.slice(0, 7).split('-').map(Number);
+  if (m < 1 || m > 12) return false;
+  if (v.length === 7) return true;
+  const d = Number(v.slice(8, 10));
+  return d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+};
+export function periodWindow(spec) {
+  const rawFrom = spec && spec.from != null ? String(spec.from).trim() : '';
+  const rawTo = spec && spec.to != null ? String(spec.to).trim() : '';
+  if (rawFrom.length > 10 || rawTo.length > 10) return { ok: false, error: 'datas do filtro devem ser AAAA, AAAA-MM ou AAAA-MM-DD' };
+  const from = rawFrom || null;
+  const to = rawTo || null;
+  if ((from && !realDate(from)) || (to && !realDate(to))) {
+    return { ok: false, error: 'datas do filtro devem ser AAAA, AAAA-MM ou AAAA-MM-DD' };
+  }
+  if (from && to && from > to) return { ok: false, error: 'o início do período é posterior ao fim' };
+  return { ok: true, window: { from, to, applied: !!(from || to) } };
+}
+
+const dayOf = (v) => {
+  const s = String(v == null ? '' : v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+};
+const lastDayOfMonth = (yyyyMm) => {
+  const [y, m] = yyyyMm.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+};
+/* limites da janela em dias, com precisão parcial expandida (AAAA → 1 Jan / 31 Dez) */
+const lowerBound = (v) => {
+  if (!v) return null;
+  if (/^\d{4}$/.test(v)) return v + '-01-01';
+  if (/^\d{4}-\d{2}$/.test(v)) return v + '-01';
+  return dayOf(v);
+};
+const upperBound = (v) => {
+  if (!v) return null;
+  if (/^\d{4}$/.test(v)) return v + '-12-31';
+  if (/^\d{4}-\d{2}$/.test(v)) return lastDayOfMonth(v);
+  return dayOf(v);
+};
+
+/* Sobreposição entre o período da relação e a janela pedida.
+   Período aberto de um lado («desde 2019», «até 2021») conta como sobreposição
+   até ao limite do lado declarado — nunca se inventa o lado em falta. */
+export function relationInWindow(period, win) {
+  if (!win || !win.applied) return true;
+  const pFrom = lowerBound(period && period.from);
+  const pTo = upperBound(period && period.to);
+  if (!pFrom && !pTo) return null;                       // sem período: indeterminado
+  /* Um lado em falta NÃO é o fim do período: «desde 2019» continua aberto.
+     Inventar um fim excluiria relações que podem estar dentro da janela, o que
+     seria uma afirmação que as provas não fazem. */
+  const a = pFrom || '0000-00-00';
+  const b = pTo || '9999-12-31';
+  const wf = lowerBound(win.from), wt = upperBound(win.to);
+  if (wf && b < wf) return false;
+  if (wt && a > wt) return false;
+  return true;
+}
+
+export function buildGraph({ project, evidence, relations, claims, window: win }) {
   evidence = evidence || [];
   relations = relations || [];
   const active = evidence.filter((e) => !e.retractedAt);
+  const filter = { applied: !!(win && win.applied), from: (win && win.from) || null, to: (win && win.to) || null,
+    relationsIncluded: 0, relationsExcludedByPeriod: 0, relationsWithoutPeriod: 0, relationsOpenPeriod: 0,
+    note: 'relações sem período declarado não podem ser excluídas por data: são contadas à parte e ficam incluídas' };
+  if (filter.applied) {
+    relations = relations.filter((r) => {
+      if (r.retractedAt) return true;                    // retiradas são filtradas adiante
+      const p = r.period || {};
+      if ((p.from || p.to) && !(p.from && p.to)) filter.relationsOpenPeriod++;
+      const inWin = relationInWindow(r.period, win);
+      if (inWin === null) { filter.relationsWithoutPeriod++; filter.relationsIncluded++; return true; }
+      if (!inWin) { filter.relationsExcludedByPeriod++; return false; }
+      filter.relationsIncluded++; return true;
+    });
+  } else {
+    filter.relationsIncluded = relations.filter((r) => !r.retractedAt).length;
+  }
   const byId = new Map(evidence.map((e) => [e.id, e]));
 
   /* nós: só entidades que aparecem em provas registadas */
@@ -218,6 +300,7 @@ export function buildGraph({ project, evidence, relations, claims }) {
 
   return {
     project: { id: project.id, title: project.title },
+    filter,
     nodes: nodeList,
     edges,
     candidates,

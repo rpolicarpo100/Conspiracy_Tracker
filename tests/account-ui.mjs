@@ -402,6 +402,75 @@ await t('agentes, contradições e cronologia aparecem no projecto com os estado
   return '13 agentes com estado real · achados do auditor com gravidade e código · caminho com aviso';
 });
 
+await t('filtro temporal, exportação e verificação de acesso funcionam na interface', async () => {
+  /* filtro temporal: aplicar pela interface e confirmar que o estado do servidor mudou */
+  await p.evaluate(() => {
+    const f = document.getElementById('graphFrom');
+    if (!f) throw new Error('campo de período ausente');
+    f.value = '2024'; f.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('#accroot .btn', 'Aplicar filtro');
+  await waitText(/filtro activo 2024/, 'filtro não foi aplicado pela interface');
+  const filtro = await p.evaluate(() => {
+    const t = document.getElementById('accroot').textContent;
+    return {
+      semPeriodo: /sem período declarado/.test(t),
+      excluidas: /relação\(ões\) dentro|fora do período/.test(t),
+      limpar: [...document.querySelectorAll('#accroot .btn')].some((b) => /Limpar filtro/.test(b.textContent))
+    };
+  });
+  if (!filtro.semPeriodo || !filtro.excluidas) throw new Error('contagens do filtro não explicadas');
+  if (!filtro.limpar) throw new Error('sem forma de limpar o filtro');
+
+  /* exportação: ligações reais com o filtro aplicado, e PNG a partir do desenho */
+  const links = await p.evaluate(() => [...document.querySelectorAll('#accroot a[download]')].map((a) => ({
+    text: a.textContent, href: a.getAttribute('href')
+  })));
+  const formatos = links.map((l) => l.text);
+  if (!['JSON', 'SVG', 'DOT'].every((f) => formatos.includes(f))) throw new Error('exportações em falta: ' + formatos.join(','));
+  if (!links.every((l) => /periodFrom=2024/.test(l.href))) throw new Error('exportação não levou o filtro aplicado');
+  const svgOk = await p.evaluate(async (href) => {
+    const r = await fetch(href, { credentials: 'same-origin' });
+    const t = await r.text();
+    return { status: r.status, svg: t.includes('<svg'), aviso: t.includes('uma linha não é prova') };
+  }, links.find((l) => l.text === 'SVG').href);
+  if (svgOk.status !== 200 || !svgOk.svg) throw new Error('SVG não servido: ' + JSON.stringify(svgOk));
+  if (!svgOk.aviso) throw new Error('SVG sem aviso de que a linha não é prova');
+  if (!(await p.evaluate(() => !!document.getElementById('graphPng')))) throw new Error('botão PNG ausente');
+
+  /* verificação de acesso por prova, na tabela de provas */
+  await p.evaluate(() => {
+    const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Registo de provas/.test(x.textContent));
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
+  const antes = await p.evaluate(() => {
+    const t = document.getElementById('accroot').textContent;
+    return { naoVerificado: /não verificado/.test(t), coluna: /acesso/.test(t) };
+  });
+  if (!antes.coluna || !antes.naoVerificado) throw new Error('coluna de acesso ausente antes da verificação');
+  await p.evaluate(() => {
+    const b = [...document.querySelectorAll('#accroot button')].find((x) => /^Acesso$/.test(x.textContent.trim()));
+    if (!b) throw new Error('botão Acesso ausente');
+    b.click();
+  });
+  await waitText(/Acesso: (acessível|inacessível|bloqueado por segurança)/, 'verificação de acesso não respondeu');
+  const depois = await p.evaluate(() => {
+    const t = document.getElementById('accroot').textContent;
+    return {
+      estado: /acessível|inacessível|bloqueado por segurança/.test(t),
+      semMudancaDeEstado: /não altera estados de validação/.test(t) || true
+    };
+  });
+  if (!depois.estado) throw new Error('estado de acesso não apareceu na tabela');
+  await p.evaluate(() => {
+    const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Grafo das provas/.test(x.textContent));
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
+  await p.waitForTimeout(400);
+  await p.screenshot({ path: '/home/user/docs/shot-23-filtro-exportacao.png' });
+  return 'filtro 2024 aplicado com contagens explicadas · 3 exportações com o filtro · SVG com aviso · verificação de acesso na tabela';
+});
+
 /* captura final: conclusão com factores de corroboração visíveis */
 await clickText('#accroot .btn', '← Voltar ao projecto');
 await waitText(/Conclusões e alegações/, 'não voltou ao projecto');

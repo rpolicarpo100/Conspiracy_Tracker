@@ -173,7 +173,7 @@
         }));
         const below = gnodes.indexOf(n) % 2 === 0;
         gg.appendChild(s('text', {
-          y: below ? r + 11 : -(r + 6), 'text-anchor': 'middle', 'font-size': '9.5', fill: '#cbd5e1',
+          y: below ? r + 14 : -(r + 8), 'text-anchor': 'middle', 'font-size': '10', fill: '#e2e8f0',
           style: 'paint-order:stroke;stroke:#0b111a;stroke-width:2.5px'
         }, [document.createTextNode(n.name.length > 26 ? n.name.slice(0, 24) + '…' : n.name)]));
         gg.appendChild(s('title', {}, [document.createTextNode(
@@ -263,5 +263,42 @@
     return { svg, wrap, state, draw, redraw: draw };
   }
 
-  VN.evidenceGraph = { render, FAMILY_COLOR };
+  /* Exportação PNG no próprio browser: o desenho já está aqui, não há razão
+     para o servidor rasterizar. Exporta o que está visível, com o fundo do
+     serviço, a 2× para não sair desfocado. Devolve false se não for possível. */
+  function exportPng(svgEl, filename) {
+    if (!svgEl || !svgEl.getBBox) return false;
+    let W = 0, H = 0;
+    const vb = (svgEl.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    if (vb.length === 4 && vb.every((x) => !isNaN(x))) { W = vb[2]; H = vb[3]; }
+    if (!W || !H) return false;
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('width', String(W));
+    clone.setAttribute('height', String(H));
+    clone.setAttribute('xmlns', SVGNS);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = W * scale; canvas.height = H * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const img = new Image();
+    img.onload = () => {
+      try { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); } catch { /* desenho falhou */ }
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        const href = URL.createObjectURL(blob);
+        a.href = href; a.download = filename || 'grafo.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(href), 4000);
+      }, 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    return true;
+  }
+
+  VN.evidenceGraph = { render, exportPng, FAMILY_COLOR };
 })(typeof window !== 'undefined' ? window : globalThis);

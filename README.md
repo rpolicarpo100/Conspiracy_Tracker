@@ -143,7 +143,9 @@ docs/                      aceitação, esquema, benchmarks, capturas
 - `docs/MOTOR-PESQUISA.md` — os 20 passos do motor, perfis de esforço, motivos de paragem, defesas
   contra injecção de instruções e o relatório de 18 secções.
 - `docs/GRAFO.md` — grafo a partir de provas: uma linha não é prova, co-ocorrência não é relação,
-  homónimos não se fundem sem identificador, caminhos e contradições.
+  homónimos não se fundem sem identificador, caminhos, contradições, filtro temporal e exportação.
+- `docs/ACESSO-FONTES.md` — verificação de acessibilidade: o que é observado, o que nunca é feito
+  (paywall, CAPTCHA, recolha automática), guardas contra SSRF e por que razão não muda estados.
 - `docs/AGENTES-P3.md` — os 13 agentes: contrato, critérios, limites, versão de prompt, o que
   analisam e o que nunca escrevem, e as 10 regras do auditor adversário.
 - `docs/AUDITORIA-CODIGO.md` — matriz de auditoria (componente, estado real, evidência, risco,

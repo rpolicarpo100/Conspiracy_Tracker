@@ -19,7 +19,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "dev": "node tools/serve.mjs",
-    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs && node tests/server.mjs && node tests/evidence.mjs && node tests/research.mjs && node tests/graph.mjs && node tests/agents-p3.mjs",
+    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs && node tests/server.mjs && node tests/evidence.mjs && node tests/research.mjs && node tests/graph.mjs && node tests/agents-p3.mjs && node tests/fase3c.mjs",
     "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs && node tests/account-ui.mjs",
     "audit:apis": "node tools/audit-catalog.mjs --attempts=3",
     "test:deployed": "node tests/deployed.mjs"

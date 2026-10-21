@@ -15,6 +15,9 @@
     providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false,
     detail: null,           // projecto aberto: { project, evidence, claims, runs, graph, agents, agentRuns }
     path: null,             // caminho entre entidades pedido
+    graphView: null,        // referência ao SVG desenhado (para exportar PNG)
+    period: { from: '', to: '' },   // filtro temporal do grafo
+    accessOut: null,        // último resultado de verificação de acesso
     report: null            // relatório de 18 secções aberto
   };
 
@@ -292,12 +295,15 @@
   async function openProject(id) {
     S.report = null;                      // abrir um projecto sai da vista de relatório
     S.path = null;
+    /* o filtro temporal é do projecto: trocar de projecto não herda o recorte do anterior */
+    if (!S.detail || !S.detail.project || S.detail.project.id !== id) S.period = { from: '', to: '' };
     const [p, ev, cl, rn] = await Promise.all([
       api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'),
       api('/api/projects/' + id + '/claims'), api('/api/projects/' + id + '/runs')
     ]);
     if (!p.ok) return note('Não foi possível abrir o projecto: ' + (p.error && p.error.message), 'bad');
-    const gr = await api('/api/projects/' + id + '/graph');
+    const qs = periodQS();
+    const gr = await api('/api/projects/' + id + '/graph' + qs);
     const ag = await api('/api/agents');
     const ar = await api('/api/projects/' + id + '/agent-runs');
     S.detail = {
@@ -306,7 +312,9 @@
       steps: rn.ok ? rn.json.steps : [],
       graph: gr.ok ? gr.json : null,
       agents: ag.ok ? ag.json.agents : [],
-      agentRuns: ar.ok ? ar.json.runs : []
+      agentRuns: ar.ok ? ar.json.runs : [],
+      agentQuotas: ar.ok ? (ar.json.quotas || {}) : {},
+      quotaRules: ar.ok ? ar.json.quotaRules : null
     };
     paint();
   }
@@ -351,6 +359,22 @@
     const ok = ['confirmada', 'corroborada-independente'].includes(state);
     const bad = ['refutada', 'contraditoria', 'fonte-inacessivel'].includes(state);
     return el('span', { class: 'tag ' + (ok ? 'ok' : bad ? 'bad' : 'warn'), text: state });
+  }
+
+  /* filtro temporal: os parâmetros têm nomes próprios para não colidirem com
+     «from»/«to», que no grafo são ids de entidades do cálculo de caminho */
+  function periodQS() {
+    const f = S.period || {};
+    const parts = [];
+    if (f.from) parts.push('periodFrom=' + encodeURIComponent(f.from));
+    if (f.to) parts.push('periodTo=' + encodeURIComponent(f.to));
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+  async function reloadGraph(projectId) {
+    const r = await api('/api/projects/' + projectId + '/graph' + periodQS());
+    if (!r.ok) return note('Grafo: ' + (r.error && r.error.message), 'bad');
+    if (S.detail) S.detail.graph = r.json;
+    paint();
   }
 
   function paintProjectDetail(root) {
@@ -454,6 +478,45 @@
         gg.stats.edgesWithSingleOrigin + ' com uma só origem, ' + gg.stats.inferred + ' inferidas) · ' +
         gg.stats.candidates + ' co-ocorrência(s) não desenhada(s) como relação · ' +
         gg.stats.entitiesWithoutDisambiguator + ' entidade(s) sem desambiguador' }));
+      /* filtro temporal + exportação */
+      const gflt = (d.graph && d.graph.filter) || { applied: false };
+      root.appendChild(el('div', { class: 'chips', style: 'margin:6px 0 2px' }, [
+        el('span', { style: 'font-size:10px;color:var(--muted)', text: 'período:' }),
+        el('input', {
+          id: 'graphFrom', placeholder: 'de AAAA-MM-DD', value: (S.period && S.period.from) || '', style: 'width:120px',
+          oninput: (e) => { S.period.from = e.target.value.trim(); }
+        }),
+        el('input', {
+          id: 'graphTo', placeholder: 'até AAAA-MM-DD', value: (S.period && S.period.to) || '', style: 'width:120px',
+          oninput: (e) => { S.period.to = e.target.value.trim(); }
+        }),
+        el('button', {
+          class: 'btn sm', type: 'button', text: 'Aplicar filtro',
+          onclick: async () => { await reloadGraph(p.id); }
+        }),
+        gflt.applied ? el('button', {
+          class: 'btn sm', type: 'button', text: 'Limpar filtro',
+          onclick: async () => { S.period = { from: '', to: '' }; await reloadGraph(p.id); }
+        }) : null,
+        el('span', { style: 'font-size:10px;color:var(--muted);margin-left:8px', text: 'exportar:' }),
+        el('a', { class: 'btn sm', href: '/api/projects/' + p.id + '/graph/export?format=json' + periodQS().replace('?', '&'), download: '', text: 'JSON' }),
+        el('a', { class: 'btn sm', href: '/api/projects/' + p.id + '/graph/export?format=svg' + periodQS().replace('?', '&'), download: '', text: 'SVG' }),
+        el('a', { class: 'btn sm', href: '/api/projects/' + p.id + '/graph/export?format=dot' + periodQS().replace('?', '&'), download: '', text: 'DOT' }),
+        el('button', {
+          id: 'graphPng', class: 'btn sm', type: 'button', text: 'PNG',
+          onclick: () => {
+            if (!S.graphView || !VN.evidenceGraph || !VN.evidenceGraph.exportPng) return note('Desenho indisponível para PNG', 'warn');
+            const okPng = VN.evidenceGraph.exportPng(S.graphView.svg, 'meridiano-' + p.id + '-grafo.png');
+            if (okPng === false) return note('O browser recusou gerar a imagem PNG: utilize a exportação SVG', 'warn');
+          }
+        })
+      ].filter(Boolean)));
+      if (gflt.applied) {
+        root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted)', text:
+          'filtro activo ' + (gflt.from || '—') + ' a ' + (gflt.to || '—') + ' · ' + (gflt.relationsIncluded || 0) + ' relação(ões) dentro · ' +
+          (gflt.relationsExcludedByPeriod || 0) + ' fora do período · ' + (gflt.relationsWithoutPeriod || 0) +
+          ' sem período declarado (ficam incluídas: não se exclui por data o que não tem data)' }));
+      }
       const gbox = el('div', {});
       root.appendChild(gbox);
       const detailBox = el('div', { class: 'warnbox', style: 'margin-top:6px;font-size:10px' });
@@ -481,7 +544,7 @@
         }
       };
       if (VN.evidenceGraph) {
-        VN.evidenceGraph.render(gbox, d.graph, { onSelect: showDetail, width: 820, height: 360 });
+        S.graphView = VN.evidenceGraph.render(gbox, d.graph, { onSelect: showDetail, width: 820, height: 360 });
       } else {
         gbox.appendChild(el('div', { class: 'warnbox', text: 'Módulo de desenho do grafo não carregado.' }));
       }
@@ -597,7 +660,7 @@
     const runsByAgent = {};
     (d.agentRuns || []).forEach((r) => { runsByAgent[r.agentId] = r; });
     root.appendChild(el('table', { class: 'listtable' }, [
-      el('thead', {}, [el('tr', {}, ['agente', 'tipo', 'última execução', ''].map((x) => el('th', { text: x })))]),
+      el('thead', {}, [el('tr', {}, ['agente', 'tipo', 'última execução', 'orçamento', ''].map((x) => el('th', { text: x })))]),
       el('tbody', {}, (d.agents || []).map((ag) => {
         const last = runsByAgent[ag.id];
         return el('tr', {}, [
@@ -608,10 +671,19 @@
             last && last.reason ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.reason.slice(0, 80) }) : null,
             last && last.findings ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.findings.length + ' achado(s)' }) : null
           ].filter(Boolean)),
+          (() => {
+            const q = (d.agentQuotas || {})[ag.id];
+            if (!q) return el('td', {});
+            return el('td', { style: 'font-size:9px;color:var(--muted)' }, [
+              el('div', { text: q.remaining + '/' + q.limits.perAgentPerProject + ' restantes (24 h)' }),
+              q.warn ? el('div', { style: 'color:var(--warn,#b45309)', text: q.warn }) : null
+            ].filter(Boolean));
+          })(),
           el('td', {}, [el('button', {
             class: 'btn sm', type: 'button', text: 'Executar',
             onclick: async () => {
               const r = await api('/api/projects/' + p.id + '/agents/' + ag.id + '/run', { method: 'POST', body: {} });
+              if (r.status === 429) return note('Limite: ' + r.error.message, 'warn');
               if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
               const run = r.json.run;
               note(ag.name + ': ' + run.status + (run.reason ? ' — ' + run.reason : '') +
@@ -699,9 +771,24 @@
     /* provas */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Registo de provas (' + d.evidence.length + ')' }));
     root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'Cópias do mesmo comunicado contam como UMA origem: a corroboração usa origens independentes, não ficheiros.' }));
+    root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:4px' }, [
+      el('button', {
+        id: 'checkAccessBulk', class: 'btn sm', type: 'button', text: 'Verificar acesso (até 5)',
+        onclick: async () => {
+          const r = await api('/api/projects/' + p.id + '/check-access', { method: 'POST', body: { limit: 5 } });
+          if (!r.ok) return note('Verificação: ' + (r.error && r.error.message), 'bad');
+          const c = r.json.counts || {};
+          note('Verificadas ' + r.json.checked + ': ' + Object.keys(c).map((k) => k + ' ' + c[k]).join(' · ') +
+            (r.json.skipped.withoutUrl ? ' · ' + r.json.skipped.withoutUrl + ' sem URL' : '') +
+            ' — não altera estados de validação', 'warn');
+          await reloadDetail();
+        }
+      }),
+      el('span', { style: 'font-size:9px;color:var(--muted)', text: 'verificação de uma página por prova, sem contornar barreiras e sem guardar conteúdo' })
+    ]));
     if (d.evidence.length) {
       root.appendChild(el('table', { class: 'listtable' }, [
-        el('thead', {}, [el('tr', {}, ['prova', 'tipo', 'posição', 'origem', 'estado', 'verificada', ''].map((h) => el('th', { text: h })))]),
+        el('thead', {}, [el('tr', {}, ['prova', 'tipo', 'posição', 'origem', 'estado', 'acesso', 'verificada', ''].map((h) => el('th', { text: h })))]),
         el('tbody', {}, d.evidence.map((ev) => el('tr', { style: ev.retractedAt ? 'opacity:.55' : '' }, [
           el('td', { style: 'font-size:10px' }, [
             el('b', { text: ev.title }),
@@ -712,8 +799,30 @@
           el('td', { style: 'font-size:10px', text: ev.stance }),
           el('td', { style: 'font-size:10px;color:var(--muted)', text: ev.originKey }),
           el('td', {}, [stateTag(ev.validationState), ev.retractedAt ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'retirada' }) : null].filter(Boolean)),
+          el('td', { style: 'font-size:9px' }, (() => {
+            const ac = ev.access;
+            if (!ac) return [el('span', { style: 'color:var(--muted)', text: 'não verificado' })];
+            const cls = ac.status === 'acessivel' ? 'ok' : ac.status === 'inacessivel' ? 'bad' : 'warn';
+            return [
+              el('span', { class: 'tag ' + cls, text: ac.stateLabel || ac.status }),
+              el('div', { style: 'color:var(--muted)', text: (ac.httpStatus ? 'HTTP ' + ac.httpStatus + ' · ' : '') + String(ac.checkedAt || '').slice(0, 10) }),
+              ac.reason ? el('div', { style: 'color:var(--muted)', text: ac.reason.slice(0, 60) }) : null
+            ].filter(Boolean);
+          })()),
           el('td', { style: 'font-size:10px', text: ev.verificationDate ? ev.verificationDate.slice(0, 10) : '—' }),
           el('td', {}, [ev.retractedAt ? null : el('button', {
+            class: 'btn sm', type: 'button', text: 'Acesso',
+            title: 'verifica agora se a fonte responde (sem contornar barreiras)',
+            onclick: async () => {
+              const r = await api('/api/evidence/' + ev.id + '/check-access', { method: 'POST', body: {} });
+              if (!r.ok) return note('Verificação: ' + (r.error && r.error.message), 'bad');
+              const c = r.json.check;
+              note('Acesso: ' + (c.stateLabel || c.status) + (c.reason ? ' — ' + c.reason : '') +
+                (r.json.suggestion && r.json.suggestion.suggestion ? ' · sugestão: ' + r.json.suggestion.suggestion + ' (decisão humana)' : ''),
+                c.status === 'acessivel' ? 'ok' : 'warn');
+              await reloadDetail();
+            }
+          }), ev.retractedAt ? null : el('button', {
             class: 'btn sm', type: 'button', text: 'Anotar',
             onclick: async () => {
               const lim = prompt('Limitações desta prova:', ev.limitations || '');
