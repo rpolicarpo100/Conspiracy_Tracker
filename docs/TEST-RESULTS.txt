@@ -655,3 +655,50 @@ Ainda por testar nesta fase:
   · OCR no serviço público: depende do build descarregar os dados (~4 MB comprimidos) e de CPU/RAM
     disponíveis no plano gratuito — só se sabe ao vivo, e será registado em §33 com o resultado real;
   · medição de memória do OCR sob carga sustentada (o limite de concorrência é 1).
+
+== 33. VERIFICAÇÃO AO VIVO (serviço público, commit 0f5fd66, versão 2.0.0-fase3f)
+
+Duas correções nasceram desta verificação — nenhuma delas era visível em local:
+
+  · **OCR indisponível em produção** (primeira publicação, commit 40bf2cc): em `/api/meta`,
+    `documents.ocr.available=false`, motivo «sem dados de língua em /opt/render/project/src/data/ocr».
+    Causa real: as variáveis de `render.yaml` (OCR_LANG_PATH, DATA_DIR) **não existem** no serviço
+    (o blueprint não está ligado ao serviço criado no painel), e o build configurado no painel não
+    corria `tools/fetch-ocr-data.mjs`. A aplicação declarou-se honestamente sem OCR — mas a função
+    não existia. Correção: `vendor/ocr/` versionado (4,2 MB, sha256 no manifesto), procurado em
+    último lugar, com `OCR_LANG_PATH`/`<DATA_DIR>/ocr` a terem precedência. Sem rede em runtime e
+    sem depender de configuração que não controlo.
+  · **`.local/lib` e `*.traineddata` entraram para o índice do git** ao preparar o ambiente de
+    interface/OCR; repostos fora do repositório e cobertos pelo `.gitignore`.
+
+Depois da correção (commit 0f5fd66), no serviço público:
+
+  /api/meta → documents.ocr: available=true · engine tesseract.js 7.0.0 · línguas eng,por ·
+    dataSource "local:/opt/render/project/src/vendor/ocr" · minConfidence 55 · maxImages 6.
+
+tests/ocr-publico.mjs — **13/13** (conta descartável criada e eliminada; ficheiros reais do
+repositório servidos por HTTPS pelo GitHub):
+  · digitalização (só imagem) → HTTP 201 · `method:'ocr'` · **143 caracteres** ·
+    **confiança 93/100** · revisão humana obrigatória;
+  · lista de documentos não devolve o texto integral; provas criadas automaticamente: **0**;
+  · PDF com camada de texto continua a usar o extrator nativo (`texto-extraído`).
+
+tests/mfa-publico.mjs — **15/15** (código TOTP calculado com `totpAt`, a mesma função do servidor):
+  · `/api/auth/mfa/setup` → 201 com segredo de 32 caracteres Base32; o segredo não volta a ser
+    servido pelo estado (`GET /api/auth/mfa` devolve máscara);
+  · activação com código real → 200 e 10 códigos de recuperação;
+  · login devolve `{mfaRequired, challenge}` e **nenhum cookie de sessão**; código errado → 401 e
+    `/api/auth/me` vazio; código certo → 200 e sessão criada;
+  · o mesmo desafio repetido → 401 (uso único);
+  · desactivar sem código → 400; com palavra-passe + código → 200;
+  · conta eliminada → 200.
+
+Resumo desta fase: `npm test` 12 suites (0 falhas), `npm run test:ui` 5 suites (43 asserções, 0
+falhas), `npm run test:publico` 28 asserções contra o serviço público (0 falhas),
+`tools/audit-deps.mjs` sem vulnerabilidades altas/críticas.
+
+O que continua por verificar (declarado):
+  · OCR sob carga sustentada no plano gratuito (512 MB, CPU partilhada): o limite de concorrência
+    é 1 imagem de cada vez e 45 s por imagem, mas a memória em pico só se mede com carga real;
+  · durabilidade sob um deploy a meio de uma escrita (o bloqueio de segunda instância foi testado
+    localmente, não em produção).

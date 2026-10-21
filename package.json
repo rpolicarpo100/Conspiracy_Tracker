@@ -27,6 +27,7 @@
     "status": "node tools/status.mjs",
     "status:check": "node tools/status.mjs --check",
     "audit:deps": "node tools/audit-deps.mjs",
-    "ocr:data": "node tools/fetch-ocr-data.mjs"
+    "ocr:data": "node tools/fetch-ocr-data.mjs",
+    "test:publico": "node tests/ocr-publico.mjs && node tests/mfa-publico.mjs"
   }
 }
