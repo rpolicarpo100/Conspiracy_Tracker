@@ -67,7 +67,7 @@
     h.push('<h1>' + esc(model.meta.title) + '</h1>');
     h.push('<p class="meta">Relatório gerado em ' + now.toLocaleString('pt-PT') + ' · versão do modelo ' + esc(model.meta.version) +
       ' · impressão digital do conteúdo <code>' + fingerprint(JSON.stringify([entities.map((e) => e.id), rels.map((r) => r.id)])) + '</code></p>');
-    h.push('<div class="warn"><b>' + (model.meta.fictional ? 'Dados fictícios.' : 'Dados reais sob verificação.') + '</b> ' + esc(model.meta.disclaimer) + '</div>');
+    h.push('<div class="warn"><b>' + (model.meta.fictional ? 'Proveniência não declarada.' : 'Dados reais sob verificação.') + '</b> ' + esc(model.meta.disclaimer) + '</div>');
 
     h.push('<h2>1. Âmbito e limitações</h2>');
     h.push('<table><tr><th>Entidades no relatório</th><td>' + entities.length + ' de ' + model.entities.length + '</td></tr>' +
@@ -150,7 +150,7 @@
     h.push('<h1>' + esc(e.name) + '</h1>');
     h.push('<p class="meta">' + esc(e.typeLabel) + ' · <span class="mono">' + esc(e.id) + '</span> · estado ' + statusBadge(model, e.status) +
       (e.date ? ' · ' + esc(fmtDate(e.date, e.precision)) : ' · data desconhecida') + ' · emitida em ' + new Date().toLocaleString('pt-PT') + '</p>');
-    h.push('<div class="warn"><b>' + (model.meta.fictional ? 'Dados fictícios.' : 'Dados reais sob verificação.') + '</b> ' + esc(model.meta.disclaimer) + '</div>');
+    h.push('<div class="warn"><b>' + (model.meta.fictional ? 'Proveniência não declarada.' : 'Dados reais sob verificação.') + '</b> ' + esc(model.meta.disclaimer) + '</div>');
     if (e.ctx) h.push('<p>' + esc(e.ctx) + '</p>');
     if ((e.facts || []).length) h.push('<h2>Factos documentados</h2><ul>' + e.facts.map((f) => '<li>' + esc(f) + '</li>').join('') + '</ul>');
     if ((e.alleges || []).length) h.push('<h2>Alegações atribuídas</h2><ul>' + e.alleges.map((f) => '<li>' + esc(f) + '</li>').join('') + '</ul>');

@@ -59,7 +59,7 @@
     if (!obj || typeof obj !== 'object') return { ok: false, errors: [{ msg: 'Ficheiro não é um objecto JSON' }], warnings, stats: null };
     if (!Array.isArray(obj.entities) || !obj.entities.length) errors.push({ msg: 'Sem entidades (entities[])' });
     if (!Array.isArray(obj.relations)) errors.push({ msg: 'Sem relações (relations[])' });
-    if (obj.meta && obj.meta.fictional) errors.push({ msg: 'Este ficheiro declara-se fictício. Use o modo de demonstração em vez de dados reais.' });
+    if (obj.meta && obj.meta.fictional) errors.push({ msg: 'Este ficheiro declara-se fictício (meta.fictional = true): não entra, porque o produto não mostra dados inventados.' });
 
     const ids = new Set();
     const docs = new Set();
@@ -73,9 +73,17 @@
       if (STATUS.indexOf(e.status) < 0) errors.push({ msg: tag + ': estado inválido "' + e.status + '"' });
       if (e.type === 'document') {
         docs.add(e.id);
-        if (!e.url && !e.archiveRef) errors.push({ msg: tag + ': documento sem URL nem referência de arquivo' });
-        if (!e.retrievedAt) errors.push({ msg: tag + ': documento sem data de recolha (retrievedAt)' });
-        if (!e.excerptHash && !e.hash) warnings.push({ msg: tag + ': documento sem hash do excerto' });
+        /* Proveniência de um documento pode estar em campos próprios (url/retrievedAt/hash) ou,
+           como no registo de importação, no objecto `source` (url/canonical/retrievedAt/sha256).
+           Aceitam-se as duas formas, mas exige-se que uma delas exista: um documento sem origem
+           verificável não é documento, é uma citação solta. */
+        const src = e.source || {};
+        const url = e.url || e.archiveRef || src.canonical || src.url;
+        const retrievedAt = e.retrievedAt || src.retrievedAt;
+        const hash = e.excerptHash || e.hash || src.sha256;
+        if (!url) errors.push({ msg: tag + ': documento sem URL nem referência de arquivo' });
+        if (!retrievedAt) errors.push({ msg: tag + ': documento sem data de recolha (retrievedAt)' });
+        if (!hash) warnings.push({ msg: tag + ': documento sem hash do ficheiro nem do excerto' });
       }
       if (e.type === 'person' || e.type === 'company' || e.type === 'foundation' || e.type === 'organization') {
         const d = e.disambiguation || {};

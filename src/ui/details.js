@@ -320,7 +320,7 @@
       (d.facts || []).length ? el('ul', {}, d.facts.map((f) => el('li', { text: f }))) : null,
       d.url ? el('p', {}, [el('a', { href: d.url, target: '_blank', rel: 'noopener noreferrer', text: 'Abrir fonte original ↗' }),
         el('span', { class: 'muted', text: '  (' + (d.retrievedAt ? 'recolhida em ' + d.retrievedAt : 'data de recolha desconhecida') + ')' })])
-        : el('div', { class: 'warnbox', text: 'Documento sem URL: faz parte do conjunto fictício de demonstração. No modo real, cada documento tem endereço de origem, data de recolha e hash do excerto.' }),
+        : el('div', { class: 'warnbox', text: 'Documento sem URL de origem. Sem endereço, data de recolha e hash do excerto, a referência existe mas não é verificável — trate-a como pista.' }),
       d.hash ? el('p', { class: 'srcmeta' }, ['hash SHA-256 do excerto: ', el('code', { text: d.hash })]) : null,
       el('h3', { text: 'Relações sustentadas por este documento (' + citing.length + ')' }),
       ...citing.map((r) => el('div', { style: 'border-top:1px solid var(--line);padding:8px 0' }, [

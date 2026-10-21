@@ -7,7 +7,7 @@ await page.waitForTimeout(1600);
 await page.screenshot({ path: '/home/user/docs/shot-01-initial.png' });
 
 // seleccionar entidade central via pesquisa
-await page.click('#search'); await page.fill('#search', 'Meridiano'); await page.waitForTimeout(300);
+await page.click('#search'); await page.fill('#search', 'Epstein'); await page.waitForTimeout(300);
 await page.click('.sresult'); await page.waitForTimeout(1400);
 await page.evaluate(() => { VN.app.expand('c-meridiano', 1); });
 await page.waitForTimeout(1400);

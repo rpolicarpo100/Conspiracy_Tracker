@@ -13,8 +13,15 @@ O que ainda **não** está implementado está marcado como tal na secção 8.
 
 - A aplicação é uma ferramenta de investigação visual: o utilizador cria projectos de investigação,
   recolhe fontes, constrói um grafo de entidades/relações e produz relatórios.
-- Dados de demonstração (`data/*.json`, 69 entidades / 126 relações) são **fictícios** e estão
-  identificados como tal na interface. Não descrevem pessoas, empresas ou factos reais.
+- O conjunto incluído (`data/real/`) é **real e público**: 17 decisões judiciais de tribunais dos
+  EUA (domínio público federal), 46 entidades nomeadas nessas decisões e 82 relações processuais com
+  excerto literal, hash do PDF e URL canónico. Não há dados de demonstração inventados.
+- Sobre pessoas singulares: são figuras públicas ou partes identificadas em decisões judiciais
+  publicadas; o tratamento limita-se ao que o documento diz (nome, papel processual, tribunal, data),
+  com excerto citável. Não há perfilagem, nem inferência de conduta, nem categorias especiais
+  (artigo 9.º) para além do que o próprio documento judicial contém.
+- Direitos: qualquer pessoa nomeada pode pedir rectificação ou remoção através do endereço de
+  contacto indicado na aplicação; o pedido é registado e respondido (artigos 15.º a 22.º).
 - Não há perfis publicitários, nem venda, nem cedência de dados a terceiros para marketing.
 
 ## 2. Base legal (artigo 6.º RGPD)

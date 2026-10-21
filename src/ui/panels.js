@@ -389,13 +389,26 @@
     ]));
   }
 
-  function showFiction(onOpen) {
-    modal('Nota metodológica', el('div', {}, [
-      el('div', { class: 'warnbox', html: '<b>Os dados desta sessão são fictícios.</b> O «Caso Meridiano» foi construído para testar a plataforma. Pessoas, empresas, fundações, documentos, montantes e excertos são inventados. Nenhuma fotografia real é utilizada.' }),
-      el('h3', { text: 'Porque é que os dados são fictícios?' }),
-      el('p', { text: 'Publicar alegações sobre pessoas reais sem prova verificada seria precisamente o erro que esta ferramenta existe para evitar. O que é real aqui é o método: modelo de dados, exigência de fonte, excertos, estados de verificação, contraditórios e exportação com referências.' }),
-      el('h3', { text: 'Como entrar com dados reais' }),
-      el('p', { text: 'O separador «Real» carrega apenas registos com URL de origem, data de recolha, excerto literal e hash. Cada facto indica quem o afirmou e onde. Nada é apresentado como confirmado antes de revisão humana.' }),
+  /* Proveniência: o que este conjunto é, como foi verificado e o que não se pode concluir. */
+  function showProvenance(onOpen) {
+    const m = (VN.app && VN.app.model) ? VN.app.model : null;
+    const meta = (m && m.meta) || {};
+    const ents = (m && m.entities) || [];
+    const rels = (m && m.relations) || [];
+    const docs = ents.filter((e) => e.type === 'document');
+    const proc = rels.filter((r) => ['litigation_with', 'documented_in', 'ruled_on', 'mentioned_in'].includes(r.kind)).length;
+    const verified = meta.fictional === false;
+    modal('Proveniência dos dados', el('div', {}, [
+      el('div', { class: verified ? 'infobox' : 'warnbox', html: verified
+        ? '<b>Este conjunto declara proveniência verificada.</b> ' + docs.length + ' documentos com hash, ' + ents.length + ' entidades e ' + rels.length + ' relações com excerto.'
+        : '<b>Este conjunto não declara proveniência verificada.</b> Trate-o como material por conferir.' }),
+      el('h3', { text: 'De onde vêm os dados' }),
+      el('p', { text: meta.disclaimer || 'Cada documento tem URL canónico, data de recolha, hash SHA-256 e o texto foi extraído do próprio ficheiro. A proveniência documento a documento está em data/real/PROVENIENCIA.json.' }),
+      el('h3', { text: 'O que uma ligação significa aqui' }),
+      el('p', { text: proc + ' das ' + rels.length + ' relações são processuais: «nomeado no mesmo processo», «documentado nesta decisão», «este tribunal proferiu esta decisão», «o nome ocorre nesta decisão». Nenhuma afirma crime, coordenação, conhecimento ou culpa — e nenhuma foi inferida de co-ocorrência.' }),
+      el('div', { class: 'warnbox', text: 'Uma linha não é prova. Um caminho entre duas entidades mostra apenas que existem relações registadas entre elas. Alegações não são factos; nomes iguais podem ser pessoas diferentes.' }),
+      el('h3', { text: 'Como entrar com outros dados' }),
+      el('p', { text: 'Só por importação de um lote que passe a validação de proveniência: cada relação precisa de fonte, excerto literal, data de recolha e estado. Sem isso, o lote é recusado com os erros listados.' }),
       onOpen ? el('button', { class: 'btn primary', type: 'button', text: 'Abrir consola de investigação', onclick: () => { onOpen(); } }) : null
     ]));
   }
@@ -416,5 +429,5 @@
     setTimeout(() => document.addEventListener('click', () => { menu.hidden = true; }, { once: true }), 0);
   }
 
-  VN.panels = { init, renderSidebar, renderLegendBar, renderStatusBar, modal, showQuality, showHelp, showFiction, contextMenu, toast };
+  VN.panels = { init, renderSidebar, renderLegendBar, renderStatusBar, modal, showQuality, showHelp, showProvenance, showFiction: showProvenance, contextMenu, toast };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -100,33 +100,34 @@
 
   let seedLabelsShown = true;
 
-  /* Escolha do conjunto: demonstração fictícia ou dados reais validados. */
+  /* Um único conjunto: o real. Só um lote importado que passe a validação de proveniência
+     pode substituir o conjunto incluído — e nunca em silêncio. */
   function selectDataset() {
-    const ds = localStorage.getItem('vn-dataset') || 'fictional';
-    if (ds === 'real') {
-      try {
-        const raw = localStorage.getItem('vn-real-bundle');
-        if (raw) {
-          const obj = JSON.parse(raw);
-          const v = VN.realdata.validateBundle(obj);
-          if (v.ok) return obj;
-          console.warn('Conjunto real guardado não passa validação; a usar demonstração.', v.errors);
-          D.toast('Os dados reais guardados falharam a validação. A abrir demonstração.', 'bad', 7000);
-        }
-      } catch (e) { console.warn(e); }
-    }
+    try {
+      const raw = localStorage.getItem('vn-real-bundle');
+      if (!raw) return g.VN_DATA;
+      const obj = JSON.parse(raw);
+      const v = VN.realdata.validateBundle(obj);
+      if (v.ok) return obj;
+      console.warn('Lote importado guardado não passa a validação de proveniência.', v.errors);
+      D.toast('O lote importado guardado falhou a validação de proveniência. A abrir o conjunto incluído.', 'bad', 7000);
+    } catch (e) { console.warn(e); }
     return g.VN_DATA;
   }
 
   function updateDatasetBadge() {
     const badge = $('#fictionBadge');
     if (!badge) return;
-    const real = !!(model.meta && model.meta.fictional === false);
-    badge.innerHTML = real
-      ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l6 3v4c0 3-2.6 5.3-6 6-3.4-.7-6-3-6-6v-4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg> Dados reais'
-      : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l6 3v4c0 3-2.6 5.3-6 6-3.4-.7-6-3-6-6v-4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 5v4M8 11v.6" stroke="currentColor" stroke-width="1.4"/></svg> Dados fictícios';
-    badge.title = real ? 'Conjunto real importado e validado — abrir consola' : 'Demonstração fictícia — abrir nota metodológica';
-    badge.onclick = real ? () => app.openConsole() : () => VN.panels.showFiction(() => app.openConsole());
+    const meta = model.meta || {};
+    const verified = meta.fictional === false;
+    const docs = (model.entities ? model.entities.filter((e) => e.type === 'document').length : 0);
+    badge.innerHTML = verified
+      ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l6 3v4c0 3-2.6 5.3-6 6-3.4-.7-6-3-6-6v-4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg> Dados com proveniência'
+      : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l6 3v4c0 3-2.6 5.3-6 6-3.4-.7-6-3-6-6v-4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 5v4M8 11v.6" stroke="currentColor" stroke-width="1.4"/></svg> Proveniência a rever';
+    badge.title = verified
+      ? (docs + ' documentos com hash e excerto — ver proveniência')
+      : 'O conjunto activo não declara proveniência verificada — ver o que falta';
+    badge.onclick = () => VN.panels.showProvenance(() => app.openConsole());
   }
 
   /* ---------------- vista → motor ---------------- */
@@ -291,11 +292,11 @@
     setTheme(t) { setTheme(t); },
     showQuality() { VN.panels.showQuality(); },
     showHelp() { VN.panels.showHelp(); },
-    showFiction(onOpen) { VN.panels.showFiction(onOpen); },
+    showProvenance(onOpen) { VN.panels.showProvenance(onOpen); },
 
     exportReport(all) {
       const html = VN.report.buildReport(ctx, { all: !!all });
-      const tagReal = model.meta && model.meta.fictional === false ? 'dados-reais' : 'meridiano';
+      const tagReal = model.meta && model.meta.fictional === false ? 'dados-reais' : 'sem-proveniencia';
       D.download('relatorio-' + tagReal + '-' + stamp() + '.html', html, 'text/html;charset=utf-8');
       D.toast('Relatório exportado com referências às provas', 'ok');
     },
@@ -358,7 +359,7 @@
   function wireTopbar() {
     $('#btnTheme').addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
     $('#btnHelp').addEventListener('click', () => VN.panels.showHelp());
-    $('#fictionBadge').addEventListener('click', () => VN.panels.showFiction(() => app.openConsole()));
+    $('#fictionBadge').addEventListener('click', () => VN.panels.showProvenance(() => app.openConsole()));
     $('#btnQuality').addEventListener('click', () => VN.panels.showQuality());
     $('#btnList').addEventListener('click', () => VN.list.show(ctx, 'entities'));
     $('#btnExport').addEventListener('click', (ev) => exportMenu(ev));

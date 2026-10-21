@@ -5,7 +5,7 @@ await p.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1400);
 await p.click('#search'); await p.fill('#search', 'financiamento'); await p.waitForTimeout(400);
 await p.screenshot({ path: '/home/user/docs/shot-10-palette.png' });
-await p.fill('#search', 'accionsta'); await p.waitForTimeout(400);
+await p.fill('#search', 'epstain'); await p.waitForTimeout(400);
 await p.screenshot({ path: '/home/user/docs/shot-11-fuzzy.png' });
 await p.fill('#search', 'aldevaran'); await p.waitForTimeout(400);
 await p.evaluate(() => VN.app.searchPage('aldevaran'));

@@ -145,7 +145,7 @@ export function renderPdf(doc) {
   const footer = (i) => [
     '0.85 0.87 0.90 RG 0.5 w ' + MARGIN.left + ' ' + (MARGIN.bottom - 12) + ' m ' + (A4.w - MARGIN.right) + ' ' + (MARGIN.bottom - 12) + ' l S',
     'BT /F1 ' + SIZE.small + ' Tf 1 0 0 1 ' + MARGIN.left + ' ' + (MARGIN.bottom - 24) + ' Tm (' +
-      escapePdf('Meridiano - resumo gerado a partir dos dados registados: um resumo não substitui as provas.') + ') Tj ET',
+      escapePdf('Conspiracy Tracker - resumo gerado a partir dos dados registados: um resumo não substitui as provas.') + ') Tj ET',
     'BT /F1 ' + SIZE.small + ' Tf 1 0 0 1 ' + (A4.w - MARGIN.right - 70) + ' ' + (MARGIN.bottom - 24) + ' Tm (' +
       escapePdf('página ' + (i + 1) + ' de ' + total) + ') Tj ET'
   ];
@@ -168,7 +168,7 @@ export function renderPdf(doc) {
   });
   const pagesIdx = push('<< /Type /Pages /Count ' + pages.length + ' /Kids [' + pageRefs.map((r) => r + ' 0 R').join(' ') + '] >>');
   const catalogIdx = push('<< /Type /Catalog /Pages ' + pagesIdx + ' 0 R >>');
-  const infoIdx = push('<< /Title (' + escapePdf(title) + ') /Producer (Meridiano) /CreationDate (D:' +
+  const infoIdx = push('<< /Title (' + escapePdf(title) + ') /Producer (Conspiracy Tracker) /CreationDate (D:' +
     new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z) >>');
 
   /* resolver o pai das páginas */

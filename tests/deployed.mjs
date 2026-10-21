@@ -21,22 +21,24 @@ await t('mapa carrega com semente e legenda', async () => {
     canvas: !!document.querySelector('#cy canvas'),
     status: (document.querySelector('#status, .statusbar') || {}).textContent || '',
     legend: (document.querySelector('#legend') || {}).textContent || '',
-    entities: VN.app.ctx.model.entities.length, relations: VN.app.ctx.model.relations.length
+    entities: VN.app.ctx.model.entities.length, relations: VN.app.ctx.model.relations.length,
+    fictional: VN_DATA.meta.fictional
   }));
   if (!st.canvas) throw new Error('canvas do grafo ausente');
-  if (st.entities !== 69 || st.relations !== 126) throw new Error('modelo: ' + st.entities + '/' + st.relations);
+  if (st.entities < 10 || st.relations < 10) throw new Error('modelo: ' + st.entities + '/' + st.relations);
+  if (st.fictional !== false) throw new Error('o conjunto carregado não é real');
   return 'grafo visível · ' + st.entities + ' entidades / ' + st.relations + ' relações · ' + st.status.trim().slice(0, 48);
 });
 
 await t('pesquisa profunda responde na versão publicada', async () => {
   await p.click('#search');
-  await p.fill('#search', 'accionsta');
+  await p.fill('#search', 'epstain');
   await p.waitForTimeout(900);
   const rows = await p.evaluate(() => document.querySelectorAll('#searchresults .sresult').length);
   const txt = await p.evaluate(() => (document.getElementById('searchresults') || {}).textContent || '');
   if (!rows) throw new Error('paleta sem resultados');
-  if (!/accionista/i.test(txt)) throw new Error('sem sugestão aproximada');
-  return rows + ' resultados · correcção «accionsta → accionista» na versão publicada';
+  if (!/epstein/i.test(txt)) throw new Error('sem sugestão aproximada');
+  return rows + ' resultados · correcção «epstain → Epstein» na versão publicada';
 });
 
 await t('agente local (/api/fetch) funciona no servidor público', async () => {

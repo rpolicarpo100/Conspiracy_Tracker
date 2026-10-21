@@ -136,20 +136,40 @@ export function parseToUnicode(cmapText) {
 
 function refOf(str) { const m = String(str || '').match(/(\d+)\s+\d+\s+R/); return m ? Number(m[1]) : null; }
 
+/* Valor de uma chave num dicionário PDF.
+   Corrigido na fase 3G: a versão anterior procurava o primeiro `<<` DEPOIS da
+   chave, e por isso devolvia o dicionário errado quando o valor era uma
+   referência indirecta (`/Contents 5 0 R`). Nesses PDFs (Word, QuarkXPress,
+   muitos tribunais) nenhuma página era lida e o resultado era
+   «nenhum texto encontrado nos fluxos analisados» — um falso negativo que
+   escondia documentos perfeitamente legíveis. Agora distingue-se o tipo de
+   valor: dicionário, lista, nome, referência ou número. */
 function dictSlice(dict, key) {
   const i = dict.indexOf(key);
   if (i < 0) return null;
-  /* devolve o trecho após a chave até ao fim do valor (dict <<…>> ou referência) */
-  const rest = dict.slice(i + key.length);
-  const startDict = rest.indexOf('<<');
-  if (startDict >= 0) {
+  const after = dict.slice(i + key.length);
+  const j = after.search(/\S/);
+  if (j < 0) return null;
+  const s = after.slice(j);
+  if (s.startsWith('<<') || s.startsWith('[')) {
+    const isArr = s[0] === '[';
     let depth = 0;
-    for (let k = startDict; k < rest.length - 1; k++) {
-      if (rest[k] === '<' && rest[k + 1] === '<') { depth++; k++; continue; }
-      if (rest[k] === '>' && rest[k + 1] === '>') { depth--; k++; if (depth === 0) return rest.slice(startDict, k + 1); }
+    for (let k = 0; k < s.length - 1; k++) {
+      if (isArr) {
+        if (s[k] === '[') depth++;
+        else if (s[k] === ']') { depth--; if (depth === 0) return s.slice(0, k + 1); }
+      } else if (s[k] === '<' && s[k + 1] === '<') { depth++; k++; }
+      else if (s[k] === '>' && s[k + 1] === '>') { depth--; k++; if (depth === 0) return s.slice(0, k + 1); }
     }
+    return s;
   }
-  return rest.slice(0, 120);
+  if (s[0] === '/') {                       // nome PDF: /Page
+    const m = s.match(/^\/[^\s/<>\[\]()]*/);
+    return m ? m[0] : s.slice(0, 40);
+  }
+  /* referência (`5 0 R`), número ou booleano: até ao próximo fim de valor */
+  const m = s.match(/^[^/>\]]*/);
+  return (m ? m[0] : s).trim();
 }
 
 function resolveDict(value, objects) {

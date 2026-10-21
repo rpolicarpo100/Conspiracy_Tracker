@@ -11,12 +11,13 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
   users: [], sessions: [], mfaChallenges: [], projects: [], credentials: [], usage: [],
   evidence: [], claims: [], runs: [], relations: [], agentRuns: [], notes: [], entityLinks: [],
+  sources: [], sourceChecks: [], sourceRatings: [], sourceDecisions: [], discoveryRuns: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -56,6 +57,18 @@ const MIGRATIONS = {
     const changes = [];
     if (!Array.isArray(db.agentRuns)) db.agentRuns = [];
     if (missing && missing.indexOf('agentRuns') >= 0) changes.push('criada a colecção agentRuns (execuções dos 13 agentes)');
+    return changes;
+  },
+  6: (db, missing) => {
+    const changes = [];
+    const add = (name, why) => {
+      if (!Array.isArray(db[name])) { db[name] = []; changes.push('criada a colecção ' + name + (why ? ' (' + why + ')' : '')); }
+    };
+    add('sources', 'registo de fontes: identidade, estado e proveniência da descoberta');
+    add('sourceChecks', 'verificações técnicas datadas de cada fonte');
+    add('sourceRatings', 'classificações por dimensão, com justificação e o que faltou');
+    add('sourceDecisions', 'decisões de aprovação, rejeição ou revisão, com autor e motivo');
+    add('discoveryRuns', 'execuções de descoberta: consulta, resultados e limites encontrados');
     return changes;
   },
   5: (db, missing) => {
@@ -686,6 +699,66 @@ export function createStore(dir) {
       if (db.usage.length > 20000) db.usage = db.usage.slice(-20000);
       await persist();
     },
+    /* --- registo de fontes (descoberta, verificação, classificação) --- */
+    async createSource(data, by) {
+      const now = new Date().toISOString();
+      const src = Object.assign({
+        id: 'src-' + crypto.randomBytes(8).toString('base64url'),
+        createdAt: now, createdBy: by || null, updatedAt: now,
+        state: 'DISCOVERED', history: [{ at: now, action: 'registada', by: by || null, state: 'DISCOVERED' }]
+      }, data || {});
+      db.sources.push(src); await persist(); return src;
+    },
+    sources() { return db.sources.slice(); },
+    sourceById(id) { return db.sources.find((x) => x.id === id) || null; },
+    sourceByKey(key) { return db.sources.find((x) => x.dedupeKey && x.dedupeKey === key) || null; },
+    async updateSource(id, patch, by, action) {
+      const src = db.sources.find((x) => x.id === id);
+      if (!src) return null;
+      const before = src.state;
+      Object.assign(src, patch, { updatedAt: new Date().toISOString() });
+      src.history.push({ at: src.updatedAt, action: action || 'actualizada', by: by || null, from: before, to: src.state, fields: Object.keys(patch) });
+      await persist(); return src;
+    },
+    async addSourceCheck(sourceId, check) {
+      const rec = Object.assign({ id: 'chk-' + crypto.randomBytes(8).toString('base64url'), sourceId, at: new Date().toISOString() }, check || {});
+      db.sourceChecks.push(rec);
+      if (db.sourceChecks.length > 20000) db.sourceChecks = db.sourceChecks.slice(-20000);
+      await persist(); return rec;
+    },
+    checksOf(sourceId) { return db.sourceChecks.filter((c) => c.sourceId === sourceId); },
+    lastCheckOf(sourceId) {
+      const list = db.sourceChecks.filter((c) => c.sourceId === sourceId);
+      return list.length ? list[list.length - 1] : null;
+    },
+    async addSourceRating(sourceId, rating, by) {
+      const rec = Object.assign({ id: 'rat-' + crypto.randomBytes(8).toString('base64url'), sourceId,
+        at: new Date().toISOString(), by: by || null }, rating || {});
+      db.sourceRatings.push(rec); await persist(); return rec;
+    },
+    ratingsOf(sourceId) { return db.sourceRatings.filter((r) => r.sourceId === sourceId); },
+    async addSourceDecision(sourceId, decision, by) {
+      const rec = Object.assign({ id: 'dec-' + crypto.randomBytes(8).toString('base64url'), sourceId,
+        at: new Date().toISOString(), by: by || null }, decision || {});
+      db.sourceDecisions.push(rec); await persist(); return rec;
+    },
+    decisionsOf(sourceId) { return db.sourceDecisions.filter((d) => d.sourceId === sourceId); },
+    async createDiscoveryRun(run, by) {
+      const rec = Object.assign({ id: 'run-' + crypto.randomBytes(8).toString('base64url'),
+        startedAt: new Date().toISOString(), by: by || null, status: 'running' }, run || {});
+      db.discoveryRuns.push(rec);
+      if (db.discoveryRuns.length > 500) db.discoveryRuns = db.discoveryRuns.slice(-500);
+      await persist(); return rec;
+    },
+    async updateDiscoveryRun(id, patch) {
+      const rec = db.discoveryRuns.find((r) => r.id === id);
+      if (!rec) return null;
+      Object.assign(rec, patch);
+      await persist(); return rec;
+    },
+    discoveryRuns() { return db.discoveryRuns.slice().reverse(); },
+    discoveryRunById(id) { return db.discoveryRuns.find((r) => r.id === id) || null; },
+
     usageSummary() {
       const byProvider = {};
       db.usage.forEach((u) => {

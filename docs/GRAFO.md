@@ -131,8 +131,10 @@ Todas exigem sessão (CSRF nas que alteram estado); grafos e relações de outro
 Todas exigem sessão; cada exportação é registada em auditoria (`graph_exported`, com formato,
 nós, arestas e filtro). O SVG escapa conteúdo hostil (testado com `<script>` num nome).
 
-Exemplo real gerado pelo servidor: `docs/exemplo-exportacao-grafo.svg` (dados fictícios,
-filtro 2021–2023, 1 relação fora do período).
+Exemplo gerado pelo servidor: `docs/exemplo-exportacao-grafo.svg` — **captura histórica feita sobre
+o conjunto fictício, hoje retirado** (filtro 2021–2023, 1 relação fora do período). Serve para mostrar
+o formato do ficheiro, não o conteúdo actual; com o conjunto real as datas são as das decisões
+(2010–2023) e não há relações de transacção.
 
 ## 12. Caminhos com restrições (implementado)
 

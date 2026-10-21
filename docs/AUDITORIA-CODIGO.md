@@ -81,7 +81,7 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 
 | Componente | Estado real | Evidência | Risco | Acção |
 | --- | --- | --- | --- | --- |
-| Pesquisa local sobre o conjunto fictício | Funciona, com correcção ortográfica | `tests/search.mjs` 17/17 | P3 concluído | — |
+| Pesquisa local | Funciona, com correcção ortográfica | `tests/search.mjs` 17/17 (conjunto real desde 2026-10-21) | P3 concluído | — |
 | Recolha real de páginas | `/api/fetch` com limites de tamanho, timeout e bloqueio SSRF | `tests/real-fetch.mjs`; sondagem pública 6 771 B com hash | P2 concluído | — |
 | 13 agentes com I/O estruturado | **Implementado no servidor**: contrato de entrada/saída, critérios de conclusão, limites (tempo, itens), versão de prompt (`a1`), estado por execução, `agentRuns` persistidas e ordenadas. Agentes locais determinísticos; agentes de IA exigem chave validada e ficam «nao-executado» sem ela | `tests/agents-p3.mjs` 16/16 | P2/P3 concluído | Filas e orçamento por agente (P4) |
 | Auditor adversário (red team) | **Implementado**: 10 regras explícitas (citação sem prova, excerto divergente, prova sem excerto/localização/data, comunicado sem origem, conclusão sem prova, estado acima das provas, confiança inflacionada, linguagem absoluta, cópias como corroboração, relação sem prova, inferência sem raciocínio, confirmada com contraprova); achados com gravidade e sujeito | `tests/agents-p3.mjs` e auditoria real na interface (`docs/shot-22-agentes.png`) | **P0 concluído** | — |
@@ -102,7 +102,7 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Perfis de profundidade Rápida/Normal/Profunda/Exaustiva | Parcial (limites por perfil no motor local); sem exposição do motivo de paragem na UI | `src/core/agents.js` | P2 | Mostrar «parou porque…» e fontes efectivamente consultadas |
 | Conectores declarados (cobertura, licença, limites…) | Catálogo real auditado (12 APIs, 3 tentativas) | `docs/APIS-auditoria.json`; `docs/APIS.md` | P2 concluído | — |
 | Conteúdo web/PDF como não confiável | Guardas de injecção no motor de agentes (testes locais) | `tests/agents.mjs` | P0 na fase P2 | Revalidar quando a extracção de PDF entrar |
-| Grafo visual sobre o conjunto fictício | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado | P2 concluído | — |
+| Grafo visual | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado (conjunto real desde 2026-10-21) | P2 concluído | — |
 | **Grafo a partir de provas (servidor)** | **Implementado**: 16 tipos de entidade, 24 tipos de relação em 7 famílias, aresta só com prova, confiança calculada por origens independentes, inferência declarada com raciocínio, co-ocorrência devolvida como candidato marcado, homónimos não fundidos sem desambiguador | `tests/graph.mjs` 13/13 | **P0 concluído** | Caminhos, cronologia sincronizada, vista de contradições |
 | Grafo na interface | SVG próprio: zoom, arrasto, procura, filtros por tipo, co-ocorrências a pedido, proveniência ao clicar, legenda com 4 avisos | `tests/account-ui.mjs` («grafo das provas desenha…») · `docs/shot-21-grafo.png` | P2 concluído | — |
 | Filtro temporal do grafo | **Implementado e testado**: `periodFrom`/`periodTo`, datas validadas (impossíveis → 400), relações sem período e com período aberto ficam incluídas e contadas na resposta | `tests/fase3c.mjs` · `docs/GRAFO.md` §10 | P3 concluído | Caminhos com restrições |
@@ -123,7 +123,7 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | --- | --- | --- | --- | --- |
 | Área de conta na interface | Login/registo, conta, sessões, palavra-passe, exportar, eliminar, projectos, chaves, administração | `tests/account-ui.mjs` 9/9, captura `docs/shot-17-conta.png` | P1 concluído | — |
 | Repintagem destrutiva de formulários | Corrigida (estado `DRAFT` + mensagens sem repintar) | Regressão coberta pelo teste de chaves | P2 concluído | Manter regra para novos painéis |
-| Rotulagem de dados fictícios | Presente na interface e nos documentos | inspecção + capturas | P0 concluído | — |
+| Rotulagem de proveniência dos dados | Cada aresta tem fonte, excerto, hash e data; o cabeçalho declara a origem | inspecção + capturas + `data/real/PROVENIENCIA.json` | P0 concluído (substituiu a rotulagem de «dados fictícios» em 2026-10-21) | — |
 | Cabeçalhos de segurança | CSP sem `unsafe-eval`, `no-referrer`, `nosniff` | `tools/serve.mjs` | P1 concluído | `frame-ancestors` explícito em vez de `*` |
 | Erros de runtime na UI | 0 nas suites de interface | `tests/account-ui.mjs` | P2 concluído | — |
 | Testes de regressão | flow 14/14, search 17/17, agents 18/18, apis 13/13, smoke 0 erros, server 26/26, conta-UI 9/9, publicado 6/6 | logs desta sessão | P0 concluído | Incluir `server`/`account-ui` no `npm test` |

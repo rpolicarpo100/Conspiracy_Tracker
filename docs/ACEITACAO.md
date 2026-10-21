@@ -6,7 +6,7 @@ mais 17/17 da pesquisa e 20/20 dos agentes de recolha.
 
 | # | Critério | Como foi verificado | Resultado |
 |---|---|---|---|
-| 1 | Pesquisar uma entidade | `#search` → «Meridiano» → 13 resultados (entidades e ligações) com pontuação, motivo e excerto; abrir resultado centra o mapa | **PASS** (1,8 s incluindo animação) |
+| 1 | Pesquisar uma entidade | `#search` → «Epstein» → (execução original: «Meridiano» → 13 resultados, conjunto fictício hoje retirado; com o conjunto real: 55 resultados) (entidades e ligações) com pontuação, motivo e excerto; abrir resultado centra o mapa | **PASS** (1,8 s incluindo animação) |
 | 2 | Ver o nó com fotografia ou representação alternativa | nó tem `data:image/svg+xml` (avatar/logótipo) e o painel declara a proveniência (tipo, crédito, licença, fonte) | **PASS** |
 | 3 | Expandir relações documentadas | tecla `E` → 14 → 28 entidades carregadas, com recálculo incremental | **PASS** (1,5 s, 23 ms de cálculo) |
 | 4 | Identificar o significado de cada ligação | cada aresta tem `relLabel` tipificado (ex. `r-126 = "Foi assessorada por"`), espessura por confiança e estilo por estado | **PASS** |
@@ -15,7 +15,7 @@ mais 17/17 da pesquisa e 20/20 dos agentes de recolha.
 | 7 | Filtrar o grafo por período e categoria | período 2016–2018 → 27 arestas, **0** fora do intervalo; família `financial` → 8 arestas, **0** fora da família | **PASS** |
 | 8 | Encontrar caminhos entre duas entidades | Vítor ↔ Joaquim, até 4 passos → 12 caminhos, nota de evidência, elo mais fraco assinalado, aviso «não prova coordenação» | **PASS** (2 ms, 1 017 nós explorados) |
 | 9 | Inspeccionar a cronologia | 77 anos no domínio; selecção por arrasto; datas exactas vs mês/ano; 8 relações sem data listadas à parte como não projectadas | **PASS** |
-| 10 | Exportar relatório que preserve as referências às provas | HTML com 252 referências `[r-nnn]`, 203 referências `[d-nnn]`, 250 excertos citados, secção de metodologia, aviso de dados fictícios, impressão digital do conteúdo | **PASS** (245 KB) |
+| 10 | Exportar relatório que preserve as referências às provas | (execução original sobre o conjunto fictício) HTML com 252 referências `[r-nnn]`, 203 referências `[d-nnn]`, 250 excertos citados, secção de metodologia, aviso de dados fictícios, impressão digital do conteúdo | **PASS** (245 KB) |
 
 ## Verificações adicionais (além dos 10 critérios)
 

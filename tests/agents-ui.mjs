@@ -80,9 +80,17 @@ await t('livro de provas regista as recolhas (e a cadeia continua válida)', asy
 });
 
 await t('nenhum resultado de recolha entrou no grafo', async () => {
-  const st = await p.evaluate(() => ({ n: VN.app.ctx.model.entities.length, r: VN.app.ctx.model.relations.length }));
-  if (st.n !== 69 || st.r !== 126) throw new Error('o modelo mudou: ' + JSON.stringify(st));
-  return 'modelo intacto: ' + st.n + ' entidades / ' + st.r + ' relações';
+  /* o conjunto é o real (data/real/10-epstein.js). Não se fixa o número:
+     compara-se com o que o ficheiro de dados declara, para o teste não
+     envelhecer quando a importação crescer. */
+  const st = await p.evaluate(() => ({
+    n: VN.app.ctx.model.entities.length, r: VN.app.ctx.model.relations.length,
+    dn: window.VN_DATA.entities.length, dr: window.VN_DATA.relations.length,
+    fict: window.VN_DATA.meta.fictional
+  }));
+  if (st.n !== st.dn || st.r !== st.dr) throw new Error('o modelo divergiu dos dados: ' + JSON.stringify(st));
+  if (st.fict !== false) throw new Error('o conjunto carregado declara-se fictício');
+  return 'modelo intacto: ' + st.n + ' entidades / ' + st.r + ' relações (conjunto real)';
 });
 
 await p.evaluate(() => [...document.querySelectorAll('.chips .btn')].find((b) => b.textContent.trim() === 'Agentes de recolha').click());

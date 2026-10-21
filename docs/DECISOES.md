@@ -166,3 +166,49 @@ Formato: data · decisão · motivo · o que foi recusado.
     candidato, versão/licença/tamanho/descarregamentos/vulnerabilidades e a decisão com motivo —
     incluindo as rejeições.
     Motivo: adotar uma biblioteca é uma decisão de segurança; tem de ficar escrita e reproduzível.
+
+32. **2026-10-21 · O conjunto fictício foi removido; a aplicação passa a abrir com dados reais.**
+    Os sete ficheiros do «Caso Meridiano» (69 entidades, 126 relações inventadas) foram apagados e
+    substituídos por `data/real/10-epstein.js`, gerado por `tools/import-epstein.mjs` a partir de
+    decisões judiciais reais.
+    Motivo: uma ferramenta que sustenta alegações sobre pessoas não deve abrir com um mundo
+    inventado — o risco de alguém confundir o exemplo com um caso real não compensa a conveniência
+    da demonstração. O que era útil do conjunto fictício (estados de verificação, contraditórios,
+    alegações) continua definido no esquema e testado; simplesmente não há dados inventados.
+
+33. **2026-10-21 · Importação real com três condições de entrada: texto do PDF, hash e cross-check.**
+    Cada documento tem de (a) ser descarregado pelo caminho normal da aplicação (`fetchDocument`,
+    com guarda SSRF), (b) conter literalmente «Jeffrey Epstein» no texto extraído — não no título
+    nem no excerto do motor de busca, que produzia homónimos — e (c) ter o SHA-1 publicado pelo
+    CourtListener igual ao SHA-1 do ficheiro descarregado. Falhar qualquer uma exclui o documento,
+    com o motivo registado em `PROVENIENCIA.json`.
+    Motivo: «é do tribunal» não é prova de que o ficheiro é o que diz ser; e um homónimo no título
+    criaria relações falsas entre pessoas diferentes.
+
+34. **2026-10-21 · Relações reais são processuais, não imputações.**
+    O grafo liga partes ao processo (`litigation_with`, `documented_in`), tribunal e documento
+    (`ruled_on`) e a menção literal do nome (`mentioned_in`), sempre com excerto e com a frase «é
+    um facto processual; não é uma conclusão sobre conduta» escrita na própria aresta.
+    Motivo: a regra do projecto — uma linha não é prova — tem de estar no dado, não na esperança de
+    que quem lê se lembre dela.
+
+35. **2026-10-21 · Registo de fontes com nota provisória em vez de nota inventada.**
+    Sem amostra verificada, sem transparência observada e sem independência avaliada, `rateSource`
+    devolve `score: null`, `band: null` e «Classificação provisória — evidência insuficiente», com a
+    lista do que falta. O risco é medido à parte (100 = elevado) e **limita** a nota global.
+    Motivo: uma média de dois critérios apresentada como «B» é o mesmo erro que inventar um dado,
+    só que mais difícil de detectar.
+
+36. **2026-10-21 · Aprovar exige classificação não provisória e motivo escrito.**
+    `POST /api/sources/:id/decision` devolve 409 sem classificação ou com classificação provisória;
+    qualquer decisão exige motivo com pelo menos 10 caracteres e fica em auditoria.
+    Motivo: o caminho mais curto para um catálogo grande é aprovar tudo. O código tem de tornar esse
+    caminho impossível, não apenas desaconselhado.
+
+37. **2026-10-21 · Descoberta só a partir de catálogos públicos documentados, com limites respeitados.**
+    O primeiro adaptador usa a API REST v4 do CourtListener (sem chave). Em 429 espera o
+    `Retry-After` (máximo 3 s), tenta uma vez e, se continuar limitado, falha com o motivo — nunca
+    devolve resultados parciais como se fossem completos. Verificações: 6/hora por fonte; descoberta:
+    6/hora por utilizador.
+    Motivo: um motor de expansão que se comporta como um rastreador abusivo destrói a possibilidade
+    de usar as fontes que encontra.

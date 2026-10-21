@@ -32,7 +32,8 @@
   function tabs() {
     const items = [
       ['ask', 'Investigar'], ['sources', 'Fontes'], ['evidence', 'Livro de provas'],
-      ['real', 'Dados reais'], ['agents', 'Agentes de recolha'], ['apis', 'APIs'], ['ai', 'Configuração de IA']
+      ['real', 'Dados reais'], ['agents', 'Agentes de recolha'], ['apis', 'APIs'],
+      ['registro', 'Registo de fontes'], ['ai', 'Configuração de IA']
     ];
     const wrap = el('div', { class: 'chips' });
     items.forEach(([id, label]) => wrap.appendChild(el('button', {
@@ -75,11 +76,12 @@
     else if (tab === 'real') body.appendChild(viewReal());
     else if (tab === 'agents') body.appendChild(viewAgents());
     else if (tab === 'apis') body.appendChild(viewApis());
+    else if (tab === 'registro') body.appendChild(viewFontes());
     else body.appendChild(viewAI());
     // re-render tabs active state
     const chips = body.parentNode.querySelector('.chips');
     if (chips) {
-      const labels = ['ask', 'sources', 'evidence', 'real', 'agents', 'apis', 'ai'];
+      const labels = ['ask', 'sources', 'evidence', 'real', 'agents', 'apis', 'registro', 'ai'];
       Array.from(chips.children).forEach((b, i) => b.className = 'btn sm' + (labels[i] === tab ? ' primary' : ''));
     }
   }
@@ -356,6 +358,32 @@
     return apisNode;
   }
 
+  /* ------------- 2b. REGISTO DE FONTES (servidor) ------------- */
+  let fontesNode = null;
+  function viewFontes() {
+    if (!fontesNode) {
+      /* a API da consola usa o mesmo `api()` de sempre (CSRF incluído) mas aqui
+         precisamos de devolver estado HTTP, para distinguir «recusado» de
+         «sem rede» — por isso o envelope é explícito. */
+      const call = async (path, opts) => {
+        opts = opts || {};
+        const headers = { accept: 'application/json' };
+        if (opts.body !== undefined) headers['content-type'] = 'application/json';
+        const csrf = document.cookie.split('; ').find((c) => c.startsWith('vn_csrf='));
+        if (csrf && (opts.method || 'GET') !== 'GET') headers['x-csrf-token'] = decodeURIComponent(csrf.split('=')[1]);
+        const res = await fetch(new URL(path.replace(/^\//, ''), location.href).href, {
+          method: opts.method || 'GET', headers, credentials: 'same-origin',
+          body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+        }).catch(() => null);
+        if (!res) return { ok: false, status: 0, json: null, error: { message: 'servidor inacessível' } };
+        const json = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, json, error: json && json.error };
+      };
+      fontesNode = VN.fontesUI.mount({ el: el, clear: clear, toast: toast, api: call });
+    }
+    return fontesNode;
+  }
+
   /* ---------------- 3. LIVRO DE PROVAS ---------------- */
   function viewEvidence() {
     const wrap = el('div', {});
@@ -444,10 +472,12 @@
   function viewReal() {
     const wrap = el('div', {});
     const active = dataset();
-    wrap.appendChild(el('div', { class: active === 'real' ? 'warnbox' : 'infobox', html:
-      '<b>Conjunto activo: ' + (active === 'real' ? 'DADOS REAIS IMPORTADOS' : 'dados fictícios de demonstração') + '</b><br>' +
-      (active === 'real' ? 'O grafo está a mostrar dados que você importou. Cada relação tem fonte e excerto. Relações não verificadas continuam assinaladas.' :
-        'O que é real nesta sessão é o método. O conjunto fictício existe para que ninguém seja acusado por um protótipo.') }));
+    const sessao = active === 'real' ? 'lote importado nesta sessão' : 'conjunto incluído (importação verificada)';
+    wrap.appendChild(el('div', { class: 'infobox', html:
+      '<b>Conjunto activo: ' + sessao + '</b><br>' +
+      'Cada relação tem fonte, excerto literal e data de recolha; os documentos têm hash. ' +
+      'Não há dados de demonstração inventados: se um nome aqui aparece, aparece num documento citável. ' +
+      'Relações não verificadas continuam assinaladas e nada é promovido a «confirmado» sem revisão humana.' }));
 
     const file = el('input', { type: 'file', accept: '.json,application/json' });
     const out = el('div', { style: 'margin-top:10px' });
@@ -492,7 +522,7 @@
       el('li', { text: 'Documentos exigem URL ou referência de arquivo, data de recolha e hash do excerto.' }),
       el('li', { text: 'Pessoas e organizações exigem identificador de desambiguação (registo, ano de nascimento, NIF com hash) para evitar homónimos.' }),
       el('li', { text: 'Imagens exigem crédito, licença e origem; caso contrário é usado avatar procedimental.' }),
-      el('li', { text: 'Ficheiros que se declaram fictícios são recusados neste modo.' })
+      el('li', { text: 'Lotes que se declaram fictícios (`meta.fictional: true`) são recusados: o produto não aceita mundos inventados.' })
     ]));
 
     wrap.appendChild(el('h3', { style: 'font-size:12px;margin:16px 0 6px', text: '3. Ferramentas' }));
@@ -503,9 +533,10 @@
       el('button', { class: 'btn sm', type: 'button', text: 'Descarregar esquema documentado', onclick: () => {
         D.download('esquema-dados-reais.json', JSON.stringify(VN.realdata.SCHEMA_DOC, null, 2), 'application/json');
       } }),
-      active === 'real' ? el('button', { class: 'btn sm danger', type: 'button', text: 'Voltar aos dados fictícios', onclick: () => {
-        localStorage.setItem(K.dataset, 'fictional');
-        toast('A voltar ao conjunto de demonstração…');
+      active === 'real' ? el('button', { class: 'btn sm danger', type: 'button', text: 'Voltar ao conjunto incluído', onclick: () => {
+        localStorage.removeItem(K.dataset);
+        localStorage.removeItem('vn-real-bundle');
+        toast('A voltar ao conjunto incluído (importação verificada)…');
         setTimeout(() => location.reload(), 600);
       } }) : null
     ]));

@@ -107,7 +107,7 @@ export function buildSummary({ project, evidence, claims, relations, runs, memor
   if (!decisoes.length) proximos.push('registar na memória as decisões de âmbito já tomadas');
 
   return {
-    schema: 'meridiano-resumo/1',
+    schema: 'conspiracy-tracker-resumo/1',
     geradoEm: new Date().toISOString(),
     avisos: [
       'um resumo não é prova: cada afirmação aponta a prova registada que a sustenta',
@@ -337,6 +337,6 @@ export function summaryToPdf(s) {
 }
 
 export function summaryFilename(project, ext) {
-  const base = 'meridiano-resumo-' + String(project.id).replace(/[^a-zA-Z0-9-_]/g, '');
+  const base = 'conspiracy-tracker-resumo-' + String(project.id).replace(/[^a-zA-Z0-9-_]/g, '');
   return base + '.' + ext;
 }

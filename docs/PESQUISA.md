@@ -59,13 +59,20 @@ porque é que um resultado apareceu: as etiquetas dizem `encontrado em: nome, al
 
 ## Desempenho medido
 
-Ambiente: Chromium 130 headless, 1680×1000, conjunto fictício de 69 entidades e 126 relações.
+Ambiente: Chromium headless, 1680×1000, **conjunto real** (46 entidades, 82 relações, 17 documentos).
 
-| Operação | Resultado |
+| Operação | Resultado (medido em 2026-10-21) |
 | --- | --- |
-| Construção do índice | 67 ms · 195 documentos · 1146 termos |
+| Construção do índice | **24 ms · 128 documentos · 741 termos** |
+| Pesquisa «Jeffrey Epstein» (média de 40) | **0,48 ms · 55 resultados** |
+| Pesquisa «Epstein» / «Court» | 55 · 87 resultados |
+| Pesquisa «deferred» | 0 resultados (a ausência é mostrada, não escondida) |
+
+> Valores anteriores (67 ms · 195 documentos · 1146 termos · 0,3–0,4 ms) foram medidos sobre o
+> conjunto fictício de 69 entidades e 126 relações, hoje retirado; ficam registados como histórico,
+> não como estado actual.
 | Pesquisa (média de 40) | **0,3–0,4 ms** |
-| `aldevaran` | 41 resultados → 17 entidades + 24 ligações |
+| ~~`aldevaran`~~ (termo do conjunto fictício) | 41 resultados → 17 entidades + 24 ligações |
 | `aldevaran -documento` | 39 resultados |
 | `estado:alegado` / `estado:não-verificado` | 3 / 6 |
 | `ano:2016-2018` | 33 resultados, todos dentro do intervalo |

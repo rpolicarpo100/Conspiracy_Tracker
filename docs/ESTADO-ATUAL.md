@@ -10,17 +10,18 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase3f**
-- esquema de dados: **v5** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, audit, migrations
+- versão da aplicação: **2.0.0-fase3g**
+- esquema de dados: **v6** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 66
-- ficheiros de teste: 31 · blocos de teste declarados (`await t`): 314 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 76
+- ficheiros de teste: 35 · blocos de teste declarados (`await t`): 347 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
 | ficheiro | asserções | tipo |
 | --- | --- | --- |
+| `tests/_vb.mjs` | 0 | servidor/módulo |
 | `tests/account-ui.mjs` | 15 | interface (Playwright) |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
@@ -35,6 +36,8 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/fase3d.mjs` | 18 | servidor/módulo |
 | `tests/fase3e.mjs` | 21 | servidor/módulo |
 | `tests/flow.mjs` | 0 | interface (Playwright) |
+| `tests/fontes-ui.mjs` | 10 | interface (Playwright) |
+| `tests/fontes.mjs` | 23 | servidor/módulo |
 | `tests/graph.mjs` | 13 | servidor/módulo |
 | `tests/mfa-publico.mjs` | 0 | servidor/módulo |
 | `tests/mfa-ui.mjs` | 10 | interface (Playwright) |
@@ -43,6 +46,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
 | `tests/perf.mjs` | 0 | interface (Playwright) |
 | `tests/real-fetch.mjs` | 0 | interface (Playwright) |
+| `tests/realdata-bundle.mjs` | 0 | servidor/módulo |
 | `tests/research.mjs` | 19 | servidor/módulo |
 | `tests/scale-diag.mjs` | 0 | interface (Playwright) |
 | `tests/search.mjs` | 17 | interface (Playwright) |
@@ -55,10 +59,10 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 0f5fd66 ocr: dados de língua versionados em vendor/ocr (produção não tem variáveis de ambiente)
+- último commit: 3cfa48e testes ao vivo do OCR e do MFA no serviço público (13/13 e 15/15) + §33
 - árvore de trabalho: com alterações locais
-- último bloco de resultados: §33 — VERIFICAÇÃO AO VIVO (serviço público, commit 0f5fd66, versão 2.0.0-fase3f)
-- documentação: 21 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, BENCHMARKS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md, SEGURANCA.md)
+- último bloco de resultados: §35 — RETIRAR A FICÇÃO — O QUE MUDOU E COMO FOI VERIFICADO (2026-10-21)
+- documentação: 24 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md, SEGURANCA.md)
 
 ### Coerência
 

@@ -20,7 +20,7 @@ out.results.redeReal = await page.evaluate(async () => {
   t.redeCompletaMs = Math.round(performance.now() - t0);
 
   t0 = performance.now();
-  app.expand('c-meridiano', 1);
+  app.expand('p-jeffrey-epstein', 1);
   t.expandirMs = Math.round(performance.now() - t0);
 
   t0 = performance.now();

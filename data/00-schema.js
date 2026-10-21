@@ -1,9 +1,12 @@
 /* ============================================================================
    VN — REDE DE INVESTIGAÇÃO VISUAL
-   Conjunto de dados FICTÍCIO ("Caso Meridiano").
-   Todas as entidades, documentos, montantes e excertos são sintéticos.
-   Não correspondem a pessoas, empresas ou processos reais.
-   Licença dos dados: CC0-1.0 (ver meta.licence).
+   ESQUEMA E FERRAMENTAS DE DADOS (E, R, AV) — sem dados dentro.
+
+   O conjunto de dados que a aplicação carrega é REAL e vive em
+   data/real/10-epstein.js (gerado por tools/import-epstein.mjs a partir de
+   decisões judiciais descarregadas, com hash e proveniência registada em
+   data/real/PROVENIENCIA.json). O caso fictício «Meridiano» foi removido na
+   fase 3G: nada nesta aplicação é inventado.
    ---------------------------------------------------------------------------
    Esquema (versão 1.0) — ver docs/SCHEMA.md
    entity:  id, type, name, short, ctx, status, juris, date, precision,
@@ -16,20 +19,25 @@
   'use strict';
   const D = {
     meta: {
-      title: 'Caso Meridiano — rede de investimento e influência',
-      subtitle: 'Prova de conceito com dados fictícios claramente identificados',
-      version: '1.0.0',
-      fictional: true,
+      /* Alterado na fase 3G: este ficheiro já não traz um caso fictício. Os dados
+         vêm de `data/real/10-epstein.js`, gerado por tools/import-epstein.mjs a
+         partir de decisões judiciais reais descarregadas e verificadas por hash.
+         Proveniência: data/real/PROVENIENCIA.json. */
+      title: 'Epstein files — decisões judiciais publicadas',
+      subtitle: 'Dados reais obtidos por importação verificada (CourtListener / Free Law Project)',
+      version: '2.0.0',
+      fictional: false,
       generated: '2026-10-21',
-      licence: 'CC0-1.0',
+      licence: 'Decisões de tribunais dos EUA (domínio público federal); metadados do CourtListener',
       disclaimer:
-        'TODOS os dados desta base são sintéticos e fictícios. Nomes de pessoas, ' +
-        'empresas, fundações, organismos públicos, documentos e montantes foram ' +
-        'inventados para testar a plataforma. Nenhuma fotografia real é utilizada: ' +
-        'as representações visuais são avatares procedimentais gerados localmente ' +
-        'e estão identificados como tal.',
-      custodian: 'Gabinete de Investigação Financeira (fictício)',
-      idPrefix: 'VN-MER'
+        'Todos os documentos desta base foram descarregados de uma fonte pública identificada, ' +
+        'têm hash SHA-256 registado e o texto foi extraído do próprio PDF. As relações são ' +
+        'processuais (parte, tribunal, documento) e dizem apenas isso. Ser parte num processo, ' +
+        'ser mencionado numa decisão ou litigar contra alguém NÃO é indício de crime, coordenação ' +
+        'ou culpa. Nenhuma imagem de pessoas é utilizada: as representações visuais são avatares ' +
+        'procedimentais gerados localmente.',
+      custodian: 'Importação automática — ver data/real/PROVENIENCIA.json',
+      idPrefix: 'VN-CL'
     },
 
     entityTypes: {

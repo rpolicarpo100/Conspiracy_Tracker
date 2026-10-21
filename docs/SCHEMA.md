@@ -7,16 +7,17 @@ Cytoscape. O único ficheiro que conhece a biblioteca é `src/graph/adapter.js`.
 
 ```js
 {
-  id: 'c-meridiano',            // identificador estável e legível (prefixo de tipo)
-  type: 'company',              // person | company | foundation | organization | government |
+  id: 'p-jeffrey-epstein',      // identificador estável e legível (prefixo de tipo)
+  type: 'person',               // person | company | foundation | organization | government |
                                 // religious | court | document | event | transaction
-  name: 'Meridiano Infraestruturas, S.A.',
-  short: 'Concessionária de infraestruturas rodoviárias e energia',
-  ctx: 'Concessionária da autoestrada A-31…',
+  name: 'Jeffrey Epstein',
+  short: 'Parte nomeada em decisões judiciais dos EUA',
+  ctx: 'Nome que ocorre literalmente no texto extraído de 17 decisões publicadas; exemplo real do
+        conjunto `data/real/10-epstein.js`.',
   status: 'confirmed',          // estado da identidade (não da culpa)
   juris: 'PT',
   date: '2010-02-08', precision: 'day',   // day | month | year | unknown
-  aliases: ['Meridiano'],
+  aliases: ['Jeffrey E. Epstein'],
   disambiguation: { registryId: '…', birthYear: 1954, nifHash: 'sha256…' },  // anti-homónimo
   facts: ['Facto com fonte…'],
   alleges: ['Alegação atribuída a uma parte identificada…'],

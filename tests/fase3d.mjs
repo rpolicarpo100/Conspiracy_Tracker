@@ -258,7 +258,7 @@ await t('resumo JSON marca conclusão acima do que as provas sustentam', async (
 
 await t('resumo MD/CSV/PDF saem com o aviso e o nome do projecto', async () => {
   const md = await A.call('GET', '/api/projects/' + pid + '/summary?format=md');
-  ok(md.status === 200 && /attachment; filename="meridiano-resumo-/.test(md.headers.get('content-disposition') || ''), 'nome do ficheiro');
+  ok(md.status === 200 && /attachment; filename="conspiracy-tracker-resumo-/.test(md.headers.get('content-disposition') || ''), 'nome do ficheiro');
   ok(/um resumo não é prova/i.test(md.text), 'MD sem o aviso');
   ok(/## 3\. Conclusões e o que as sustenta/.test(md.text), 'secção de conclusões');
   const csv = await A.call('GET', '/api/projects/' + pid + '/summary?format=csv');
@@ -303,7 +303,9 @@ await t('cópia de segurança leva os dados e não leva segredos', async () => {
   const r = await A.call('GET', '/api/auth/backup');
   ok(r.status === 200, 'cópia ' + r.status);
   const bk = JSON.parse(r.text);
-  ok(bk.format === 'meridiano-backup/1', 'formato');
+  ok(bk.format === 'conspiracy-tracker-backup/1', 'formato');
+  const legado = await A.call('POST', '/api/auth/restore', { backup: { format: 'meridiano-backup/1', projects: [] } });
+  ok(legado.status === 200 || legado.status === 201, 'cópia antiga (meridiano-backup/1) ainda é aceite: ' + legado.status);
   ok(bk.counts.projects >= 2 && bk.counts.evidence >= 2, 'contagens: ' + JSON.stringify(bk.counts));
   const cru = r.text;
   ok(!cru.includes('gsk_chave_de_teste'), 'a chave em claro foi exportada');
@@ -337,7 +339,7 @@ await t('reposição remapeia ligações e não duplica nada no projecto origina
 await t('reposição recusa formatos errados e não aceita cópia de outra conta como sua', async () => {
   const errado = await A.call('POST', '/api/auth/restore', { backup: { format: 'outro' } });
   ok(errado.status === 400 && /formato/.test(errado.json.error.message), 'formato errado aceite');
-  const vazio = await A.call('POST', '/api/auth/restore', { backup: { format: 'meridiano-backup/1' } });
+  const vazio = await A.call('POST', '/api/auth/restore', { backup: { format: 'conspiracy-tracker-backup/1' } });
   ok(vazio.status === 400, 'cópia sem projectos aceite');
   const bk = JSON.parse((await A.call('GET', '/api/auth/backup')).text);
   const r = await B.call('POST', '/api/auth/restore', { backup: bk });
@@ -350,10 +352,18 @@ await t('reposição recusa formatos errados e não aceita cópia de outra conta
 
 /* ================= 6. esquema ================= */
 
-await t('esquema v5 regista as colecções novas na migração', async () => {
+await t('esquema actual registado e coerente com o código', async () => {
   const meta = await A.call('GET', '/api/meta');
-  ok(meta.json.schemaVersion === 5, 'schemaVersion ' + meta.json.schemaVersion);
+  /* a versão sobe quando há migração nova (fase 3G → v6 com o registo de fontes);
+     o teste compara com o valor que o armazenamento declara, para não envelhecer */
+  const store = await import('../server/store.mjs');
+  const dir = '/tmp/vn-schema-check-' + Date.now().toString(36);
+  const st = await store.createStore(dir).init();
+  const v = st.schemaVersion();
+  await st.close();
+  ok(meta.json.schemaVersion === v, 'schemaVersion ' + meta.json.schemaVersion + ' ≠ ' + v);
   ok(/^2\.0\.0-fase3/.test(meta.json.version), 'versão ' + meta.json.version);
+  ok(meta.json.schemaVersion >= 5, 'esquema antigo: ' + meta.json.schemaVersion);
 });
 
 srv.kill('SIGKILL');

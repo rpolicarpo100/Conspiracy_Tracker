@@ -80,7 +80,7 @@ await t('segredo: 160 bits, distinto a cada chamada, URI de activação correcto
   const uri = otpauthUri(a, 'pessoa@exemplo.pt');
   ok(/^otpauth:\/\/totp\//.test(uri), 'URI ' + uri.slice(0, 20));
   ok(uri.includes('secret=' + a), 'o URI não leva o segredo');
-  ok(uri.includes('issuer=Meridiano') && uri.includes('digits=6') && uri.includes('period=30'), 'parâmetros: ' + uri);
+  ok(/issuer=Conspiracy[+%20]Tracker/.test(uri) && uri.includes('digits=6') && uri.includes('period=30'), 'parâmetros: ' + uri);
   ok(maskSecret(a).length === a.length && maskSecret(a).endsWith(a.slice(-2)), 'máscara: ' + maskSecret(a));
   ok(!maskSecret(a).includes(a.slice(2, 10)), 'a máscara revela o meio do segredo');
   return uri.slice(0, 48) + '…';

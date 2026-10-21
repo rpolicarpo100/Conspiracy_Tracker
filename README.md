@@ -1,12 +1,18 @@
-# Meridiano · Rede de investigação visual
+# Conspiracy Tracker · Rede de investigação visual
 
 Aplicação de investigação **visual-first**: um grafo interactivo de pessoas, empresas, fundações,
 organizações, organismos públicos, instituições religiosas, tribunais, documentos, acontecimentos e
 transacções — em que **cada ligação é uma relação tipificada com fonte, excerto, estado de verificação
 e data**. Painéis de detalhe, caminhos, cronologia e exportação com provas são complementares ao mapa.
 
-> **Os dados incluídos são fictícios** (caso «Meridiano», marcado em todo o lado). Servem para testar
-> a plataforma. O modo real aceita apenas dados com proveniência verificável — ver `docs/SCHEMA.md`.
+> **Os dados incluídos são reais.** A aplicação abre com 17 decisões judiciais públicas (46 entidades,
+> 82 relações processuais), descarregadas de uma API pública de documentos judiciais, com SHA-256 do
+> ficheiro, SHA-1 conferido contra o publicado pela fonte e excerto literal em cada relação. Não há
+> dados de demonstração inventados: ver `data/real/PROVENIENCIA.json` e `docs/DADOS-REAIS.md`.
+>
+> **Uma ligação no grafo não é prova de nada.** Todas as arestas do conjunto real são processuais
+> (`litigation_with`, `documented_in`, `ruled_on`, `mentioned_in`) e dizem-no na própria descrição.
+> Nenhuma aresta afirma crime, coordenação ou culpa.
 
 **Instância pública:** https://conspiracy-aitracker.onrender.com (Render, plano gratuito — o primeiro
 acesso após inactividade pode demorar ~30 s).
@@ -116,7 +122,9 @@ server/auth.mjs            scrypt, tokens de sessão com SHA-256, cookies, CSRF,
 server/crypto-keys.mjs     cofre AES-256-GCM para as chaves de IA (exige APP_SECRET)
 server/providers.mjs       8 adaptadores de IA (compatíveis com OpenAI), retry, timeout, disjuntor
 server/api.mjs             rotas, permissões no servidor, auditoria de acessos administrativos
-data/*.js                  conjunto fictício (69 entidades, 126 relações)
+data/real/*.js             conjunto real importado (17 documentos, 46 entidades, 82 relações)
+data/real/PROVENIENCIA.json proveniência conferida documento a documento (hash, fonte, data)
+data/00-schema.js          esquema do conjunto (VN_DATA/VN_KIT), sem dados inventados
 tests/                     testes funcionais, de servidor e de interface (Playwright)
 tools/                     servidor (estático + API) e comparação de bibliotecas
 docs/                      aceitação, esquema, benchmarks, capturas

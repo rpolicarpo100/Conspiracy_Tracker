@@ -2,7 +2,7 @@
    VN · REPRESENTAÇÕES VISUAIS
    Nunca inventa fotografias. Três modos, todos com proveniência:
      kind:'image'  -> fotografia real fornecida, com crédito + licença
-     kind:'logo'   -> marca fictícia do protótipo, marcada como tal
+     kind:'logo'   -> marca desenhada localmente, declarada como não oficial
      kind:'procedural' -> avatar gerado localmente a partir do tipo
    Qualquer falha de carregamento cai para o avatar procedimental.
    ===================================================================== */
@@ -42,7 +42,7 @@
   }
 
   const MARK = {
-    // marcas fictícias: geometria abstracta, claramente não oficiais
+    // marcas desenhadas: geometria abstracta, declarada como não oficial (nunca imita insígnias reais)
     hex: (c) => '<path d="M32 12l17 10v20L32 52 15 42V22z" fill="none" stroke="' + c + '" stroke-width="3"/>',
     orbit: (c) => '<circle cx="32" cy="32" r="17" fill="none" stroke="' + c + '" stroke-width="3"/><ellipse cx="32" cy="32" rx="24" ry="9" fill="none" stroke="' + c + '" stroke-width="2" opacity=".7"/>',
     bars: (c) => '<path d="M20 44V30M32 44V20M44 44V26" stroke="' + c + '" stroke-width="4" stroke-linecap="round"/>',
@@ -113,8 +113,8 @@
       licence: v.licence || 'não declarada', source: v.source || '—', verified: !!v.verified
     };
     if (v.kind === 'logo') return {
-      kind: 'Logótipo fictício', src: null, credit: v.credit || 'Marca criada para o protótipo',
-      licence: v.licence || 'CC0-1.0', source: v.source || 'vn-avatar-generator', verified: false
+      kind: 'Marca não oficial', src: null, credit: v.credit || 'Marca abstracta gerada localmente',
+      licence: v.licence || 'CC0-1.0', source: v.source || 'gerador local (avatars.js)', verified: false
     };
     return {
       kind: 'Avatar procedimental', src: null,

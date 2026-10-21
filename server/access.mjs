@@ -150,7 +150,7 @@ export async function checkAccess(rawUrl, opts = {}) {
       res = await fetchImpl(v.url.toString(), {
         method: 'GET', redirect: 'manual', signal: ac.signal,
         headers: {
-          'user-agent': 'Meridiano/verificacao-de-fonte (+verificação manual de acessibilidade)',
+          'user-agent': 'ConspiracyTracker/verificacao-de-fonte (+verificação manual de acessibilidade)',
           accept: 'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.8,*/*;q=0.5',
           'accept-language': 'pt-PT,pt;q=0.9,en;q=0.7'
         }

@@ -22,14 +22,14 @@ await t('índice construído e dimensionado', async () => {
 });
 
 await t('acentos e maiúsculas irrelevantes', async () => {
-  const a = await Q('VITOR SAMANIEGO'), b = await Q('vítor samaniego'), c = await Q('vitor samaniego');
+  const a = await Q('JEFFREY EPSTEIN'), b = await Q('jeffrey epstein'), c = await Q('Jeffrey Epstein');
   const top = (r) => r.results[0].entity && r.results[0].entity.id;
   if (top(a) !== top(b) || top(b) !== top(c)) throw new Error('resultados divergem: ' + top(a) + '/' + top(b) + '/' + top(c));
   return 'topo igual nos três: ' + top(a);
 });
 
 await t('gralha corrigida e assinalada (nunca silenciosa)', async () => {
-  const r = await Q('accionsta');
+  const r = await Q('epstain');
   if (!r.total) throw new Error('sem resultados');
   const fuzzy = r.results.filter((x) => x.fuzzy);
   if (!fuzzy.length) throw new Error('não assinalou aproximação');
@@ -39,11 +39,12 @@ await t('gralha corrigida e assinalada (nunca silenciosa)', async () => {
 });
 
 await t('frase exacta só devolve a frase', async () => {
-  const r = await Q('"beneficiário efectivo"');
+  const r = await Q('"Jeffrey Epstein"');
   const hasPhrase = (x) => {
-    if (x.snippet && /benefici[aá]ri[oa]s?\s+(efectivo|efetivo)/i.test(x.snippet.html.replace(/<[^>]+>/g, ''))) return true;
-    if (x.entity && /benefici[aá]ri[oa]s?\s+(efectivo|efetivo)/i.test(x.entity.name + ' ' + (x.entity.ctx || '') + ' ' + (x.entity.facts || []).join(' '))) return true;
-    if (x.relation && /benefici[aá]ri[oa]s?\s+(efectivo|efetivo)/i.test((x.relation.kindLabel || '') + ' ' + (x.relation.ex || '') + ' ' + (x.relation.fromName || '') + ' ' + (x.relation.toName || ''))) return true;
+    const P = /jeffrey\s+(e\.\s+)?epstein/i;
+    if (x.snippet && P.test(x.snippet.html.replace(/<[^>]+>/g, ''))) return true;
+    if (x.entity && P.test(x.entity.name + ' ' + (x.entity.ctx || '') + ' ' + (x.entity.facts || []).join(' '))) return true;
+    if (x.relation && P.test((x.relation.kindLabel || '') + ' ' + (x.relation.ex || '') + ' ' + (x.relation.fromName || '') + ' ' + (x.relation.toName || ''))) return true;
     return false;
   };
   const bad = r.results.filter((x) => !hasPhrase(x));
@@ -52,7 +53,7 @@ await t('frase exacta só devolve a frase', async () => {
 });
 
 await t('filtro tipo:pessoa', async () => {
-  const r = await Q('aldevaran tipo:pessoa');
+  const r = await Q('epstein tipo:pessoa');
   const wrong = r.results.filter((x) => x.entity && x.entity.type !== 'person');
   if (wrong.length) throw new Error('tipos errados: ' + wrong.map((w) => w.entity.type));
   const relWrong = r.results.filter((x) => x.relation && ![x.relation.fromType, x.relation.toType].includes('person'));
@@ -61,6 +62,8 @@ await t('filtro tipo:pessoa', async () => {
 });
 
 await t('filtro estado:não-verificado e estado:alegado', async () => {
+  /* o conjunto real não tem alegações nem registos não verificados: o filtro
+     tem de devolver zero, e é isso que se verifica (não se inventa um exemplo). */
   const a = await Q('estado:alegado');
   const n = await Q('estado:não-verificado');
   const badA = a.results.filter((x) => (x.entity ? x.entity.status : x.relation.status) !== 'alleged');
@@ -77,23 +80,23 @@ await t('filtro temporal ano:2016-2018', async () => {
 });
 
 await t('exclusão -termo', async () => {
-  const a = await Q('aldevaran');
-  const b = await Q('aldevaran -documento');
-  const leaked = b.results.filter((x) => x.entity && x.entity.type === 'document' && /aldevaran/i.test(x.entity.name));
+  const a = await Q('epstein');
+  const b = await Q('epstein -maxwell');
+  const leaked = b.results.filter((x) => /maxwell/i.test((x.entity ? x.entity.name + ' ' + (x.entity.ctx || '') : '') + (x.relation ? (x.relation.ex || '') : '')));
   if (b.total >= a.total) throw new Error('exclusão não reduziu (' + a.total + '→' + b.total + ')');
   if (leaked.length) throw new Error('documento excluído apareceu');
   return a.total + ' → ' + b.total;
 });
 
 await t('pesquisa alargada é avisada', async () => {
-  const r = await Q('financiamento sindicado bispo');
+  const r = await Q('epstein maxwell termoquenaoexistezz');
   if (!r.total) throw new Error('devia encontrar com OR alargado');
   if (!r.expanded) throw new Error('não assinalou alargamento');
   return r.total + ' resultados com aviso de alargamento';
 });
 
 await t('excertos com destaque e contexto', async () => {
-  const r = await Q('beneficiário efectivo');
+  const r = await Q('Jeffrey Epstein');
   const withMark = r.results.filter((x) => x.snippet && /<mark>/.test(x.snippet.html));
   if (!withMark.length) throw new Error('sem destaque');
   return withMark.length + '/' + r.total + ' com <mark> · ex.: ' + withMark[0].snippet.html.replace(/<[^>]+>/g, '').slice(0, 80);
@@ -104,7 +107,7 @@ await t('ligações entre resultados (registadas, não inferidas)', async () => 
   if (kind !== 'object') throw new Error('window.VN ausente (typeof=' + kind + ')');
   const c = await page.evaluate(() => {
     const M = window.VN.app.ctx.model;
-    const res = window.VN.search.connections(M, ['c-aldevaran', 'g-municipio', 'c-meridiano']);
+    const res = window.VN.search.connections(M, ['p-jeffrey-epstein', 'd-cl-9839571', 'c-court-fladistctapp']);
     return {
       direct: res.direct.map((r) => ({ id: r.id, label: r.kindLabel })),
       registered: res.direct.every((r) => M.relById.has(r.id)),
@@ -117,7 +120,7 @@ await t('ligações entre resultados (registadas, não inferidas)', async () => 
 });
 
 await t('nenhuma fusão de homónimos em pesquisa aproximada', async () => {
-  const r = await Q('krasniqi');
+  const r = await Q('epstein');
   const names = r.results.filter((x) => x.entity).map((x) => x.entity.name);
   const uniq = new Set(names);
   if (uniq.size !== names.length) throw new Error('duplicou entidades');
@@ -126,7 +129,7 @@ await t('nenhuma fusão de homónimos em pesquisa aproximada', async () => {
 });
 
 await t('zero resultados: sugestões + registo negativo disponível', async () => {
-  const r = await Q('aldoeravam');
+  const r = await Q('epstien');
   if (r.total) return 'encontrou por aproximação: ' + r.results[0].entity.name;
   if (!r.suggestions.length) throw new Error('sem sugestão');
   return 'sugestão: ' + r.suggestions.map((s) => s.term + '→' + s.suggestion).join(',');
@@ -135,7 +138,7 @@ await t('zero resultados: sugestões + registo negativo disponível', async () =
 await t('desempenho: 40 pesquisas seguidas', async () => {
   const ms = await page.evaluate(() => {
     const t0 = performance.now();
-    for (let i = 0; i < 40; i++) VN.app.search(['aldevaran', 'vitor', 'accionsta', 'financiamento', 'tipo:pessoa banco', 'ano:2016 camara'][i % 6]);
+    for (let i = 0; i < 40; i++) VN.app.search(['epstein', 'maxwell', 'giuffre', 'jurisprudência', 'tipo:pessoa court', 'ano:2024 florida'][i % 6]);
     return Math.round((performance.now() - t0) / 40 * 10) / 10;
   });
   if (ms > 60) throw new Error('demasiado lento: ' + ms + ' ms/pesquisa');
@@ -144,7 +147,7 @@ await t('desempenho: 40 pesquisas seguidas', async () => {
 
 await t('paleta: teclado, grupos e ações', async () => {
   await page.click('#search');
-  await page.fill('#search', 'camara');
+  await page.fill('#search', 'epstein');
   await page.waitForTimeout(320);
   const groups = await page.$$eval('#searchresults .ssection', (n) => n.map((x) => x.textContent.trim()));
   const rows = await page.$$eval('#searchresults .sresult', (n) => n.length);
@@ -158,7 +161,7 @@ await t('paleta: teclado, grupos e ações', async () => {
 });
 
 await t('página de pesquisa: fachas, ligações e exportação', async () => {
-  await page.evaluate(() => VN.app.searchPage('aldevaran'));
+  await page.evaluate(() => VN.app.searchPage('epstein'));
   await page.waitForTimeout(700);
   const html = await page.textContent('#modalBody');
   if (!/Ligações entre os resultados|resultados/.test(html)) throw new Error('página sem conteúdo');

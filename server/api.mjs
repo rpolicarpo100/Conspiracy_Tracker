@@ -22,11 +22,22 @@ import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
 import { MFA, newSecret, otpauthUri, verifyTotp, newRecoveryCodes, consumeRecoveryCode, makeAttemptLimiter, maskSecret } from './mfa.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
 import {
+  SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
+  parseUrl, canonicalUrl, dedupeKey as sourceDedupeKey, domainOf, stateFromCheck,
+  rateSource, coverageFrom, ADAPTERS
+} from './sources.mjs';
+import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3f';
+const APP_VERSION = '2.0.0-fase3g';
+
+/* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
+   lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
+   se escreve. Testado em tests/fase3d.mjs. */
+const BACKUP_FORMAT = 'conspiracy-tracker-backup/1';
+const BACKUP_FORMATS_IN = [BACKUP_FORMAT, 'meridiano-backup/1'];
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -106,7 +117,7 @@ export async function fetchDocument(url) {
     for (;;) {
       res = await fetch(u.toString(), {
         signal: ctrl.signal, redirect: 'manual',
-        headers: { 'user-agent': 'Meridiano/2 (+investigacao; contacto no site)', accept: 'text/html,application/pdf;q=0.9,*/*;q=0.5' }
+        headers: { 'user-agent': 'ConspiracyTracker/2 (+investigacao; contacto no site)', accept: 'text/html,application/pdf;q=0.9,*/*;q=0.5' }
       });
       const loc = res.headers.get('location');
       if (![301, 302, 303, 307, 308].includes(res.status) || !loc) break;
@@ -128,6 +139,10 @@ export async function fetchDocument(url) {
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > cap) return { ok: false, status: res.status, error: 'documento maior do que o limite (' + Math.round(cap / 1024) + ' KB)' };
     const hash = crypto.createHash('sha256').update(buf).digest('hex');
+    /* SHA-1 também: alguns editores publicam o SHA-1 do ficheiro (é o caso do
+       CourtListener), e sem ele não se pode provar que o nosso ficheiro é o
+       mesmo que o editor descreve. Não substitui o SHA-256. */
+    const hashSha1 = crypto.createHash('sha1').update(buf).digest('hex');
     const isPdf = buf.slice(0, 5).toString('latin1') === '%PDF-' || /application\/pdf/.test(type);
 
     if (isPdf) {
@@ -138,7 +153,7 @@ export async function fetchDocument(url) {
         if (oc.ok) {
           return {
             ok: true, status: res.status, kind: 'pdf', finalUrl: u.toString(),
-            text: String(oc.text).slice(0, 40000), bytes: buf.length, hash,
+            text: String(oc.text).slice(0, 40000), bytes: buf.length, hash, sha1: hashSha1,
             extraction: {
               method: 'ocr', pages: oc.pages || ex.pages || 0, streams: 0,
               usedToUnicode: 0, chars: oc.chars || 0, imageOnly: true, encrypted: false,
@@ -154,7 +169,7 @@ export async function fetchDocument(url) {
         }
         return {
           ok: false, status: res.status, kind: 'pdf', finalUrl: u.toString(),
-          text: '', bytes: buf.length, hash,
+          text: '', bytes: buf.length, hash, sha1: hashSha1,
           extraction: {
             method: 'nenhum', pages: ex.pages || 0, imageOnly: true, encrypted: false,
             ocrAttempted: true, ocrAvailable: !!oc.engineAvailable, ocrReason: oc.reason || null,
@@ -167,7 +182,7 @@ export async function fetchDocument(url) {
       return {
         ok: res.ok && ex.ok, status: res.status, kind: 'pdf', finalUrl: u.toString(),
         text: ex.ok ? String(ex.text).slice(0, 40000) : '',
-        bytes: buf.length, hash,
+        bytes: buf.length, hash, sha1: hashSha1,
         extraction: {
           method: ex.method, pages: ex.pages || 0, streams: ex.streams || 0,
           usedToUnicode: ex.usedToUnicode || 0, chars: ex.chars || 0,
@@ -184,7 +199,7 @@ export async function fetchDocument(url) {
       .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40000);
     return {
       ok: res.ok, status: res.status, kind: 'html', finalUrl: u.toString(),
-      text, bytes: buf.length, hash,
+      text, bytes: buf.length, hash, sha1: hashSha1,
       extraction: { method: 'html-sem-marcacao', needsHumanReview: true, warnings: [] },
       error: res.ok ? null : 'HTTP ' + res.status
     };
@@ -517,6 +532,23 @@ export async function createApi(opts) {
       a ? a.user.id : null, 'acesso verificado');
     return { evidence: updated, check, suggestion };
   }
+
+  /* limitadores próprios do registo de fontes: submissão, verificação por
+     fonte e execuções de descoberta (a descoberta faz pedidos externos). */
+  const limiter = (max, windowMs) => {
+    const hits = new Map();
+    return {
+      allowed(key) {
+        const now = Date.now();
+        const list = (hits.get(key) || []).filter((t) => now - t < windowMs);
+        if (list.length >= max) { hits.set(key, list); return false; }
+        list.push(now); hits.set(key, list); return true;
+      }
+    };
+  };
+  const srcLimiter = limiter(30, 3600 * 1000);
+  const checkLimiter = limiter(6, 60 * 60 * 1000);
+  const discoveryLimiter = limiter(6, 60 * 60 * 1000);
 
   const api = { store, vault, auth, version: APP_VERSION };
 
@@ -914,7 +946,7 @@ export async function createApi(opts) {
           entityLinks: store.entityLinksOf(prj.id)
         }));
         const payload = {
-          format: 'meridiano-backup/1',
+          format: BACKUP_FORMAT,
           exportedAt: now(),
           app: { version: APP_VERSION, schemaVersion: store.schemaVersion() },
           user: { id: a.user.id, email: a.user.email, role: a.user.role, createdAt: a.user.createdAt },
@@ -934,7 +966,7 @@ export async function createApi(opts) {
         await store.count('backups_exported');
         res.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
-          'content-disposition': 'attachment; filename="meridiano-copia-' + now().slice(0, 10) + '.json"',
+          'content-disposition': 'attachment; filename="conspiracy-tracker-copia-' + now().slice(0, 10) + '.json"',
           'cache-control': 'no-store'
         });
         return res.end(JSON.stringify(payload, null, 2));
@@ -945,8 +977,8 @@ export async function createApi(opts) {
         const body = await readBody(req);
         const backup = body.backup;
         if (!backup || typeof backup !== 'object') return err(res, 400, 'corpo sem campo «backup»');
-        if (backup.format !== 'meridiano-backup/1') {
-          return err(res, 400, 'formato de cópia desconhecido', { expected: 'meridiano-backup/1', got: backup.format || null });
+        if (!BACKUP_FORMATS_IN.includes(backup.format)) {
+          return err(res, 400, 'formato de cópia desconhecido', { expected: BACKUP_FORMAT, legacyAccepted: BACKUP_FORMATS_IN.slice(1), got: backup.format || null });
         }
         const list = Array.isArray(backup.projects) ? backup.projects : null;
         if (!list) return err(res, 400, 'a cópia não tem lista de projectos');
@@ -1224,7 +1256,7 @@ export async function createApi(opts) {
         const notes = store.notesOf(pid);
         if (String(url.searchParams.get('format') || 'json') === 'md') {
           const md = memoryToMarkdown(notes, { projectTitle: prj.title });
-          return jsonOrFile(res, 200, md, 'text/markdown; charset=utf-8', 'meridiano-memoria-' + pid + '.md');
+          return jsonOrFile(res, 200, md, 'text/markdown; charset=utf-8', 'conspiracy-tracker-memoria-' + pid + '.md');
         }
         return json(res, 200, {
           ok: true, kinds: MEMORY_KINDS, limits: MEMORY_LIMITS,
@@ -1317,6 +1349,271 @@ export async function createApi(opts) {
       }
 
       /* ---------- resumo descarregável (MD / JSON / CSV / PDF) ---------- */
+      /* ================= registo de fontes (fase 3G) =================
+         Um registo de fontes não é um catálogo de links: cada fonte tem estado
+         explícito, verificações datadas, classificações com justificação e
+         decisões auditadas. Ver docs/FONTES.md. */
+
+      if (p === '/api/sources/meta' && method === 'GET') {
+        return json(res, 200, {
+          ok: true,
+          states: Object.entries(SOURCE_STATES).map(([k, v]) => ({ id: k, label: v.label, hint: v.hint, order: v.order })),
+          categories: Object.entries(SOURCE_CATEGORIES).map(([k, label]) => ({ id: k, label })),
+          jurisdictions: JURISDICTIONS,
+          dimensions: RATING_DIMENSIONS,
+          bands: RATING_BANDS,
+          adapters: Object.values(ADAPTERS).map((ad) => ({
+            id: ad.id, label: ad.label, category: ad.category, jurisdiction: ad.jurisdiction,
+            method: ad.method, limits: ad.limits, licence: ad.licence, version: ad.version
+          }))
+        });
+      }
+
+      if (p === '/api/sources' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const q = (url.searchParams.get('q') || '').toLowerCase();
+        const state = url.searchParams.get('state');
+        const category = url.searchParams.get('category');
+        const jurisdiction = url.searchParams.get('jurisdiction');
+        let list = store.sources();
+        if (state) list = list.filter((x) => x.state === state);
+        if (category) list = list.filter((x) => x.category === category);
+        if (jurisdiction) list = list.filter((x) => String(x.jurisdiction || '').toUpperCase() === jurisdiction.toUpperCase());
+        if (q) list = list.filter((x) => (x.name + ' ' + (x.institution || '') + ' ' + x.url).toLowerCase().includes(q));
+        const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') || 200)));
+        const items = list.slice(0, limit).map((x) => {
+          const last = store.lastCheckOf(x.id);
+          const ratings = store.ratingsOf(x.id);
+          const lastRating = ratings.length ? ratings[ratings.length - 1] : null;
+          return {
+            id: x.id, name: x.name, url: x.url, canonicalUrl: x.canonicalUrl || null,
+            domain: x.domain || null, category: x.category, jurisdiction: x.jurisdiction,
+            institution: x.institution || null, state: x.state, stateLabel: (SOURCE_STATES[x.state] || {}).label || x.state,
+            discoveredAt: x.createdAt, discoveredVia: x.discoveredVia || null,
+            lastCheckAt: last ? last.at : null,
+            lastCheckStatus: last ? last.httpStatus : null,
+            rating: lastRating ? { band: lastRating.band, score: lastRating.score, provisional: lastRating.provisional, risk: lastRating.riskScore, at: lastRating.at } : null,
+            decisions: store.decisionsOf(x.id).length
+          };
+        });
+        const stats = { total: store.sources().length };
+        Object.keys(SOURCE_STATES).forEach((k) => { stats[k] = store.sources().filter((x) => x.state === k).length; });
+        return json(res, 200, { ok: true, count: items.length, total: list.length, stats, items });
+      }
+
+      if (p === '/api/sources' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!srcLimiter.allowed(a.user.id)) return err(res, 429, 'demasiados candidatos submetidos nesta hora');
+        const body = await readBody(req);
+        const parsed = parseUrl(body.url);
+        if (!parsed.ok) return err(res, 400, 'URL recusada: ' + parsed.reason);
+        const category = String(body.category || 'outra');
+        if (!SOURCE_CATEGORIES[category]) return err(res, 400, 'categoria desconhecida (ver /api/sources/meta)');
+        const key = sourceDedupeKey(body.url);
+        const existing = store.sourceByKey(key);
+        if (existing) {
+          return json(res, 409, {
+            ok: false, error: 'esta fonte já está registada (mesmo URL canónico)',
+            existing: { id: existing.id, name: existing.name, state: existing.state, url: existing.url },
+            nota: 'duplicados não entram no catálogo: duas entradas para a mesma fonte inflacionam a cobertura e escondem lacunas'
+          });
+        }
+        const src = await store.createSource({
+          name: String(body.name || parsed.host).slice(0, 200),
+          url: parsed.url.toString(), canonicalUrl: canonicalUrl(body.url), dedupeKey: key,
+          domain: domainOf(body.url), category,
+          jurisdiction: String(body.jurisdiction || '').toUpperCase().slice(0, 2) || null,
+          institution: body.institution ? String(body.institution).slice(0, 200) : null,
+          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
+          discoveredVia: { adapter: 'manual', submittedBy: a.user.id, at: new Date().toISOString() },
+          state: 'DISCOVERED'
+        }, a.user.id);
+        await store.audit({ type: 'source_discovered', actorId: a.user.id, ip: ipOf(req), subjectId: src.id,
+          action: 'source_create', detail: { url: src.canonicalUrl, category } });
+        return json(res, 201, { ok: true, source: src, nota: 'registada como DISCOVERED: ainda não foi verificada nem aprovada' });
+      }
+
+      if (p.match(/^\/api\/sources\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const id = p.split('/')[3];
+        const src = store.sourceById(id);
+        if (!src) return err(res, 404, 'fonte não encontrada');
+        const checks = store.checksOf(id);
+        const ratings = store.ratingsOf(id);
+        return json(res, 200, {
+          ok: true, source: src, checks, ratings,
+          decisions: store.decisionsOf(id),
+          rating: ratings.length ? ratings[ratings.length - 1] : null,
+          nota: 'as verificações são observações datadas; uma falha de hoje não apaga a de ontem'
+        });
+      }
+
+      if (p.match(/^\/api\/sources\/[^/]+\/check$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = p.split('/')[3];
+        const src = store.sourceById(id);
+        if (!src) return err(res, 404, 'fonte não encontrada');
+        if (!checkLimiter.allowed(a.user.id + ':' + id)) return err(res, 429, 'verificações demasiado frequentes para esta fonte');
+        const raw = await checkAccess(src.canonicalUrl || src.url, { timeoutMs: 12000 });
+        const mapped = stateFromCheck(raw);
+        const record = {
+          httpStatus: raw.httpStatus, contentType: raw.contentType, ms: raw.ms, bytes: raw.bytes,
+          truncated: raw.truncated, finalUrl: raw.finalUrl, redirects: raw.redirects || [],
+          tls: raw.httpStatus ? /^https:/i.test(raw.finalUrl || src.url) : false,
+          blocked: raw.status === 'bloqueado', reason: raw.reason || null, stateLabel: raw.stateLabel,
+          observed: raw.status, state: mapped.state, why: mapped.why
+        };
+        const check = await store.addSourceCheck(id, record);
+        /* o estado muda por observação, nunca por optimismo */
+        const nextState = (src.state === 'APPROVED' || src.state === 'ACTIVE')
+          ? (mapped.state === 'TECHNICAL_TESTING' ? src.state : 'DEGRADED')
+          : mapped.state;
+        const updated = await store.updateSource(id, { state: nextState, lastCheckAt: check.at }, a.user.id, 'verificação técnica');
+        await store.audit({ type: 'source_checked', actorId: a.user.id, ip: ipOf(req), subjectId: id,
+          action: 'source_check', detail: { httpStatus: record.httpStatus, from: src.state, to: nextState } });
+        return json(res, 200, {
+          ok: true, check, source: updated,
+          interpretation: mapped.why,
+          nota: 'verificação de leitura simples: sem cookies, sem credenciais, sem executar scripts; o conteúdo não é guardado'
+        });
+      }
+
+      if (p.match(/^\/api\/sources\/[^/]+\/rate$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = p.split('/')[3];
+        const src = store.sourceById(id);
+        if (!src) return err(res, 404, 'fonte não encontrada');
+        const body = await readBody(req);
+        const last = store.lastCheckOf(id);
+        const rating = rateSource({
+          meta: Object.assign({ institution: src.institution }, body.meta || {}),
+          checks: Object.assign({
+            officialDomain: /(^|\.)(gov|gov\.[a-z]{2}|gob|gouv|admin\.ch|europa\.eu|int)$/i.test(src.domain || ''),
+            tls: last ? last.tls !== false : null,
+            httpStatus: last ? last.httpStatus : null,
+            ms: last ? last.ms : null,
+            contentType: last ? last.contentType : null,
+            accessScore: last ? (last.httpStatus >= 200 && last.httpStatus < 400 ? 80 : last.httpStatus ? 40 : 10) : null,
+            checkedAt: last ? last.at : null,
+            redirectsToOtherDomain: last && last.redirects && last.redirects.some((r) => domainOf(r.to || '') && domainOf(r.to) !== src.domain),
+            restricted: src.state === 'RESTRICTED',
+            lastPublishedDays: (body.meta && body.meta.lastPublishedDays) != null ? Number(body.meta.lastPublishedDays) : null
+          }, body.checks || {})
+        });
+        const saved = await store.addSourceRating(id, rating, a.user.id);
+        await store.audit({ type: 'source_rated', actorId: a.user.id, ip: ipOf(req), subjectId: id,
+          action: 'source_rate', detail: { band: rating.band, score: rating.score, provisional: rating.provisional, missing: rating.missing } });
+        return json(res, 200, {
+          ok: true, rating: saved,
+          nota: rating.provisional ? 'classificação provisória: faltam verificações; não é uma nota definitiva' : null
+        });
+      }
+
+      if (p.match(/^\/api\/sources\/[^/]+\/decision$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = p.split('/')[3];
+        const src = store.sourceById(id);
+        if (!src) return err(res, 404, 'fonte não encontrada');
+        const body = await readBody(req);
+        const decisions = { approve: 'APPROVED', reject: 'REJECTED', review: 'NEEDS_REVIEW', activate: 'ACTIVE', deprecate: 'DEPRECATED' };
+        const target = decisions[String(body.decision || '')];
+        if (!target) return err(res, 400, 'decisão inválida (use: approve, reject, review, activate, deprecate)');
+        const reason = String(body.reason || '').trim().slice(0, 1000);
+        if (reason.length < 10) return err(res, 400, 'uma decisão exige motivo escrito (mínimo 10 caracteres)');
+        const lastRating = (store.ratingsOf(id) || []).slice(-1)[0] || null;
+        if ((target === 'APPROVED' || target === 'ACTIVE') && !lastRating) {
+          return err(res, 409, 'não se aprova uma fonte sem classificação registada: peça a classificação primeiro');
+        }
+        if ((target === 'APPROVED' || target === 'ACTIVE') && lastRating && lastRating.provisional) {
+          return err(res, 409, 'a classificação é provisória (evidência insuficiente): uma fonte não entra em uso com nota provisória');
+        }
+        const rec = await store.addSourceDecision(id, {
+          decision: body.decision, state: target, reason,
+          ratingId: lastRating ? lastRating.id : null,
+          ratingBand: lastRating ? lastRating.band : null,
+          ratingProvisional: lastRating ? !!lastRating.provisional : null
+        }, a.user.id);
+        const updated = await store.updateSource(id, { state: target }, a.user.id, 'decisão: ' + body.decision);
+        await store.audit({ type: 'source_decision', actorId: a.user.id, ip: ipOf(req), subjectId: id,
+          action: 'source_' + body.decision, detail: { from: src.state, to: target, reason: reason.slice(0, 200) } });
+        return json(res, 200, { ok: true, decision: rec, source: updated });
+      }
+
+      if (p === '/api/coverage' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const cov = coverageFrom(store.sources());
+        return json(res, 200, Object.assign({ ok: true }, cov));
+      }
+
+      if (p === '/api/discovery/runs' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, { ok: true, runs: store.discoveryRuns().slice(0, 50).map((r) => Object.assign({}, r)) });
+      }
+
+      if (p === '/api/discovery/run' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!discoveryLimiter.allowed(a.user.id)) return err(res, 429, 'execuções de descoberta demasiado frequentes');
+        const body = await readBody(req);
+        const adapterId = String(body.adapter || 'courtlistener_courts');
+        const adapter = ADAPTERS[adapterId];
+        if (!adapter) return err(res, 400, 'adaptador desconhecido (ver /api/sources/meta)');
+        const dryRun = body.dryRun === true;
+        const run = dryRun ? { id: 'dry-' + Date.now().toString(36) } : await store.createDiscoveryRun({
+          adapter: adapter.id, adapterVersion: adapter.version,
+          params: { pageSize: body.pageSize || 40 }, dryRun: false,
+          query: adapter.method
+        }, a.user.id);
+        const t0 = Date.now();
+        let result = null, error = null;
+        try { result = await adapter.discover({ pageSize: body.pageSize || 40 }); }
+        catch (e) { error = String(e && e.message || e); }
+        const durationMs = Date.now() - t0;
+        if (!result || !result.ok) {
+          if (!dryRun) await store.updateDiscoveryRun(run.id, { status: 'failed', error: error || (result && result.error) || 'falha desconhecida', durationMs, finishedAt: new Date().toISOString() });
+          return json(res, 502, {
+            ok: false, runId: dryRun ? null : run.id, adapter: adapter.id,
+            error: error || (result && result.error) || 'o adaptador não devolveu resultados',
+            nota: 'a execução fica registada como falhada; nada é marcado como descoberto'
+          });
+        }
+        const created = [], duplicates = [];
+        for (const c of result.candidates) {
+          const key = sourceDedupeKey(c.url);
+          if (!key) { duplicates.push({ url: c.url, why: 'URL inválida' }); continue; }
+          if (store.sourceByKey(key)) { duplicates.push({ url: c.url, why: 'já registada' }); continue; }
+          if (dryRun) { created.push({ name: c.name, url: c.url, dryRun: true }); continue; }
+          const src = await store.createSource({
+            name: c.name, url: c.url, canonicalUrl: canonicalUrl(c.url), dedupeKey: key,
+            domain: domainOf(c.url), category: c.category, jurisdiction: c.jurisdiction,
+            institution: c.institution, notes: c.notes, discoveredVia: c.discoveredVia,
+            state: 'DISCOVERED'
+          }, a.user.id);
+          created.push({ id: src.id, name: src.name, url: src.url });
+        }
+        if (!dryRun) {
+          await store.updateDiscoveryRun(run.id, {
+            status: 'completed', durationMs, finishedAt: new Date().toISOString(),
+            query: result.url, found: result.found, candidates: result.candidates.length,
+            created: created.length, duplicates: duplicates.length,
+            duplicatesSample: duplicates.slice(0, 20)
+          });
+          await store.audit({ type: 'discovery_run', actorId: a.user.id, ip: ipOf(req), action: 'discovery_run',
+            detail: { adapter: adapter.id, created: created.length, duplicates: duplicates.length } });
+        }
+        return json(res, 200, {
+          ok: true, runId: dryRun ? null : run.id, adapter: adapter.id, query: result.url,
+          found: result.found, candidates: result.candidates.length, created: created.length, duplicates: duplicates.length,
+          duplicatesSample: duplicates.slice(0, 10), items: created.slice(0, 50),
+          durationMs,
+          nota: dryRun ? 'modo de teste: nada foi gravado' : 'as fontes entram como DISCOVERED: nenhuma é usada antes de verificada e aprovada'
+        });
+      }
+
       /* ---------- documentos recolhidos: texto extraído para revisão humana ----------
          O documento entra na base com o texto (e o que a extracção NÃO garante),
          mas nenhuma prova é criada aqui: quem cita tem de ler e confirmar. */
@@ -1658,7 +1955,7 @@ export async function createApi(opts) {
         const w = windowFrom(url);
         if (!w.ok) return err(res, 400, 'filtro temporal inválido: ' + w.error);
         const g = projectGraph(prj, pid, w.window);
-        const base = 'meridiano-' + String(prj.id).replace(/[^a-zA-Z0-9-_]/g, '') + '-grafo' +
+        const base = 'conspiracy-tracker-' + String(prj.id).replace(/[^a-zA-Z0-9-_]/g, '') + '-grafo' +
           (w.window.applied ? '-' + (w.window.from || 'inicio') + '_' + (w.window.to || 'fim') : '');
         let body, type, filename;
         if (format === 'svg') { body = graphToSvg(g, { width: 1100, height: 720 }); type = 'image/svg+xml; charset=utf-8'; filename = base + '.svg'; }

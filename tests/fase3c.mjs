@@ -273,7 +273,7 @@ await t('exportação JSON exige sessão e fica registada na auditoria', async (
   ok(anon.status === 401, 'sem sessão: ' + anon.status);
   const r = await A.call('GET', '/api/projects/' + pid + '/graph/export?format=json');
   ok(r.status === 200, 'exportação ' + r.status);
-  ok(/attachment; filename="meridiano-/.test(r.headers.get('content-disposition') || ''), 'descarregamento com nome');
+  ok(/attachment; filename="conspiracy-tracker-/.test(r.headers.get('content-disposition') || ''), 'descarregamento com nome');
   const body = JSON.parse(r.text);
   ok(body.warnings.length >= 3, 'avisos no ficheiro');
   ok(body.generatedBy, 'autoria da exportação');

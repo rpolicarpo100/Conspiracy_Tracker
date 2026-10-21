@@ -702,3 +702,117 @@ O que continua por verificar (declarado):
     é 1 imagem de cada vez e 45 s por imagem, mas a memória em pico só se mede com carga real;
   · durabilidade sob um deploy a meio de uma escrita (o bloqueio de segunda instância foi testado
     localmente, não em produção).
+
+== 34. FASE 3G — DADOS REAIS, REGISTO DE FONTES, DESCOBERTA E CLASSIFICAÇÃO (2026-10-21, versão 2.0.0-fase3g)
+Servidor local · Node 20 · Chromium headless · base isolada por suite.
+
+A. Importação real («Epstein files») — tools/import-epstein.mjs, execução real
+   · consulta: GET https://www.courtlistener.com/api/rest/v4/search/?q="Jeffrey Epstein"&type=o
+     → HTTP 200, count 49
+   · aceites: 17 documentos · rejeitados: 33 (motivo registado um a um)
+   · cada aceite: PDF descarregado, SHA-1 conferido contra o publicado («confere»),
+     SHA-256 calculado, texto extraído do próprio PDF, menção literal verificada
+   · resultado: 46 entidades (18 pessoas · 17 documentos · 5 tribunais · 3 organismos ·
+     3 empresas) e 82 relações, todas com excerto
+   · proveniência gravada em data/real/PROVENIENCIA.json (counts 17/46/82, rejected 33)
+
+B. Testes de servidor — npm test
+   17 suites · 308 asserções · 0 falhas:
+     14/14 · 17/17 · 18/18 · 13/13 · 26/26 · 17/17 · 19/19 · 13/13 · 16/16 · 28 · 18 · 19 · 21 ·
+     15 · 25 · 7 (lote real) · fontes 20/20 com 3 SKIP declarados (rede/limite)
+   Inclui tests/realdata-bundle.mjs (7/7): o lote real passa `validateBundle` (46/82/82),
+   contagens iguais às da proveniência, 4 tipos processuais sem arestas acusatórias,
+   documento sem origem/data recusado, documento sem hash aceite **com aviso**, lote fictício recusado.
+   Inclui tests/fontes.mjs (23 casos, 3 dependem de rede):
+     · URL canónico https://www.example.gov/path/?a=1&b=2 → chave example.gov|/path?a=1
+     · 7 endereços SSRF recusados (localhost, 127.0.0.1, 10.x, 172.16.x, 192.168.x,
+       169.254.169.254, credenciais embutidas)
+     · descoberta real: 20 candidatos · 18 novas · 0 duplicadas · consulta registada
+     · verificação real: HTTP 200 · TECHNICAL_TESTING; 403 → RESTRICTED
+     · nota 88/A com amostra 25; amostra 3 limitada a 60 (declarado)
+     · aprovação sem classificação → 409; classificação provisória bloqueia aprovação
+     · duplicado por chave canónica → 409 com a fonte existente
+     · cobertura: 29 categorias sem fonte · 0 países aprovados
+     · migração v5 → v6 cria as 5 colecções novas sem tocar nas antigas
+
+C. Testes de interface — npm run test:ui
+   6 suites · 53 asserções · 0 falhas (5/5 · 7/7 · 15/15 · 6/6 · 10/10 · 10/10)
+   tests/fontes-ui.mjs (10/10) com valores lidos da interface:
+     · catálogo vazio: «12 estados · 30 categorias»
+     · registo manual → «CourtListener (Free Law Project) · Descoberta · courtlistener.com»
+     · aprovação recusada com o motivo visível (não «[object Object]»)
+     · verificação real: HTTP 403 · ~110 ms · «exige autenticação ou pagamento (HTTP 403):
+       não se contorna»
+     · classificação: provisória · falta qualidade factual, independência, utilidade, actualidade
+     · rejeição registada REJECTED com motivo
+     · duplicado → 409 explicado, catálogo mantém 1
+     · simulação: 18 candidatos · 18 novas · 0 duplicadas · consulta mostrada
+     · cobertura: 1 fonte · 0 países aprovados · 29 categorias por cobrir (não validadas)
+     · 0 erros de runtime
+   Evidência visual: docs/shot-29-fontes.png
+
+D. Pesquisa sobre o conjunto real (medido, Chromium headless 1680×1000)
+   · índice: 24 ms · 128 documentos · 741 termos
+   · «Jeffrey Epstein»: 0,48 ms de média em 40 execuções · 55 resultados
+   · «Epstein» 55 · «Court» 87 · «deferred» 0 (ausência mostrada)
+
+E. Consistência de estado
+   node tools/status.mjs --check → «estado coerente: 2.0.0-fase3g · esquema v6 · 13 agentes ·
+   76 rotas»
+
+F. O que NÃO foi testado nesta fase (declarado)
+   · Postgres ou disco persistente: não disponível; o armazenamento continua a ser ficheiro JSON
+     com escrita atómica e três cópias — um deploy apaga-o;
+   · adaptadores para fontes nacionais (incluindo Portugal): não escritos;
+   · reavaliação periódica automática de fontes: estados implementados, agendador não;
+   · auditoria de conteúdo por amostragem em escala: a classificação aceita amostra, a comparação
+     com os originais é manual;
+   · 429 do CourtListener em execuções seguidas: tratado (espera + 1 tentativa + erro explícito),
+     mas não se mediu a recuperação ao longo de horas.
+
+== 35. RETIRAR A FICÇÃO — O QUE MUDOU E COMO FOI VERIFICADO (2026-10-21)
+Pedido: «retira tudo o que é fictício». Feito e medido; não é só remoção de texto.
+
+A. Dados
+   · eliminados os sete ficheiros do «Caso Meridiano» (69 entidades, 126 relações inventadas);
+     `data/` contém hoje `00-schema.js` (esquema, sem dados) e `real/`.
+   · `tools/import-epstein.mjs` voltou a correr (não foi editado à mão): 17 documentos aceites,
+     33 rejeitados, 46 entidades, 82 relações — o mesmo conjunto, regenerado pelo pipeline.
+   · **Correcção de integridade encontrada nesta verificação:** as 82 relações estavam marcadas
+     `confirmed` sem revisor humano, o que violava a regra do próprio projecto. Passaram a
+     `probable` com `method` («verificação automática: hash + menção literal»), `reviewPending:
+     true` e a razão escrita em `why`. Promover a «confirmado» exige agora revisor identificado —
+     que o importador não pode inventar.
+
+B. Interface (texto fictício removido, não substituído por outro texto fictício)
+   · nome do produto no cabeçalho e no título: «Meridiano» → «Conspiracy Tracker» (o nome anterior
+     era o nome do caso inventado);
+   · crachá: «Dados fictícios» → «Dados com proveniência» (ou «Proveniência a rever» se o lote não
+     declarar `meta.fictional === false`), com contagem de documentos no `title`;
+   · modal «Nota metodológica» → «Proveniência dos dados»: mostra documentos, entidades, relações,
+     quantas relações são processuais, o aviso «uma linha não é prova» e como importar;
+   · separador «Real»: deixou de prometer «modo de demonstração»; passou a dizer qual é o conjunto
+     activo e que lotes fictícios são recusados;
+   · detalhe de documento sem URL: «faz parte do conjunto fictício» → «sem endereço, data e hash a
+     referência não é verificável — trate-a como pista»;
+   · relatório: «Dados fictícios» → «Proveniência não declarada» quando `meta.fictional` é verdadeiro;
+   · avatares: «logótipo fictício» → «marca não oficial», declarada como gerada localmente;
+   · ficheiros descarregados, cópias de segurança, resumos, memória e exportações deixaram de se
+     chamar «meridiano-*»; a cópia antiga (`meridiano-backup/1`) continua a ser **aceite na
+     reposição**, para não invalidar cópias já exportadas.
+   · servidor: `user-agent` das recolhas, emissor TOTP, produtor do PDF e nomes de ficheiro
+     actualizados.
+
+C. Verificação
+   · `npm test` → 17 suites · 308 asserções · 0 falhas (inclui o novo `realdata-bundle` 7/7).
+   · `npm run test:ui` → 6 suites · 53 asserções · 0 falhas, com a interface renomeada.
+   · `node tests/fase3d.mjs` 18/18 (inclui: cópia nova aceite **e** cópia antiga ainda aceite).
+   · `grep -ri 'fictíc' src/ index.html` → só a regra que recusa lotes fictícios e o comentário do
+     avatar; `grep -ri meridiano` fora dos testes → só a compatibilidade da cópia antiga.
+   · Pesquisa sobre o conjunto real: índice 24 ms · 741 termos · «Jeffrey Epstein» 0,48 ms / 55
+     resultados (valor medido, não estimado).
+
+D. O que continua por fazer (declarado)
+   · a revisão humana das 82 relações continua pendente: é esse o estado que os dados declaram;
+   · `data/real/` cobre uma só temática e uma só jurisdição (EUA);
+   · o armazenamento continua a ser ficheiro JSON (disco efémero no Render).

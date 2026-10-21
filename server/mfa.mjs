@@ -24,7 +24,7 @@ export const MFA = {
   recoveryCodes: 10,
   recoveryCodeBytes: 5,
   maxAttempts: 8, attemptWindowMs: 10 * 60 * 1000,
-  issuer: 'Meridiano'
+  issuer: 'Conspiracy Tracker'
 };
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

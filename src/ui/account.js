@@ -332,7 +332,7 @@
       el('div', { class: 'chips', style: 'margin-top:4px' }, [
         el('button', {
           class: 'btn sm', type: 'button', text: 'Copiar',
-          onclick: () => { VN.dom.download('meridiano-codigos-recuperacao.txt', S.recoveryCodes.join('\n'), 'text/plain'); note('Ficheiro com os códigos descarregado.', 'ok'); }
+          onclick: () => { VN.dom.download('conspiracy-tracker-codigos-recuperacao.txt', S.recoveryCodes.join('\n'), 'text/plain'); note('Ficheiro com os códigos descarregado.', 'ok'); }
         }),
         el('button', {
           class: 'btn sm', type: 'button', text: 'Já os guardei',
@@ -392,7 +392,7 @@
         onclick: async () => {
           const r = await api('/api/auth/export');
           if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
-          VN.dom.download('meridiano-dados-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(r.json, null, 2), 'application/json');
+          VN.dom.download('conspiracy-tracker-dados-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(r.json, null, 2), 'application/json');
           note('Exportação descarregada (operação registada em auditoria).', 'ok');
         }
       }),
@@ -410,7 +410,8 @@
             if (!file) return;
             let parsed = null;
             try { parsed = JSON.parse(await file.text()); } catch { return note('Ficheiro não é JSON válido', 'bad'); }
-            if (parsed.format !== 'meridiano-backup/1') return note('Este ficheiro não é uma cópia do Meridiano (' + (parsed.format || 'sem formato') + ')', 'bad');
+            if (!['conspiracy-tracker-backup/1', 'meridiano-backup/1'].includes(parsed.format))
+              return note('Este ficheiro não é uma cópia do Conspiracy Tracker (' + (parsed.format || 'sem formato') + ')', 'bad');
             if (!confirm('Repor ' + ((parsed.projects || []).length) + ' projecto(s) desta cópia? Os projectos são criados de novo (não substituem os existentes).')) return;
             const r = await api('/api/auth/restore', { method: 'POST', body: { backup: parsed } });
             if (!r.ok) return note('Reposição falhou: ' + r.error.message, 'bad');
@@ -844,7 +845,7 @@
           id: 'graphPng', class: 'btn sm', type: 'button', text: 'PNG',
           onclick: () => {
             if (!S.graphView || !VN.evidenceGraph || !VN.evidenceGraph.exportPng) return note('Desenho indisponível para PNG', 'warn');
-            const okPng = VN.evidenceGraph.exportPng(S.graphView.svg, 'meridiano-' + p.id + '-grafo.png');
+            const okPng = VN.evidenceGraph.exportPng(S.graphView.svg, 'conspiracy-tracker-' + p.id + '-grafo.png');
             if (okPng === false) return note('O browser recusou gerar a imagem PNG: utilize a exportação SVG', 'warn');
           }
         })
@@ -1196,7 +1197,7 @@
         onclick: async () => {
           const r = await fetch('/api/projects/' + p.id + '/memory?format=md', { credentials: 'same-origin' });
           if (!r.ok) return note('Memória indisponível', 'bad');
-          VN.dom.download('meridiano-memoria-' + p.id + '.md', await r.text(), 'text/markdown');
+          VN.dom.download('conspiracy-tracker-memoria-' + p.id + '.md', await r.text(), 'text/markdown');
           note('Memória descarregada em Markdown.', 'ok');
         }
       })

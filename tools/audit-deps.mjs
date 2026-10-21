@@ -30,7 +30,7 @@ async function jget(url, tries = 3) {
   let last = null;
   for (let i = 0; i < tries; i++) {
     try {
-      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'meridiano-audit' } });
+      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'conspiracy-tracker-audit' } });
       if (r.status === 404) return null;
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();

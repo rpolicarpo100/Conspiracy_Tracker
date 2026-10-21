@@ -17,7 +17,7 @@ await page.waitForTimeout(1200);
 // 1. pesquisar entidade
 await step('1. Pesquisar entidade', async () => {
   await page.click('#search');
-  await page.fill('#search', 'Meridiano');
+  await page.fill('#search', 'Epstein');
   await page.waitForTimeout(350);
   const n = await page.locator('.sresult').count();
   if (!n) throw new Error('sem resultados');
@@ -30,7 +30,7 @@ await step('1. Pesquisar entidade', async () => {
 // 2. nó com representação
 await step('2. Nó com representação visual', async () => {
   const hasImg = await page.evaluate(() => {
-    const cy = VN.app.engine.cy; const n = cy.getElementById('c-meridiano');
+    const cy = VN.app.engine.cy; const n = cy.getElementById('p-jeffrey-epstein');
     return n.nonempty() && !!n.data('img') && n.data('img').startsWith('data:image/svg');
   });
   if (!hasImg) throw new Error('sem imagem no nó');
@@ -79,8 +79,18 @@ await step('6. Distinguir facto / alegação / não verificado', async () => {
       contraditas: M.relations.filter(r => r.status === 'contradicted').length,
       estilos: Array.from(new Set(M.relations.map(r => r.status))) };
   });
-  if (!counts.alegacoes || !counts.naoVerif || !counts.contraditas) throw new Error('estados em falta');
-  return JSON.stringify(counts);
+  /* O conjunto real só tem factos processuais: zero alegações, zero não
+     verificados, zero contraditados. O que se verifica é que os cinco estados
+     estão definidos no esquema (e com pesos distintos) e que o conjunto não
+     inventa nenhum — em vez de forçar um exemplo fictício. */
+  const esquema = await page.evaluate(() => {
+    const v = VN.app.ctx.model.meta && window.VN_DATA.verification;
+    return Object.keys(v || {}).map((k) => k + ':' + v[k].weight).join(',');
+  });
+  const esperados = ['confirmed', 'probable', 'alleged', 'unverified', 'contradicted'];
+  for (const k of esperados) if (!esquema.includes(k)) throw new Error('estado ausente do esquema: ' + k);
+  if (counts.alegacoes || counts.naoVerif || counts.contraditas) throw new Error('o conjunto real tem estados que deviam ser zero: ' + JSON.stringify(counts));
+  return JSON.stringify(counts) + ' · esquema: ' + esquema;
 });
 
 // 7. filtrar por período e categoria
@@ -88,14 +98,14 @@ await step('7. Filtrar por período e categoria', async () => {
   const r = await page.evaluate(() => {
     const st = VN.app.ctx.store, M = VN.app.ctx.model;
     const before = st.masks().edges.size;
-    st.setFilter({ yearFrom: 2016, yearTo: 2018 }, 'teste período'); VN.app.refresh();
+    st.setFilter({ yearFrom: 2020, yearTo: 2024 }, 'teste período'); VN.app.refresh();
     const period = st.masks().edges.size;
     // válida no período = intervalo da relação intersecta [2016,2018]
     const outside = Array.from(st.masks().edges).map(id => M.relById.get(id)).filter(r => {
       if (!r.yStart && !r.yEnd) return false;                 // sem data: mantida e assinalada
       const s0 = r.yStart != null ? r.yStart : -Infinity;
       const e0 = r.yEnd != null ? r.yEnd : Infinity;
-      return !(s0 <= 2018 && e0 >= 2016);
+      return !(s0 <= 2024 && e0 >= 2020);
     }).length;
     const loan2020 = st.masks().edges.has('r-079');
     st.setFilter({ yearFrom: null, yearTo: null, families: new Set(['financial']) }, 'teste família'); VN.app.refresh();
@@ -113,7 +123,7 @@ await step('8. Encontrar caminhos entre duas entidades', async () => {
   const r = await page.evaluate(() => {
     const st = VN.app.ctx.store;
     st.loadAll(); VN.app.refresh();
-    st.setPath({ a: 'p-vitor', b: 'p-joaquim', maxSteps: 4 });
+    st.setPath({ a: 'p-jeffrey-epstein', b: 'p-brenda-serrano', maxSteps: 4 });
     VN.app.runPath();
     return st.state.path.results ? { n: st.state.path.results.paths.length, best: st.state.path.results.paths[0] && st.state.path.results.paths[0].score, explored: st.state.path.results.explored } : null;
   });
