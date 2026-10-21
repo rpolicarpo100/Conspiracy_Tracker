@@ -519,3 +519,19 @@ Regressão: server 26/26 · evidence 17/17 · graph 13/13 · agents-p3 16/16 · 
 Esquema: v5 (migração 4→5 registada: colecções notes e entityLinks).
 Ferramenta nova: tools/status.mjs (--write actualiza o bloco automático de docs/ESTADO-ATUAL.md,
 --check falha se a documentação divergir do código).
+
+== 30. FASE 3D NO SERVIÇO PÚBLICO (commit 971145a, versão 2.0.0-fase3d)
+
+Sondas reais em https://conspiracy-aitracker.onrender.com (conta descartável criada e eliminada):
+  · /api/meta → 2.0.0-fase3d · esquema 5 · 13 agentes;
+  · memória: decisão registada (201) e decisão sem motivo recusada (400);
+  · fusão de homónimos: sem identificador 400 («fundir nomes exige o identificador»), com
+    NIPC 500000000 → 201;
+  · resumo nos 4 formatos: JSON 2 190 B · MD 2 206 B · CSV 862 B · PDF 4 035 B com assinatura
+    %PDF-;
+  · caminho com pathExcludeInferred=1 → restrições aplicadas declaradas na resposta;
+  · cópia de segurança: meridiano-backup/1 com 1 projecto, 1 prova, 1 conclusão, 1 nota;
+    procurou-se keyCipher no ficheiro: ausente;
+  · reposição → 201, projectos 1 → 2, um deles com marca restoredFrom;
+  · eliminação da conta → 200.
+tests/deployed.mjs: 6/6.
