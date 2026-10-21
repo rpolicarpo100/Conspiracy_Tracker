@@ -585,3 +585,23 @@ Resultados desta execução:
   · regressão: fase3d 18/18, fase3c 28/28, evidence 17/17, graph 13/13, agents-p3 16/16,
     agents 18/18, apis 13/13, server 26/26, research 19/19, flow 14/14, search 17/17, smoke 0 erros;
   · interface: account-ui 15/15, agents-ui 5/5, apis-ui 7/7.
+
+== 31. FASE 3E NO SERVIÇO PÚBLICO (commit 3db157a, versão 2.0.0-fase3e)
+
+Sondas reais em https://conspiracy-aitracker.onrender.com (conta descartável criada e eliminada):
+  · /api/meta → 2.0.0-fase3e · esquema 5 · documents: 12 MB (PDF) / 2 MB (HTML), 5 redireccionamentos,
+    «sem OCR; cifra não é contornada», localFetch «proibido»;
+  · recolha do PDF servido pelo próprio serviço público (tests/fixtures/relatorio-chromium.pdf):
+    HTTP 201 · método texto-extraído · 2 páginas · 541 caracteres · ToUnicode em 2 fluxos;
+  · texto lido a pedido: «Relatório de teste», «250 000 euros», «Segunda página» e «duas fontes»
+    todos presentes — igual ao serviço local (541 caracteres nos dois);
+  · provas criadas pela recolha: 0; lista de documentos com pré-visualização de 300 caracteres e
+    sem o campo `text`; «marcar como revisto» → 200 reviewed=true;
+  · SSRF em produção: POST com http://127.0.0.1:8080/x → ok=false «endereço privado/local proibido»;
+  · remoção do documento → 200 e GET seguinte 404;
+  · eliminação da conta → 200 (1 projecto eliminado).
+tests/deployed.mjs: 6/6, 0 erros de runtime (inclui a recusa de SSRF e do proxy aberto no serviço
+público).
+
+Tempo de publicação: commit 3db157a enviado para `main` às 20:17:24 e já em execução às 20:17:45
+(Render, plano gratuito, autoDeploy).

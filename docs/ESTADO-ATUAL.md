@@ -50,9 +50,9 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 339cbb1 Documentação: grafo com ligações e caminhos restritos, privacidade da memória e cópias
+- último commit: 3db157a Fase 3E: extracção de texto de PDF, recolha de documentos com revisão humana e painel na interface
 - árvore de trabalho: com alterações locais
-- último bloco de resultados: §27 — FASE 3E — DOCUMENTOS E TEXTO DE PDF (versão 2.0.0-fase3e)
+- último bloco de resultados: §31 — FASE 3E NO SERVIÇO PÚBLICO (commit 3db157a, versão 2.0.0-fase3e)
 - documentação: 19 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, BENCHMARKS.md, DECISOES.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md)
 
 ### Coerência
@@ -96,13 +96,11 @@ execução; `/ready` diz se o armazenamento e o cofre de chaves estão operacion
 | Memória da investigação | notas, decisões (motivo obrigatório), glossário, lacunas, correcções; append-only; exportação MD | `tests/fase3d.mjs` |
 | Resumo descarregável | JSON, MD, CSV (Excel pt-PT), PDF (gerador próprio, sem dependências) | `tests/fase3d.mjs` · `docs/exemplo-resumo.pdf` |
 | Cópia de segurança | exportação completa sem segredos e reposição com remapeamento de identificadores | `tests/fase3d.mjs` |
-| Documentos e texto de PDF | recolha com hash, extração por `/ToUnicode` e XObjects, recusa de cifra, sem OCR, ligaduras resolvidas, fonte inacessível registada, revisão humana obrigatória antes de qualquer prova | `tests/pdftext.mjs` 19 · `tests/fase3e.mjs` 21 · `tests/documents-ui.mjs` 6 · `docs/DOCUMENTOS.md` |
+| Documentos e texto de PDF | **verificado no serviço público** (§31): recolha com hash, extração por `/ToUnicode` e XObjects, recusa de cifra, sem OCR, ligaduras resolvidas, fonte inacessível registada, revisão humana obrigatória antes de qualquer prova | `tests/pdftext.mjs` 19 · `tests/fase3e.mjs` 21 · `tests/documents-ui.mjs` 6 · `docs/DOCUMENTOS.md` |
 
 ### Implementadas mas não testadas em produção
 
 - Reposição de cópias com muitos projectos (limite 50) — testado localmente, não em produção.
-- Recolha de documentos e extração de PDF em produção — testado localmente com PDFs reais (Chromium
-  e gerador próprio), falta a verificação no serviço público (fase 3E).
 - PDF do resumo em produção — o gerador é o mesmo, mas só o serviço local foi inspeccionado com
   `pdfinfo`.
 
