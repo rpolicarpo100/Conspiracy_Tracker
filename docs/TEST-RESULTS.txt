@@ -348,3 +348,14 @@ PASS grafo das provas desenha entidades, relações e proveniência sem tratar c
 erros de runtime: 0 []
 
 12/12 passaram
+
+== 23. GRAFO NO SERVIÇO PUBLICADO (commit c5c645a, 2026-10-21)
+PASS /health → version 2.0.0-fase3
+PASS grafo antes de relações: 2 nós · 0 arestas · 1 candidato de co-ocorrência (marcado, não desenhado como relação)
+PASS relação sem prova → 400 «uma relação sem prova registada não entra no grafo»
+PASS relação com prova → 201 · grafo passa a 1 aresta · candidato desaparece
+PASS confiança calculada: «uma-so-origem — uma só origem: não sustenta conclusão, só a existência documentada da relação»
+PASS inferência sem raciocínio escrito → 400
+PASS retirar relação sem motivo → 400
+PASS relatório secção 11 disponível com o aviso «uma linha do grafo não é prova»
+PASS eliminar conta → 200 · tests/deployed.mjs 6/6
