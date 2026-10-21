@@ -267,7 +267,10 @@ export function localStep(id, project, candidates, deps) {
       return { excluidas: (project.excludedSources || []).slice(0, 20), nota: 'fontes secundárias só contam como contexto ou corroboração, nunca como prova primária' };
     case 'resolver': {
       const names = new Map();
-      evidence.forEach((e) => (e.entities || []).forEach((n) => names.set(n, (names.get(n) || 0) + 1)));
+      evidence.forEach((e) => (e.entities || []).forEach((x) => {
+        const n = typeof x === 'string' ? x : (x && x.name);
+        if (n) names.set(n, (names.get(n) || 0) + 1);
+      }));
       return {
         entidades: [...names.entries()].map(([nome, provas]) => ({ nome, provas })),
         aviso: 'nomes iguais só são fundidos com identificador externo (registo, LEI, data de nascimento); caso contrário ficam separados'
@@ -303,7 +306,7 @@ export function localStep(id, project, candidates, deps) {
       };
     case 'grafo':
       return {
-        entidades: [...new Set(evidence.flatMap((e) => e.entities || []))],
+        entidades: [...new Set(evidence.flatMap((e) => (e.entities || []).map((x) => (typeof x === 'string' ? x : (x && x.name))).filter(Boolean)))],
         nota: 'relações não são inferidas por co-ocorrência: exigem prova que as nomeie'
       };
     case 'relatorio':

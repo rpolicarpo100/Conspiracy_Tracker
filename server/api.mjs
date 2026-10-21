@@ -11,12 +11,13 @@ import { keyVault } from './crypto-keys.mjs';
 import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, isPrivateHost } from './providers.mjs';
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
 import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
+import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES } from './graph.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase2b';
+const APP_VERSION = '2.0.0-fase3';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -573,6 +574,73 @@ export async function createApi(opts) {
         return json(res, 200, { ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs) });
       }
 
+      /* ---------- grafo a partir de provas ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/graph$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const g = buildGraph({
+          project: prj, evidence: store.evidenceOf(pid), relations: store.relationsOf(pid), claims: store.claimsOf(pid)
+        });
+        return json(res, 200, {
+          ok: true, graph: g,
+          entityTypes: ENTITY_TYPES, relationTypes: RELATION_TYPES
+        });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/relations$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const byId = new Map(store.evidenceOf(pid).map((e) => [e.id, e]));
+        const v = validateRelation(body, (id) => {
+          const e = byId.get(id);
+          return e && !e.retractedAt ? e : null;
+        });
+        if (!v.ok) return err(res, 400, 'relação recusada: ' + v.errors.join('; '), { errors: v.errors });
+        const rel = await store.addRelation(pid, v.relation, a.user.id);
+        await store.audit({
+          type: 'relation_created', actorId: a.user.id, subjectId: rel.id,
+          action: 'create_relation', detail: { projectId: pid, type: rel.type, inferred: rel.inferred, evidence: rel.evidenceIds.length }
+        });
+        await store.count('relations_created');
+        return json(res, 201, { ok: true, relation: rel });
+      }
+      if (p.match(/^\/api\/relations\/[^/]+$/) && (method === 'PATCH' || method === 'DELETE')) {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const rid = p.split('/')[3];
+        const rel = store.relationById(rid);
+        if (!rel || !projectFor(a, rel.projectId)) return err(res, 404, 'relação não encontrada');
+        const body = await readBody(req);
+        if (method === 'DELETE') {
+          const reason = String(body.reason || '').trim();
+          if (reason.length < 5) return err(res, 400, 'retirar uma relação exige motivo escrito (mínimo 5 caracteres)');
+          const out = await store.retractRelation(rid, reason, a.user.id);
+          await store.audit({ type: 'relation_retracted', actorId: a.user.id, subjectId: rid, action: 'retract_relation', reason });
+          return json(res, 200, { ok: true, relation: out, note: 'retirada, não apagada: o histórico mantém-se' });
+        }
+        const patch = {};
+        if (body.period !== undefined) patch.period = { from: body.period.from || null, to: body.period.to || null };
+        if (body.validationState !== undefined) patch.validationState = String(body.validationState).slice(0, 40);
+        if (body.limitations !== undefined) patch.limitations = String(body.limitations).slice(0, 1000);
+        if (body.reasoning !== undefined) { patch.reasoning = String(body.reasoning).slice(0, 2000); patch.inferred = true; }
+        if (body.evidenceIds !== undefined) {
+          const byId = new Map(store.evidenceOf(rel.projectId).map((e) => [e.id, e]));
+          const ids = (Array.isArray(body.evidenceIds) ? body.evidenceIds : []).map(String);
+          const missing = ids.filter((id) => !byId.get(id) || byId.get(id).retractedAt);
+          if (!ids.length) return err(res, 400, 'uma relação não pode ficar sem prova: indique pelo menos um evidenceId');
+          if (missing.length) return err(res, 400, 'prova inexistente ou retirada: ' + missing.join(', '));
+          patch.evidenceIds = ids.slice(0, 50);
+        }
+        if (!Object.keys(patch).length) return err(res, 400, 'nada para actualizar');
+        const out = await store.updateRelation(rid, patch, a.user.id);
+        await store.audit({ type: 'relation_updated', actorId: a.user.id, subjectId: rid, action: 'update_relation', detail: { fields: Object.keys(patch) } });
+        return json(res, 200, { ok: true, relation: out });
+      }
+
       /* ---------- motor de pesquisa: execuções ---------- */
       if (p.match(/^\/api\/projects\/[^/]+\/runs$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
@@ -641,7 +709,8 @@ export async function createApi(opts) {
         if (!prj) return err(res, 404, 'projecto não encontrado');
         const rep = buildReport({
           project: prj, evidence: store.evidenceOf(pid), claims: store.claimsOf(pid),
-          runs: store.runsOf(pid), usage: store.data.usage.filter((u) => u.userId === a.user.id)
+          runs: store.runsOf(pid), relations: store.relationsOf(pid),
+          usage: store.data.usage.filter((u) => u.userId === a.user.id)
         });
         if (String(url.searchParams.get('format') || 'json') === 'md') {
           const md = reportToMarkdown(rep);

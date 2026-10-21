@@ -9,12 +9,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
   users: [], sessions: [], projects: [], credentials: [], usage: [],
-  evidence: [], claims: [], runs: [],
+  evidence: [], claims: [], runs: [], relations: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -43,16 +43,22 @@ const MIGRATIONS = {
     });
     if (touched) changes.push(touched + ' projecto(s) completados com os campos da v2');
     return changes;
+  },
+  3: (db, missing) => {
+    const changes = [];
+    if (!Array.isArray(db.relations)) db.relations = [];
+    if (missing && missing.indexOf('relations') >= 0) changes.push('criada a colecção relations (grafo a partir de provas)');
+    return changes;
   }
 };
 
-function migrate(db) {
+function migrate(db, missing) {
   const from = Number(db.version || 1);
   const applied = [];
   for (let v = from + 1; v <= SCHEMA_VERSION; v++) {
     const step = MIGRATIONS[v];
     if (!step) continue;
-    const changes = step(db) || [];
+    const changes = step(db, missing || []) || [];
     db.version = v;
     applied.push({ to: v, at: new Date().toISOString(), changes });
     db.migrations.push({ from: v - 1, to: v, at: applied[applied.length - 1].at, changes });
@@ -74,7 +80,9 @@ export function createStore(dir) {
       const raw = await fs.readFile(file, 'utf8');
       const parsed = JSON.parse(raw);
       db = Object.assign(EMPTY(), parsed);
-      const m = migrate(db);
+      /* o que o ficheiro guardado não tinha: base para descrever a migração sem inventar */
+      const missing = Object.keys(EMPTY()).filter((k) => !(k in parsed));
+      const m = migrate(db, missing);
       if (m.applied.length) {
         console.log('[store] migração aplicada:', m.from, '→', m.to,
           m.applied.map((a) => a.changes.join('; ')).join(' | '));
@@ -89,6 +97,8 @@ export function createStore(dir) {
         console.error('[store] base ilegível, preservada em', broken);
       }
       db = EMPTY(); loaded = true;
+      db.migrations.push({ from: 0, to: SCHEMA_VERSION, at: new Date().toISOString(),
+        changes: ['base criada directamente na versão ' + SCHEMA_VERSION] });
       await persist();
     }
     return db;
@@ -139,6 +149,7 @@ export function createStore(dir) {
       db.evidence = db.evidence.filter((e) => !mine.has(e.projectId));
       db.claims = db.claims.filter((c) => !mine.has(c.projectId));
       db.runs = db.runs.filter((r) => !mine.has(r.projectId));
+      db.relations = db.relations.filter((r) => !mine.has(r.projectId));
       await persist();
     },
 
@@ -325,6 +336,33 @@ export function createStore(dir) {
       if (on && !e.claimIds.includes(cid)) e.claimIds.push(cid);
       if (!on) e.claimIds = e.claimIds.filter((x) => x !== cid);
       await persist(); return c;
+    },
+
+    /* --- relações do grafo (sempre com prova; retirada em vez de apagada) --- */
+    async addRelation(projectId, rel, by) {
+      const now = new Date().toISOString();
+      const r = Object.assign({ id: 'rel-' + crypto.randomBytes(8).toString('base64url'),
+        projectId, createdAt: now, createdBy: by || null, retractedAt: null, retractReason: null,
+        validationState: null, lastChecked: now, history: [] }, rel);
+      r.history.push({ at: now, action: 'criada', by: by || null });
+      db.relations.push(r); await persist(); return r;
+    },
+    relationsOf(projectId) { return db.relations.filter((r) => r.projectId === projectId); },
+    relationById(rid) { return db.relations.find((r) => r.id === rid) || null; },
+    async updateRelation(rid, patch, by) {
+      const r = db.relations.find((x) => x.id === rid); if (!r) return null;
+      Object.assign(r, patch);
+      r.lastChecked = new Date().toISOString();
+      r.history.push({ at: r.lastChecked, action: 'actualizada', by: by || null, fields: Object.keys(patch) });
+      await persist(); return r;
+    },
+    async retractRelation(rid, reason, by) {
+      const r = db.relations.find((x) => x.id === rid); if (!r) return null;
+      if (r.retractedAt) return r;
+      r.retractedAt = new Date().toISOString();
+      r.retractReason = String(reason).slice(0, 500);
+      r.history.push({ at: r.retractedAt, action: 'retirada', by: by || null, reason: r.retractReason });
+      await persist(); return r;
     },
 
     /* --- execuções de pesquisa (registadas, retomáveis) --- */

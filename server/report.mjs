@@ -5,7 +5,7 @@
    e uma nota a dizer o que falta («Não disponível: …»). O relatório mostra
    sempre as provas contrárias e as fontes inacessíveis, se existirem.
    ===================================================================== */
-import { corroboration, suggestedState, STATE_LABEL } from './evidence.mjs';
+import { corroboration, suggestedState, STATE_LABEL, entityName } from './evidence.mjs';
 
 const NI = (why) => ({ available: false, note: 'Não disponível: ' + why });
 
@@ -16,7 +16,8 @@ export const SECTION_TITLES = [
   'Estado de verificação', 'Modelos e ferramentas', 'Custos', 'Conclusões proporcionais'
 ];
 
-export function buildReport({ project, evidence, claims, runs, usage }) {
+export function buildReport({ project, evidence, claims, runs, relations, usage }) {
+  relations = relations || [];
   evidence = evidence || [];
   claims = claims || [];
   runs = runs || [];
@@ -98,7 +99,10 @@ export function buildReport({ project, evidence, claims, runs, usage }) {
   });
 
   const entities = new Map();
-  evidence.forEach((e) => (e.entities || []).forEach((n) => entities.set(n, (entities.get(n) || 0) + 1)));
+  evidence.forEach((e) => (e.entities || []).forEach((raw) => {
+    const n = entityName(raw);
+    if (n) entities.set(n, (entities.get(n) || 0) + 1);
+  }));
   sections.push({
     n: 7, title: 'Entidades',
     available: entities.size > 0,
@@ -127,11 +131,30 @@ export function buildReport({ project, evidence, claims, runs, usage }) {
   sections.push({ n: 9, title: 'Provas favoráveis', available: fav.length > 0, content: fav.length ? { total: fav.length, lista: fav.map(evLine) } : null, note: fav.length ? null : 'Nenhuma prova favorável registada' });
   sections.push({ n: 10, title: 'Provas contrárias', available: true, content: { total: con.length, lista: con.map(evLine), nota: con.length ? null : 'nenhuma prova contrária registada — a ausência de contra-prova não é prova de nada' }, note: null });
 
+  const activeRels = relations.filter((r) => !r.retractedAt);
+  const relLine = (r) => {
+    const evs = evidence.filter((e) => (r.evidenceIds || []).includes(e.id) && !e.retractedAt);
+    const origins = new Set(evs.map((e) => e.syndicationOf || e.originKey || e.canonicalUrl));
+    return {
+      de: r.from, para: r.to, tipo: r.type, direccao: r.direction || 'directed',
+      periodo: r.period || { from: null, to: null },
+      provas: evs.map((e) => e.id), origensIndependentes: origins.size,
+      inferida: !!r.inferred, raciocinio: r.reasoning || null,
+      confianca: !evs.length ? 'sem-prova' : origins.size >= 2 ? 'corroborada' : 'uma-so-origem'
+    };
+  };
   sections.push({
     n: 11, title: 'Relações',
-    available: false,
-    content: null,
-    note: 'Não disponível: as relações tipificadas do grafo ainda não são gravadas a partir das provas (não se inferem relações por co-ocorrência)'
+    available: activeRels.length > 0,
+    content: activeRels.length ? {
+      total: activeRels.length,
+      corroboradas: activeRels.map(relLine).filter((r) => r.confianca === 'corroborada').length,
+      comUmaSoOrigem: activeRels.map(relLine).filter((r) => r.confianca === 'uma-so-origem').length,
+      inferidas: activeRels.filter((r) => r.inferred).length,
+      lista: activeRels.map(relLine),
+      nota: 'cada relação traz as provas que a nomeiam; uma linha do grafo não é prova por si mesma'
+    } : null,
+    note: activeRels.length ? null : 'Não disponível: nenhuma relação tipificada registada com prova — co-ocorrência não é relação e não é apresentada como tal'
   });
 
   const dated = active.filter((e) => e.eventDate || e.publicationDate);

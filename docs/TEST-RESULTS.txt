@@ -310,3 +310,41 @@ PASS GET …/report?format=md → 18 secções em Markdown
 PASS POST /api/providers/groq/key com cofre inactivo → 503 needsEnv=APP_SECRET (com o comprimento do segredo, nunca o valor)
 PASS eliminar conta → 200 · tests/deployed.mjs 6/6
 AÇÃO NECESSÁRIA: definir APP_SECRET com 24+ caracteres no painel do Render (o actual tem 5).
+
+== 21. FASE 3: GRAFO A PARTIR DE PROVAS (tests/graph.mjs)
+
+== P3 · GRAFO A PARTIR DE PROVAS (tests/graph.mjs)
+
+PASS grafo só tem entidades que aparecem em provas registadas → 2 entidades vindas de provas · 0 arestas · desambiguadores preservados
+PASS co-ocorrência produz candidatos marcados, nunca arestas → 1 candidato «co-ocorrencia» com 2 provas · aviso explícito · nenhuma aresta criada
+PASS relação sem prova é recusada → 400 «uma relação sem prova registada não entra no grafo» · prova inexistente também recusada
+PASS relação com prova entra no grafo com confiança justificada por origens → 2 provas · 2 origens · confiança «corroborada» (2 origens independentes) · aresta liga nós desambiguados
+PASS relação simétrica não finge direcção → direcção mutual · uma origem → «uma-so-origem»
+PASS relação inferida exige raciocínio e é desenhada tracejada → inferência com raciocínio guardado · estilo tracejado · legenda explica que não é prova
+PASS prova contrária torna a aresta «contraditória» → aresta com prova contrária fica «contraditoria» e a razão é dita
+PASS retirar relação exige motivo e não a apaga → 400 sem motivo · retirada com motivo · grafo e relatório coerentes (2 relações activas)
+PASS homónimos com desambiguadores diferentes não são fundidos → 2 nós distintos para o mesmo nome · entidades sem desambiguador contadas (1)
+PASS validação recusa tipo desconhecido, laço próprio e prova retirada → 16 tipos de entidade · 24 tipos de relação · três recusas
+PASS outra conta não vê nem altera o grafo → grafo e relações isolados por dono (404, sem revelar conteúdo)
+PASS estatísticas do grafo dizem o que não está provado → nós 6 · arestas 2 (1 origem: 2, corroboradas: 0) · candidatos 2 · avisos 3
+PASS esquema migra para v3 com a colecção de relações → schemaVersion 3 · migração registada · 1 passo(s)
+
+13/13 passaram
+
+== 22. GRAFO NA INTERFACE (tests/account-ui.mjs, 12 testes)
+CONTA E ADMINISTRAÇÃO — INTERFACE
+PASS botão Conta abre a área de autenticação → formulário de entrada visível (Entrar. Sem conta, os dados de investigação continuam a vive…)
+PASS registo pela interface cria sessão e mostra o email → sessão criada para uimvig8l5y@ex.pt
+PASS política de palavra-passe é aplicada pelo servidor, não pela interface → registo com «123» → 400 (palavra-passe fraca: pelo menos 10 caracteres, uma minúscula)
+PASS projecto criado na interface aparece na lista → projecto visível na tabela
+PASS separador de chaves mostra o estado do cofre e recusa guardar sem APP_SECRET? (cofre activo) → 8 fornecedores listados · cofre activo
+PASS chave de IA: guardada com máscara e validada contra o fornecedor real → máscara «chav…123» · Groq falhou em «auth»: credencial recusada (HTTP 401)uimvig8l5y@ex
+PASS sessão terminada esconde os dados privados → formulário de autenticação reposto, sem dados privados e sessão inválida no servidor
+PASS administrador vê métricas reais e auditoria → utilizadores: 2 · auditoria com eventos reais · indisponíveis declarados
+PASS utilizador comum não vê a área de administração → sem separador · métricas/utilizadores/auditoria → 403 no servidor
+PASS projecto aberto mostra provas, origens independentes e estado sugerido → prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»
+PASS pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta → execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas
+PASS grafo das provas desenha entidades, relações e proveniência sem tratar co-ocorrência como relação → 2 nós · 1 aresta(s) · legenda e avisos visíveis · proveniência ao clicar (confiança corroborada)
+erros de runtime: 0 []
+
+12/12 passaram

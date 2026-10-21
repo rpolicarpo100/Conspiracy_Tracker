@@ -289,15 +289,18 @@
   /* ---------------- projecto aberto: provas e conclusões ---------------- */
 
   async function openProject(id) {
+    S.report = null;                      // abrir um projecto sai da vista de relatório
     const [p, ev, cl, rn] = await Promise.all([
       api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'),
       api('/api/projects/' + id + '/claims'), api('/api/projects/' + id + '/runs')
     ]);
     if (!p.ok) return note('Não foi possível abrir o projecto: ' + (p.error && p.error.message), 'bad');
+    const gr = await api('/api/projects/' + id + '/graph');
     S.detail = {
       project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [],
       runs: rn.ok ? rn.json.runs : [], profiles: rn.ok ? rn.json.profiles : ['rapida', 'normal', 'profunda', 'exaustiva'],
-      steps: rn.ok ? rn.json.steps : []
+      steps: rn.ok ? rn.json.steps : [],
+      graph: gr.ok ? gr.json : null
     };
     paint();
   }
@@ -433,6 +436,86 @@
       ]));
     }
     root.appendChild(addHypothesisForm);
+
+    /* grafo das provas */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Grafo das provas' }));
+    if (!d.graph) {
+      root.appendChild(el('div', { class: 'warnbox', text: 'Grafo indisponível.' }));
+    } else {
+      const gg = d.graph.graph;
+      root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+        gg.stats.nodes + ' entidades · ' + gg.stats.edges + ' relações (' + gg.stats.edgesCorroborated + ' corroboradas, ' +
+        gg.stats.edgesWithSingleOrigin + ' com uma só origem, ' + gg.stats.inferred + ' inferidas) · ' +
+        gg.stats.candidates + ' co-ocorrência(s) não desenhada(s) como relação · ' +
+        gg.stats.entitiesWithoutDisambiguator + ' entidade(s) sem desambiguador' }));
+      const gbox = el('div', {});
+      root.appendChild(gbox);
+      const detailBox = el('div', { class: 'warnbox', style: 'margin-top:6px;font-size:10px' });
+      root.appendChild(detailBox);
+      const showDetail = (sel) => {
+        clear(detailBox);
+        if (sel.kind === 'edge') {
+          const e = sel.data;
+          detailBox.appendChild(el('b', { text: e.fromName + ' → ' + e.toName + ' · ' + e.label }));
+          detailBox.appendChild(el('div', { text: 'confiança: ' + e.confidence.level + ' — ' + e.confidence.rationale }));
+          detailBox.appendChild(el('div', { text: 'provas (' + e.evidenceIds.length + '): ' + e.evidenceIds.map((id) => {
+            const found = (d.evidence || []).find((x) => x.id === id);
+            return found ? found.title : id;
+          }).join(' · ') }));
+          if (e.inferred) detailBox.appendChild(el('div', { style: 'color:var(--muted)', text: 'inferência declarada: ' + (e.reasoning || '(sem raciocínio)') }));
+          if (e.limitations) detailBox.appendChild(el('div', { style: 'color:var(--muted)', text: 'limitações: ' + e.limitations }));
+        } else {
+          const n = sel.data;
+          detailBox.appendChild(el('b', { text: n.name + ' · ' + n.typeLabel }));
+          detailBox.appendChild(el('div', { text: n.disambiguator ? 'identificador: ' + n.disambiguator : 'sem desambiguador: pode ser homónimo de outra entidade com o mesmo nome' }));
+          detailBox.appendChild(el('div', { text: 'provas (' + n.evidenceIds.length + '): ' + n.evidenceIds.map((id) => {
+            const found = (d.evidence || []).find((x) => x.id === id);
+            return found ? found.title : id;
+          }).join(' · ') }));
+        }
+      };
+      if (VN.evidenceGraph) {
+        VN.evidenceGraph.render(gbox, d.graph, { onSelect: showDetail, width: 820, height: 360 });
+      } else {
+        gbox.appendChild(el('div', { class: 'warnbox', text: 'Módulo de desenho do grafo não carregado.' }));
+      }
+
+      /* criar relação: exige prova, por isso a prova é escolhida aqui */
+      const rf2 = DRAFT.rel || (DRAFT.rel = { type: 'subsidiary_of' });
+      const evidOptions = (d.evidence || []).filter((x) => !x.retractedAt).map((x) => el('option', { value: x.id, text: x.title.slice(0, 48) }));
+      const nodeOptions = () => gg.nodes.map((n) => el('option', { value: n.id, text: n.name.slice(0, 40) }));
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:8px' }, [
+        el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'NOVA RELAÇÃO — sem prova registada não entra no grafo' }),
+        el('div', { class: 'chips' }, [
+          el('select', { onchange: (e) => { rf2.from = e.target.value; } }, [el('option', { value: '', text: 'de…' })].concat(nodeOptions())),
+          el('select', { onchange: (e) => { rf2.to = e.target.value; } }, [el('option', { value: '', text: 'para…' })].concat(nodeOptions())),
+          el('select', { onchange: (e) => { rf2.type = e.target.value; } },
+            Object.keys(d.graph.relationTypes || {}).map((k) => el('option', { value: k, selected: rf2.type === k, text: (d.graph.relationTypes[k].label || k) })))
+        ]),
+        el('div', { class: 'chips' }, [
+          el('select', { onchange: (e) => { rf2.evidenceId = e.target.value; } },
+            [el('option', { value: '', text: 'prova que sustenta…' })].concat(evidOptions)),
+          el('button', {
+            class: 'btn sm primary', type: 'button', text: 'Registar relação',
+            onclick: async () => {
+              const from = gg.nodes.find((n) => n.id === rf2.from);
+              const to = gg.nodes.find((n) => n.id === rf2.to);
+              const r = await api('/api/projects/' + p.id + '/relations', {
+                method: 'POST',
+                body: {
+                  from: from ? from.name : rf2.from, to: to ? to.name : rf2.to, type: rf2.type,
+                  fromDisambiguator: from ? from.disambiguator : null, toDisambiguator: to ? to.disambiguator : null,
+                  evidenceIds: rf2.evidenceId ? [rf2.evidenceId] : []
+                }
+              });
+              if (!r.ok) return note('Recusada: ' + (r.error.errors || [r.error.message]).join('; '), 'bad');
+              note('Relação registada com prova: ' + r.json.relation.type, 'ok');
+              await reloadDetail();
+            }
+          })
+        ])
+      ]));
+    }
 
     /* pesquisa profunda */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Pesquisa profunda (' + (d.runs || []).length + ')' }));
@@ -611,6 +694,10 @@
       mk('Título', { name: 'title', placeholder: 'título do documento', oninput: (e) => { f.title = e.target.value; } }),
       mk('URL original', { name: 'originalUrl', placeholder: 'https://…', oninput: (e) => { f.originalUrl = e.target.value; } }),
       mk('Excerto citado', { name: 'excerpt', placeholder: 'o trecho exacto que sustenta a alegação', oninput: (e) => { f.excerpt = e.target.value; } }),
+      mk('Entidades (Nome|tipo|desambiguador; vírgula entre entidades)', {
+        name: 'entities', placeholder: 'Sociedade X|company|NIPC 500000000, Y Participações|company',
+        oninput: (e) => { f.entities = e.target.value; }
+      }),
       el('div', { class: 'chips' }, [
         el('select', { onchange: (e) => { f.sourceType = e.target.value; } }, ['primaria', 'secundaria', 'documento-oficial', 'base-de-dados', 'comunicado', 'reproducao']
           .map((v) => el('option', { value: v, selected: f.sourceType === v, text: 'tipo: ' + v }))),
@@ -621,11 +708,19 @@
         el('button', {
           class: 'btn sm primary', type: 'button', text: 'Registar prova',
           onclick: async () => {
+            const entities = String(f.entities || '').split(',').map((chunk) => {
+              const parts = chunk.split('|').map((x) => x.trim());
+              if (!parts[0]) return null;
+              const out = { name: parts[0] };
+              if (parts[1]) out.type = parts[1];
+              if (parts[2]) out.disambiguator = parts[2];
+              return out;
+            }).filter(Boolean);
             const body = {
               title: f.title, originalUrl: f.originalUrl || null, excerpt: f.excerpt,
               sourceType: f.sourceType, stance: f.stance, extractionMethod: f.extractionMethod,
               syndicationOf: f.syndicationOf || null,
-              language: 'pt'
+              entities, language: 'pt'
             };
             const r = await api('/api/projects/' + projectId + '/evidence', { method: 'POST', body });
             if (!r.ok) return note('Recusada: ' + (r.error.errors || [r.error.message]).join('; '), 'bad');

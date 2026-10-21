@@ -142,6 +142,8 @@ docs/                      aceitação, esquema, benchmarks, capturas
   tratar dez cópias de um comunicado como dez confirmações.
 - `docs/MOTOR-PESQUISA.md` — os 20 passos do motor, perfis de esforço, motivos de paragem, defesas
   contra injecção de instruções e o relatório de 18 secções.
+- `docs/GRAFO.md` — grafo a partir de provas: uma linha não é prova, co-ocorrência não é relação,
+  homónimos não se fundem sem identificador.
 - `docs/AUDITORIA-CODIGO.md` — matriz de auditoria (componente, estado real, evidência, risco,
   acção) e diagnóstico da disponibilidade.
 - `docs/TEST-RESULTS.txt` — saída integral dos testes.
@@ -168,6 +170,10 @@ navegador; com sessão, projectos e chaves ficam associados ao utilizador e isol
   orçamento de chamadas/documentos/tempo, execuções persistentes, **retomáveis e canceláveis**. Se
   não houver chave de IA validada ou não houver URLs, a execução **pára e diz porquê** — não inventa
   interpretações nem excertos.
+- **Grafo das provas**: 16 tipos de entidade e 24 tipos de relação; **sem prova registada não há
+  aresta**; a confiança é calculada por origens independentes e justificada; relações inferidas são
+  tracejadas e exigem raciocínio; pares que só co-ocorrem aparecem como candidatos marcados «não é
+  relação»; homónimos ficam separados sem desambiguador. Clicar mostra a proveniência.
 - **Relatório de 18 secções** em JSON e Markdown, com «Não disponível» explícito no que não está
   instrumentado e com as provas contrárias sempre à vista.
 - **Conclusões com nove estados** validados no servidor: «confirmada» exige duas origens

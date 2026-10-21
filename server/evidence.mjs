@@ -7,6 +7,7 @@
    confirmações: a corroboração conta ORIGENS INDEPENDENTES, não ficheiros.
    ===================================================================== */
 import crypto from 'node:crypto';
+import { ENTITY_TYPES } from './graph.mjs';
 
 /* Os nove estados permitidos para uma conclusão/alegação. */
 export const STATES = [
@@ -37,6 +38,22 @@ export const SOURCE_TYPES = ['primaria', 'secundaria', 'reproducao', 'comunicado
 export const STANCES = ['favoravel', 'contraria', 'neutra'];
 export const EXTRACTION = ['manual', 'http', 'pdf', 'api', 'ocr'];
 export const CLAIM_KINDS = ['facto', 'alegacao', 'hipotese', 'inferencia'];
+
+/* Uma entidade pode vir como texto ou como objecto. Sem desambiguador, não há
+   fusão de homónimos — o tipo é validado contra a lista fechada do grafo. */
+export function normaliseEntity(x) {
+  if (x == null) return null;
+  const obj = typeof x === 'string' ? { name: x } : (typeof x === 'object' ? x : null);
+  if (!obj) return null;
+  const name = norm(obj.name).slice(0, 160);
+  if (!name) return null;
+  const type = ENTITY_TYPES[obj.type] ? obj.type : 'unknown';
+  const out = { name, type };
+  if (obj.disambiguator) out.disambiguator = norm(obj.disambiguator).slice(0, 160);
+  if (obj.alias) out.alias = norm(obj.alias).slice(0, 160);
+  return out;
+}
+export const entityName = (x) => (typeof x === 'string' ? x : (x && x.name) || '');
 
 const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 
@@ -193,7 +210,8 @@ export function validateEvidence(input) {
     independence: input.independence || 'desconhecida',
     syndicationOf: norm(input.syndicationOf).slice(0, 1500) || null,
     limitations: norm(input.limitations).slice(0, 1000) || null,
-    entities: Array.isArray(input.entities) ? input.entities.map((x) => norm(x).slice(0, 120)).filter(Boolean).slice(0, 60) : []
+    entities: Array.isArray(input.entities)
+      ? input.entities.map(normaliseEntity).filter(Boolean).slice(0, 60) : []
   };
   if (!ev.title) errors.push('title é obrigatório');
   if (!ev.excerpt) errors.push('excerpt é obrigatório: uma prova sem excerto não pode ser verificada');

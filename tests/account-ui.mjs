@@ -314,6 +314,57 @@ await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declar
   return 'execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas';
 });
 
+await t('grafo das provas desenha entidades, relações e proveniência sem tratar co-ocorrência como relação', async () => {
+  /* segunda prova com as mesmas entidades + uma relação registada pela interface */
+  await p.evaluate(async () => {
+    const st = window.VN.accountUI.getState();
+    const pid = st.detail.project.id;
+    await window.VN.accountUI.api('/api/projects/' + pid + '/evidence', {
+      method: 'POST',
+      body: {
+        title: 'Segunda fonte', originalUrl: 'https://jornal.example.org/x', excerpt: 'O jornal confirma a participação.',
+        sourceType: 'secundaria', stance: 'favoravel', extractionMethod: 'http',
+        entities: [{ name: 'Sociedade X', type: 'company', disambiguator: 'NIPC 500000000' },
+                   { name: 'Y Participações', type: 'company', disambiguator: 'NIPC 500000001' }]
+      }
+    });
+    const evs = (await window.VN.accountUI.api('/api/projects/' + pid + '/evidence')).json.evidence;
+    await window.VN.accountUI.api('/api/projects/' + pid + '/relations', {
+      method: 'POST',
+      body: { from: 'Sociedade X', to: 'Y Participações', type: 'subsidiary_of',
+        fromDisambiguator: 'NIPC 500000000', toDisambiguator: 'NIPC 500000001',
+        evidenceIds: evs.slice(0, 2).map((e) => e.id) }
+    });
+    await window.VN.accountUI.openProject(pid);
+  });
+  await waitText(/Grafo das provas/, 'secção do grafo ausente');
+  await waitText(/relações \(1 corroborada/, 'grafo não contou a relação corroborada');
+  const shapes = await p.evaluate(() => ({
+    circles: document.querySelectorAll('#accroot svg circle').length,
+    lines: document.querySelectorAll('#accroot svg line').length,
+    legends: /Linha sólida: relação com prova registada/.test(document.getElementById('accroot').textContent),
+    warn: /uma linha não é prova/.test(document.getElementById('accroot').textContent),
+    cooc: /co-ocorrências.*não são relações/.test(document.getElementById('accroot').textContent)
+  }));
+  if (shapes.circles < 2) throw new Error('nós desenhados: ' + shapes.circles);
+  if (shapes.lines < 1) throw new Error('arestas desenhadas: ' + shapes.lines);
+  if (!shapes.legends || !shapes.warn) throw new Error('legenda/avisos em falta');
+  if (!shapes.cooc) throw new Error('aviso de co-ocorrência em falta');
+  /* clicar na aresta mostra a proveniência */
+  await p.evaluate(() => {
+    const line = document.querySelector('#accroot svg line');
+    line.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await waitText(/confiança: corroborada/, 'proveniência da aresta não apareceu');
+  await p.evaluate(() => {
+    const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Grafo das provas/.test(x.textContent));
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
+  await p.waitForTimeout(400);
+  await p.screenshot({ path: '/home/user/docs/shot-21-grafo.png' });
+  return shapes.circles + ' nós · ' + shapes.lines + ' aresta(s) · legenda e avisos visíveis · proveniência ao clicar (' + 'confiança corroborada' + ')';
+});
+
 /* captura final: conclusão com factores de corroboração visíveis */
 await clickText('#accroot .btn', '← Voltar ao projecto');
 await waitText(/Conclusões e alegações/, 'não voltou ao projecto');

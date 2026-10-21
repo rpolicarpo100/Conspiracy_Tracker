@@ -96,7 +96,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Perfis de profundidade Rápida/Normal/Profunda/Exaustiva | Parcial (limites por perfil no motor local); sem exposição do motivo de paragem na UI | `src/core/agents.js` | P2 | Mostrar «parou porque…» e fontes efectivamente consultadas |
 | Conectores declarados (cobertura, licença, limites…) | Catálogo real auditado (12 APIs, 3 tentativas) | `docs/APIS-auditoria.json`; `docs/APIS.md` | P2 concluído | — |
 | Conteúdo web/PDF como não confiável | Guardas de injecção no motor de agentes (testes locais) | `tests/agents.mjs` | P0 na fase P2 | Revalidar quando a extracção de PDF entrar |
-| Grafo visual (69/126 fictícios) | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado | P2 concluído | Acrescentar tipos de entidade/relação do V2 e confiança justificada |
+| Grafo visual sobre o conjunto fictício | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado | P2 concluído | — |
+| **Grafo a partir de provas (servidor)** | **Implementado**: 16 tipos de entidade, 24 tipos de relação em 7 famílias, aresta só com prova, confiança calculada por origens independentes, inferência declarada com raciocínio, co-ocorrência devolvida como candidato marcado, homónimos não fundidos sem desambiguador | `tests/graph.mjs` 13/13 | **P0 concluído** | Caminhos, cronologia sincronizada, vista de contradições |
+| Grafo na interface | SVG próprio: zoom, arrasto, procura, filtros por tipo, co-ocorrências a pedido, proveniência ao clicar, legenda com 4 avisos | `tests/account-ui.mjs` («grafo das provas desenha…») · `docs/shot-21-grafo.png` | P2 concluído | Exportação do grafo |
+| Secção 11 do relatório (Relações) | Deixou de estar «indisponível» quando há relações: lista-as com provas, origens e avisos | `tests/graph.mjs` e `tests/research.mjs` | P2 concluído | — |
 
 ## Parte G — Interface, acessibilidade e higiene
 
@@ -119,7 +122,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
   retomar/cancelar, migração v1→v2.
 - **P2 (feito agora)**: motor de 20 passos com orçamento, paragem declarada, retoma e cancelamento;
   relatório de 18 secções em JSON e Markdown; detecção de injecção no conteúdo recolhido.
-- **P2 (em falta)**: grafo alimentado por provas (secção 11 do relatório); verificação automática de
-  acessibilidade; extracção de PDF/OCR; descoberta automática de fontes; router com
-  preferências/quotas; `frame-ancestors`.
+- **P3 (feito agora)**: grafo alimentado por provas com regras duras (sem prova não há aresta,
+  co-ocorrência não é relação, homónimos não fundidos) e secção 11 do relatório ligada.
+- **P3 (em falta)**: agentes com `agent_runs` persistidos e versionamento de prompt por agente,
+  caminhos/ligações indirectas no grafo, cronologia sincronizada, vista de contradições.
+- **P2 (em falta)**: verificação automática de acessibilidade; extracção de PDF/OCR; descoberta
+  automática de fontes; router com preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

@@ -182,3 +182,28 @@ registos de provas e conclusões. Ficheiro único `DATA_DIR/db.json`, escrita at
 As colecções e métodos existem e são apagados com o projecto; a escrita de passos pelo motor de
 pesquisa ainda não está ligada (o motor de 20 passos é trabalho da fase seguinte). Não há, por isso,
 execuções reais registadas — e nenhuma é simulada.
+
+## Relações (v3)
+
+```json
+{ "id": "rel-…", "projectId": "prj-…",
+  "from": "Sociedade X", "to": "Y Participações",
+  "fromDisambiguator": "NIPC 500000000", "toDisambiguator": "NIPC 500000001",
+  "type": "subsidiary_of", "direction": "directed | mutual",
+  "period": { "from": "2018-01-01", "to": null },
+  "evidenceIds": ["ev-…", "ev-…"],
+  "inferred": false, "reasoning": null, "limitations": null,
+  "validationState": "insuficiente | confirmada | contraditoria",
+  "lastChecked": "…", "retractedAt": null, "retractReason": null,
+  "history": [ { "at": "…", "action": "criada", "by": "usr-…" } ] }
+```
+
+- `evidenceIds` não pode ser vazio: uma relação sem prova é recusada pelo servidor.
+- `fromDisambiguator`/`toDisambiguator` viajam com a relação para que a aresta ligue os nós certos.
+- `direction` é forçado a `mutual` nos tipos simétricos.
+- `inferred: true` exige `reasoning`; declarar `reasoning` implica `inferred`.
+- Retirar não apaga: `retractedAt` + `retractReason`, histórico e auditoria.
+- A confiança (`corroborada`, `uma-so-origem`, `contraditoria`, `sem-prova`) é **calculada** a cada
+  leitura a partir das provas ligadas; não é guardada como opinião.
+- `version: 3` acrescenta a colecção `relations`; a migração `2 → 3` regista apenas o que o ficheiro
+  não tinha (uma base criada já na v3 declara-o explicitamente em `migrations`).

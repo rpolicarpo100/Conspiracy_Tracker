@@ -307,14 +307,15 @@ await t('esquema v1 é migrado para v2 com registo do que mudou', async () => {
   try {
     await new Promise((r) => setTimeout(r, 1800));
     const meta = await (await fetch('http://127.0.0.1:' + port2 + '/api/meta')).json();
-    ok(meta.schemaVersion === 2, 'versão de esquema ' + meta.schemaVersion);
-    ok(meta.migrations.length === 1 && meta.migrations[0].to === 2, 'sem registo de migração');
+    ok(meta.schemaVersion === 3, 'versão de esquema ' + meta.schemaVersion);
+    ok(meta.migrations.length === 2 && meta.migrations[0].to === 2 && meta.migrations[1].to === 3, 'registo de migrações: ' + JSON.stringify(meta.migrations.map((m) => m.to)));
     const db = JSON.parse(await fs.readFile(path.join(dir, 'db.json'), 'utf8'));
     const p = db.projects[0];
     ok(p.status === 'draft' && Array.isArray(p.hypotheses) && p.budget.maxCalls === 50, 'projecto antigo não completado');
     ok(Array.isArray(db.evidence) && Array.isArray(db.claims) && Array.isArray(db.runs), 'colecções novas ausentes');
+    ok(Array.isArray(db.relations), 'colecção relations ausente após migração');
     ok(db.migrations[0].changes.length > 0, 'migração sem descrição de alterações');
-    return 'v1 → v2 · ' + db.migrations[0].changes.join('; ');
+    return 'v1 → v3 em dois passos · ' + db.migrations.map((m) => m.from + '→' + m.to + ': ' + m.changes.join('; ')).join(' | ');
   } finally { srv2.kill('SIGTERM'); }
 });
 
