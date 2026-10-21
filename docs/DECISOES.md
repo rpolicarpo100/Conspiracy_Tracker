@@ -91,3 +91,29 @@ Formato: data · decisão · motivo · o que foi recusado.
     `tools/status.mjs`.**
     Motivo: a memória de quem escreve o código não é um mecanismo de persistência. O que está feito,
     o que falta e o que está bloqueado tem de estar escrito e verificável.
+
+21. **2026-10-21 · Extração de PDF só com mapa de caracteres; sem OCR e sem contornar cifra.**
+    Um PDF com fontes subconjuntas codifica *índices de glifo*, não letras: ler os bytes como Latin-1
+    produzia texto deslocado («+2E» em vez de «R»). Passou a resolver-se o `/ToUnicode` de cada
+    fonte, por página, com entrada nos `XObject` de formulário. Documento cifrado pára com motivo
+    escrito; digitalizado declara que não há OCR.
+    Motivo: um extrator que adivinha é pior do que um extrator que se declara incompleto.
+
+22. **2026-10-21 · Ligaduras resolvidas e texto comparado com o `pdftotext`.**
+    `ﬁ`/`ﬂ` passam a `fi`/`fl` e o resultado é comparado, palavra a palavra, com o poppler nos dois
+    PDFs de referência. Se o poppler não estiver instalado, o teste diz isso mesmo.
+    Motivo: «parece bem» não é um critério; um texto sem acentos quebra a pesquisa e a citação.
+
+23. **2026-10-21 · Nenhuma prova nasce de uma extração automática.**
+    O documento recolhido guarda texto, hash, método e avisos; a interface só **pré-preenche** o
+    formulário de prova e a prova só existe depois de um ato humano. Uma fonte inacessível fica
+    registada como inacessível (com HTTP e erro), em vez de desaparecer do registo.
+    Motivo: o registo de provas é o sítio onde a investigação responde por si; automatizar a entrada
+    é automatizar a credibilidade.
+
+24. **2026-10-21 · Exceção de leitura local fechada por omissão e fechada em produção.**
+    `VN_ALLOW_LOCAL_FETCH=1` permite ler `127.0.0.1` só para os testes de interface servirem um PDF
+    verdadeiro; desliga-se com `NODE_ENV=production` ou com a variável `RENDER` presente, e o estado
+    aparece em `/api/meta`. Testada aberta e fechada.
+    Motivo: testar extração contra a internet real seria instável e contra conteúdo de terceiros;
+    abrir a guarda SSRF sem travão seria pior do que não ter teste.

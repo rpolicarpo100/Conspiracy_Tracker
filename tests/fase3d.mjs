@@ -353,7 +353,7 @@ await t('reposição recusa formatos errados e não aceita cópia de outra conta
 await t('esquema v5 regista as colecções novas na migração', async () => {
   const meta = await A.call('GET', '/api/meta');
   ok(meta.json.schemaVersion === 5, 'schemaVersion ' + meta.json.schemaVersion);
-  ok(meta.json.version === '2.0.0-fase3d', 'versão ' + meta.json.version);
+  ok(/^2\.0\.0-fase3/.test(meta.json.version), 'versão ' + meta.json.version);
 });
 
 srv.kill('SIGKILL');

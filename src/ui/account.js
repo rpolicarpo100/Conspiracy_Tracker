@@ -319,6 +319,142 @@
     ]));
   }
 
+  /* ---------------- documentos recolhidos: texto extraído para revisão humana ---------------- */
+  function documentsPanel(projectId, docs) {
+    const f = DRAFT.doc || (DRAFT.doc = { url: '' });
+    const root = el('div', {});
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Documentos e texto extraído (' + (docs || []).length + ')' }));
+    root.appendChild(el('div', { class: 'warnbox', style: 'margin-bottom:6px' }, [
+      el('div', { style: 'font-size:10px;color:var(--muted)', text:
+        'Recolher guarda o texto lido e o hash SHA-256 do ficheiro — não cria provas. PDF cifrado não é aberto (não se contorna protecção), ' +
+        'PDF digitalizado não tem OCR e um PDF sem mapa de caracteres pode sair com letras erradas: leia antes de citar.' }),
+      el('div', { class: 'chips', style: 'margin-top:4px' }, [
+        el('input', {
+          id: 'docUrl', placeholder: 'URL do documento (PDF ou página web)', style: 'width:360px',
+          value: f.url || '', oninput: (e) => { f.url = e.target.value; }
+        }),
+        el('button', {
+          id: 'docFetch', class: 'btn sm primary', type: 'button', text: 'Recolher e extrair',
+          onclick: async () => {
+            const url = String(f.url || '').trim();
+            if (!url) return note('Indique o endereço do documento', 'warn');
+            const r = await api('/api/projects/' + projectId + '/documents', { method: 'POST', body: { url } });
+            if (!r.ok) return note('Recolha recusada: ' + (r.error && r.error.message), 'bad');
+            const ex = r.json.extraction || {};
+            if (r.json.ok) {
+              note('Documento recolhido · ' + (ex.method || '?') + (ex.pages ? ' · ' + ex.pages + ' página(s)' : '') +
+                ' · ' + (r.json.document.textChars || 0) + ' caracteres · revisão obrigatória antes de citar', 'ok');
+            } else {
+              note('Fonte registada como inacessível: ' + (r.json.erro || 'falha na recolha') + ' (fica no registo, não se apaga)', 'warn');
+            }
+            await reloadDetail();
+          }
+        })
+      ])
+    ]));
+    if (!(docs || []).length) {
+      root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Nenhum documento recolhido neste projecto.' }));
+      return root;
+    }
+    const box = el('div', {});
+    root.appendChild(box);
+    box.appendChild(el('table', { class: 'listtable' }, [
+      el('thead', {}, [el('tr', {}, ['documento', 'tipo', 'texto', 'revisão', ''].map((h) => el('th', { text: h })))]),
+      el('tbody', {}, docs.map((doc) => el('tr', {}, [
+        el('td', { style: 'font-size:10px' }, [
+          el('b', { text: doc.title || doc.host || doc.url }),
+          el('div', { style: 'color:var(--muted)', text: String(doc.canonicalUrl || doc.url).slice(0, 90) }),
+          doc.ok ? el('div', { style: 'color:var(--muted)', text: 'hash ' + String(doc.hash || '').slice(0, 12) + '… · ' + (doc.bytes || 0) + ' B' })
+            : el('div', { style: 'color:#c66', text: 'inacessível: ' + (doc.error || 'falha') })
+        ]),
+        el('td', { style: 'font-size:10px' }, [
+          el('span', { class: 'tag', text: doc.kind || '?' }),
+          doc.extraction && doc.extraction.usedToUnicode ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'ToUnicode ✓' }) : null,
+          doc.extraction && doc.extraction.imageOnly ? el('div', { style: 'font-size:9px;color:#c66', text: 'só imagem (sem OCR)' }) : null,
+          doc.extraction && doc.extraction.encrypted ? el('div', { style: 'font-size:9px;color:#c66', text: 'cifrado' }) : null
+        ].filter(Boolean)),
+        el('td', { style: 'font-size:10px;color:var(--muted)' }, [
+          el('div', { text: doc.textChars ? doc.textChars + ' caracteres' + (doc.extraction && doc.extraction.pages ? ' · ' + doc.extraction.pages + ' pág.' : '') : 'sem texto extraído' }),
+          doc.extraction && doc.extraction.warnings && doc.extraction.warnings.length
+            ? el('div', { style: 'color:#c96', text: doc.extraction.warnings.length + ' aviso(s) da extracção' }) : null
+        ].filter(Boolean)),
+        el('td', { style: 'font-size:10px' }, [
+          doc.reviewed ? el('span', { class: 'tag ok', text: 'revisto' }) : el('span', { class: 'tag warn', text: 'revisão pendente' })
+        ]),
+        el('td', {}, [
+          doc.ok ? el('button', {
+            class: 'btn sm', type: 'button', text: 'Ver texto',
+            onclick: async () => {
+              const r = await api('/api/documents/' + doc.id);
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              clear(box);
+              const dd = r.json.document;
+              const w = (dd.extraction && dd.extraction.warnings) || [];
+              box.appendChild(el('div', { class: 'warnbox' }, [
+                el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+                  el('b', { style: 'font-size:11px', text: dd.title || dd.host || dd.url }),
+                  el('span', { class: 'tag ' + (dd.reviewed ? 'ok' : 'warn'), text: dd.reviewed ? 'revisto' : 'revisão pendente' }),
+                  el('span', { style: 'font-size:9px;color:var(--muted)', text: (dd.extraction && dd.extraction.method) || '' })
+                ]),
+                el('div', { style: 'font-size:9px;color:var(--muted)', text: String(dd.canonicalUrl || dd.url) }),
+                w.length ? el('ul', { style: 'font-size:9px;color:#c96;margin:4px 0 0 16px' }, w.map((x) => el('li', { text: x }))) : null,
+                /* <textarea> não aceita value por atributo: o texto entra como conteúdo */
+                el('textarea', {
+                  id: 'docText', style: 'width:100%;height:180px;margin-top:4px;font-family:ui-monospace,monospace;font-size:10px',
+                  readonly: ''
+                }, [String(dd.text || '')]),
+                el('div', { class: 'chips', style: 'margin-top:4px' }, [
+                  el('button', {
+                    class: 'btn sm', type: 'button', text: 'Usar excerto na nova prova',
+                    title: 'preenche o formulário de prova com o excerto seleccionado (ou o início do texto); a prova só é registada quando você a registar',
+                    onclick: () => {
+                      const ta = box.querySelector('#docText');
+                      const sel = ta ? String(ta.value.slice(ta.selectionStart, ta.selectionEnd)).trim() : '';
+                      const inicio = String(dd.text || '').slice(0, 280);
+                      const excerto = prompt('Excerto exacto que sustenta a alegação (edite e confirme):', sel || inicio);
+                      if (excerto == null) return;
+                      DRAFT.evidence = Object.assign({}, DRAFT.evidence || {}, {
+                        title: dd.title || dd.host || '',
+                        originalUrl: dd.canonicalUrl || dd.url,
+                        excerpt: excerto,
+                        extractionMethod: dd.kind === 'pdf' ? 'pdf' : 'http'
+                      });
+                      note('Formulário de prova preenchido. Reveja o excerto e registe — o texto extraído não se transforma em prova sozinho.', 'warn');
+                      reloadDetail();
+                    }
+                  }),
+                  el('button', {
+                    class: 'btn sm', type: 'button', text: dd.reviewed ? 'Anular revisão' : 'Marcar como revisto',
+                    onclick: async () => {
+                      const r2 = await api('/api/documents/' + dd.id, { method: 'PATCH', body: { reviewed: !dd.reviewed } });
+                      if (!r2.ok) return note('Falhou: ' + r2.error.message, 'bad');
+                      note(r2.json.document.reviewed ? 'Documento marcado como revisto' : 'Revisão anulada', 'ok');
+                      await reloadDetail();
+                    }
+                  }),
+                  el('button', {
+                    class: 'btn sm', type: 'button', text: 'Fechar',
+                    onclick: () => { clear(box); reloadDetail(); }
+                  })
+                ])
+              ]));
+            }
+          }) : null,
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Remover', style: 'margin-left:4px',
+            onclick: async () => {
+              if (!confirm('Remover este documento do projecto? O registo de provas que já o citem não é alterado.')) return;
+              const r = await api('/api/documents/' + doc.id, { method: 'DELETE', body: {} });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              note('Documento removido', 'ok'); await reloadDetail();
+            }
+          })
+        ].filter(Boolean))
+      ])))
+    ]));
+    return root;
+  }
+
   /* ---------------- projecto aberto: provas e conclusões ---------------- */
 
   async function openProject(id) {
@@ -959,6 +1095,9 @@
           (run.steps || []).map((x) => x.n + '.' + x.id + (x.status === 'concluido' ? '✓' : x.status === 'ignorado-pelo-perfil' ? '·' : x.status === 'nao-executado' ? '∅' : '✗')).join(' ') })
       ].filter(Boolean)));
     });
+
+    /* documentos recolhidos (o texto alimenta a revisão humana das provas) */
+    root.appendChild(documentsPanel(p.id, d.project.documents || []));
 
     /* provas */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Registo de provas (' + d.evidence.length + ')' }));

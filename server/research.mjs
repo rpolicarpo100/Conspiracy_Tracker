@@ -184,11 +184,20 @@ export async function runResearch(deps, runId, opts) {
           if ((Date.now() - t0) / 60000 > budget.maxMinutes) { rec.reason = 'limite de tempo atingido'; break; }
           const got = await deps.fetchDoc(url);
           spent.calls++; spent.documents++;
+          const ex = got.extraction || null;
           docs.push({
             url: String(url).slice(0, 1500), canonicalUrl: canonicalUrl(url), host: hostOf(url),
             ok: !!got.ok, status: got.status || null, bytes: got.bytes || 0,
+            kind: got.kind || 'desconhecido',
             hash: got.hash || null, error: got.ok ? null : String(got.error || 'falha').slice(0, 200),
             injection: got.ok ? injectionSignals(got.text) : null,
+            /* o que a extracção garante e o que não garante, dito no próprio passo */
+            extraction: ex ? {
+              method: ex.method, pages: ex.pages || 0, chars: ex.chars || 0,
+              usedToUnicode: ex.usedToUnicode || 0, imageOnly: !!ex.imageOnly,
+              encrypted: !!ex.encrypted, warnings: ex.warnings || [],
+              needsHumanReview: true
+            } : null,
             consultedAt: new Date().toISOString()
           });
           /* o texto recolhido alimenta passos posteriores, mas não é prova por si só */

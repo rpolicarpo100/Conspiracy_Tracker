@@ -43,7 +43,8 @@ Regras:
 1. **Excerto obrigatório.** Sem excerto não há o que verificar: a prova é recusada (`400`) com a
    mensagem correspondente.
 2. **Hash SHA-256** do excerto normalizado (espaços colapsados, minúsculas) — permite comparar
-   documentos sem os guardar por inteiro.
+   documentos sem os guardar por inteiro. O texto de um PDF recolhido em `projects[].documents`
+   é matéria-prima para o excerto, nunca prova automática — ver `docs/DOCUMENTOS.md`.
 3. **URL canónico** (sem `utm_*`, `fbclid`, `gclid`, fragmento, `www.`, barra final). O URL original
    fica intacto; o canónico é o que serve para comparar.
 4. **Duplicados não inflacionam contagens**: enviar a mesma prova (mesmo conteúdo e mesmo URL

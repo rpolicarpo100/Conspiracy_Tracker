@@ -17,13 +17,14 @@ import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_R
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
 import { validateEntityLink } from './graph.mjs';
 import { MEMORY_KINDS, MEMORY_LIMITS, validateMemory, memoryToMarkdown } from './memory.mjs';
+import { extractPdfText, PDF_LIMITS } from './pdftext.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3d';
+const APP_VERSION = '2.0.0-fase3e';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -63,8 +64,106 @@ async function readBody(req) {
 const emailRe = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const ipOf = (req) => ((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'desconhecido');
 
+/* =====================================================================
+   RECOLHA DE DOCUMENTOS (passo 8 do motor e painel de documentos)
+
+   Disciplina fixa, seja qual for o chamador:
+   · só http(s), nunca endereços privados/loopback (SSRF), em cada salto;
+   · redireccionamentos seguidos à mão, no máximo 5, revalidando o destino;
+   · tecto de tamanho (2 MB HTML, 12 MB PDF) e 20 s de tempo;
+   · PDF: o texto é extraído por server/pdftext.mjs e devolvido com os
+     avisos da extracção — não entra sozinho no registo de provas;
+   · devolve sempre o hash do conteúdo, para se poder provar o que se leu.
+   A extracção PDF nunca contorna cifra nem tenta OCR.
+   ===================================================================== */
+const DOC_MAX_HTML = 2 * 1024 * 1024;
+const DOC_MAX_REDIRECTS = 5;
+
+/* Excepção única e explícita para os testes de interface locais: permitir que a
+   recolha leia o próprio servidor de desenvolvimento (127.0.0.1). Desliga-se
+   sozinha em qualquer ambiente de produção (NODE_ENV=production ou Render) e
+   nunca está activa por omissão. */
+export function localFetchAllowed() {
+  if (process.env.VN_ALLOW_LOCAL_FETCH !== '1') return false;
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER) return false;
+  return true;
+}
+
+export async function fetchDocument(url) {
+  let u = null;
+  try { u = new URL(String(url)); } catch { return { ok: false, error: 'URL inválida' }; }
+  if (!/^https?:$/.test(u.protocol)) return { ok: false, error: 'só http(s)' };
+  const allowLocal = localFetchAllowed();
+  if (!allowLocal && isPrivateHost(u.hostname)) return { ok: false, error: 'endereço privado/local proibido (SSRF)' };
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    let res = null, hops = 0;
+    /* redireccionamentos seguidos à mão: cada salto volta a passar pela guarda SSRF */
+    for (;;) {
+      res = await fetch(u.toString(), {
+        signal: ctrl.signal, redirect: 'manual',
+        headers: { 'user-agent': 'Meridiano/2 (+investigacao; contacto no site)', accept: 'text/html,application/pdf;q=0.9,*/*;q=0.5' }
+      });
+      const loc = res.headers.get('location');
+      if (![301, 302, 303, 307, 308].includes(res.status) || !loc) break;
+      if (++hops > DOC_MAX_REDIRECTS) return { ok: false, status: res.status, error: 'demasiados redireccionamentos (>' + DOC_MAX_REDIRECTS + ')' };
+      let next = null;
+      try { next = new URL(loc, u); } catch { return { ok: false, status: res.status, error: 'redireccionamento inválido' }; }
+      if (!/^https?:$/.test(next.protocol)) return { ok: false, status: res.status, error: 'redireccionamento para protocolo não permitido' };
+      if (!allowLocal && isPrivateHost(next.hostname)) return { ok: false, status: res.status, error: 'redireccionamento para endereço privado/local (SSRF)' };
+      u = next;
+    }
+
+    const type = String(res.headers.get('content-type') || '').toLowerCase();
+    const declaredLen = Number(res.headers.get('content-length') || 0);
+    const cap = /pdf/.test(type) ? PDF_LIMITS.maxBytes : DOC_MAX_HTML;
+    if (declaredLen && declaredLen > cap) {
+      return { ok: false, status: res.status, kind: /pdf/.test(type) ? 'pdf' : 'html',
+        error: 'documento maior do que o limite (' + Math.round(cap / 1024) + ' KB)' };
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > cap) return { ok: false, status: res.status, error: 'documento maior do que o limite (' + Math.round(cap / 1024) + ' KB)' };
+    const hash = crypto.createHash('sha256').update(buf).digest('hex');
+    const isPdf = buf.slice(0, 5).toString('latin1') === '%PDF-' || /application\/pdf/.test(type);
+
+    if (isPdf) {
+      const ex = extractPdfText(buf);
+      return {
+        ok: res.ok && ex.ok, status: res.status, kind: 'pdf', finalUrl: u.toString(),
+        text: ex.ok ? String(ex.text).slice(0, 40000) : '',
+        bytes: buf.length, hash,
+        extraction: {
+          method: ex.method, pages: ex.pages || 0, streams: ex.streams || 0,
+          usedToUnicode: ex.usedToUnicode || 0, chars: ex.chars || 0,
+          imageOnly: !!ex.imageOnly, encrypted: !!ex.encrypted,
+          streamFailures: ex.streamFailures || 0, reason: ex.reason || null,
+          warnings: ex.warnings || [], needsHumanReview: true
+        },
+        error: res.ok ? (ex.ok ? null : ex.reason) : 'HTTP ' + res.status
+      };
+    }
+
+    const raw = buf.toString('utf8');
+    const text = raw.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40000);
+    return {
+      ok: res.ok, status: res.status, kind: 'html', finalUrl: u.toString(),
+      text, bytes: buf.length, hash,
+      extraction: { method: 'html-sem-marcacao', needsHumanReview: true, warnings: [] },
+      error: res.ok ? null : 'HTTP ' + res.status
+    };
+  } catch (e) {
+    const aborted = /abort/i.test(String(e && e.name));
+    return { ok: false, error: aborted ? 'tempo limite excedido (20 s)' : String(e.message || e).slice(0, 160) };
+  } finally { clearTimeout(timer); }
+}
 export async function createApi(opts) {
   opts = opts || {};
+  /* em produção não se passa nada: `fetchDoc` é sempre a recolha real.
+     A injecção existe só para testes que precisam de servir um PDF conhecido. */
+  const fetchDoc = opts.fetchDoc || fetchDocument;
   const store = await createStore(opts.dataDir).init();
   const vault = keyVault(opts.appSecret || process.env.APP_SECRET);
   const auth = createAuth(store, {
@@ -222,28 +321,6 @@ export async function createApi(opts) {
     };
   }
 
-  /* Recolha de documentos para o motor: mesma disciplina do agente local
-     (sem hosts privados, limite de tamanho e de tempo, hash do conteúdo). */
-  async function fetchDoc(url) {
-    let u = null;
-    try { u = new URL(String(url)); } catch { return { ok: false, error: 'URL inválida' }; }
-    if (!/^https?:$/.test(u.protocol)) return { ok: false, error: 'só http(s)' };
-    if (isPrivateHost(u.hostname)) return { ok: false, error: 'endereço privado/local proibido (SSRF)' };
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const res = await fetch(u.toString(), { signal: ctrl.signal, redirect: 'follow', headers: { 'user-agent': 'Meridiano/2 (+investigacao; contacto no site)' } });
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength > 2 * 1024 * 1024) return { ok: false, status: res.status, error: 'documento maior do que 2 MB' };
-      const raw = Buffer.from(buf).toString('utf8');
-      const text = raw.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40000);
-      return { ok: res.ok, status: res.status, text, bytes: buf.byteLength, hash: crypto.createHash('sha256').update(buf).digest('hex'), error: res.ok ? null : 'HTTP ' + res.status };
-    } catch (e) {
-      return { ok: false, error: String(e.message || e).slice(0, 160) };
-    } finally { clearTimeout(timer); }
-  }
-
   /* Executor de IA do utilizador: só com credencial VALIDADA e cofre activo.
      Sem isso devolve erro explícito — o motor pára e diz porquê. */
   function aiRunner(user) {
@@ -321,6 +398,7 @@ export async function createApi(opts) {
     };
   }
   const accessLimiter = makeLimiter(60);
+  const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
 
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
@@ -445,6 +523,12 @@ export async function createApi(opts) {
           agents: { total: AGENTS.length, promptVersion: AGENT_PROMPT_VERSION, local: AGENTS.filter((x) => x.kind === 'local').length, ai: AGENTS.filter((x) => x.kind === 'ai').length },
           providers: registryPublic(),
           keyVault: { enabled: vault.enabled, reason: vault.reason },
+          documents: {
+            pdfMaxBytes: PDF_LIMITS.maxBytes, htmlMaxBytes: DOC_MAX_HTML, maxRedirects: DOC_MAX_REDIRECTS,
+            pdfText: 'extraído com /ToUnicode; sem OCR; cifra não é contornada',
+            humanReview: 'obrigatória: nenhuma prova nasce de uma extracção',
+            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido'
+          },
           registration: {
             open: true,
             firstAdminEmailConfigured: !!auth.adminEmail,
@@ -783,7 +867,17 @@ export async function createApi(opts) {
         const a = await requireUser(req, res); if (!a) return;
         const prj = store.projectByIdFor(id, a.user.id);
         if (!prj) return err(res, 404, 'projecto não encontrado');   // 404 e não 403: não revela existência
-        if (method === 'GET') return json(res, 200, { ok: true, project: prj });
+        if (method === 'GET') {
+          /* o detalhe do projecto não leva o texto inteiro dos documentos:
+             isso vem por /api/documents/:id, a pedido, para não arrastar
+             dezenas de milhares de caracteres em cada pintura da interface */
+          const light = Object.assign({}, prj, {
+            documents: (prj.documents || []).map((d) => Object.assign({}, d, {
+              text: undefined, preview: String(d.text || '').slice(0, 300), textChars: String(d.text || '').length
+            }))
+          });
+          return json(res, 200, { ok: true, project: light });
+        }
         if (!requireCsrf(req, res, a)) return;
         if (method === 'PATCH') {
           const body = await readBody(req);
@@ -995,6 +1089,94 @@ export async function createApi(opts) {
       }
 
       /* ---------- resumo descarregável (MD / JSON / CSV / PDF) ---------- */
+      /* ---------- documentos recolhidos: texto extraído para revisão humana ----------
+         O documento entra na base com o texto (e o que a extracção NÃO garante),
+         mas nenhuma prova é criada aqui: quem cita tem de ler e confirmar. */
+      if (p.match(/^\/api\/projects\/[^/]+\/documents$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const list = store.documentsOf(pid).map((d) => Object.assign({}, d, {
+          text: undefined, preview: String(d.text || '').slice(0, 300),
+          textChars: String(d.text || '').length
+        }));
+        return json(res, 200, {
+          ok: true, count: list.length, documents: list,
+          nota: 'o texto extraído não é prova: abra o documento, leia e confirme o excerto antes de o citar'
+        });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/documents$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        if (!docLimiter.allowed(a.user.id)) return err(res, 429, 'demasiadas recolhas de documentos nesta hora');
+        const body = await readBody(req);
+        const url = String(body.url || '').trim();
+        if (!url || url.length > 2000) return err(res, 400, 'URL em falta ou demasiado longa');
+        let host = null;
+        try { host = new URL(url).hostname; } catch { return err(res, 400, 'URL inválida'); }
+        docLimiter.hit(a.user.id);
+        const got = await fetchDoc(url);
+        const ex = got.extraction || null;
+        /* uma fonte inacessível fica registada como inacessível — não se apaga o rasto */
+        const doc = await store.addDocument(pid, a.user.id, {
+          url, canonicalUrl: got.finalUrl || url, host, kind: got.kind || 'desconhecido',
+          title: String(body.title || '').slice(0, 300) || null,
+          note: String(body.note || '').slice(0, 1000) || null,
+          ok: !!got.ok, status: got.status || null,
+          bytes: got.bytes || 0, hash: got.hash || null,
+          error: got.ok ? null : String(got.error || 'falha na recolha').slice(0, 200),
+          text: got.ok ? String(got.text || '').slice(0, 60000) : '',
+          extraction: ex, needsReview: true, reviewed: false, createdBy: a.user.id
+        });
+        await store.audit({
+          type: 'document_fetched', actorId: a.user.id, subjectId: doc.id, action: 'fetch_document',
+          detail: { projectId: pid, kind: doc.kind, ok: doc.ok, status: doc.status, hash: doc.hash, method: ex && ex.method }
+        });
+        await store.count('document_fetched');
+        return json(res, got.ok ? 201 : 200, {
+          ok: !!got.ok, document: Object.assign({}, doc, { text: undefined, preview: String(doc.text || '').slice(0, 300), textChars: String(doc.text || '').length }),
+          extraction: ex,
+          erro: got.ok ? null : doc.error,
+          revisaoObrigatoria: doc.ok ? 'leia o texto extraído e confirme o excerto antes de o transformar em prova' : null
+        });
+      }
+      if (p.match(/^\/api\/documents\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const did = p.split('/')[3];
+        const doc = store.documentById(did);
+        if (!doc) return err(res, 404, 'documento não encontrado');
+        const prj = store.data.projects.find((x) => (x.documents || []).some((d2) => d2.id === did));
+        /* 404 e não 403: não se revela a existência de documentos de outra pessoa */
+        if (!prj || (prj.ownerId !== a.user.id && a.user.role !== 'ADMIN')) return err(res, 404, 'documento não encontrado');
+        if (prj.ownerId !== a.user.id) {
+          await store.audit({ type: 'admin_document_access', actorId: a.user.id, subjectId: did, action: 'read_document', detail: { projectId: prj.id, ownerId: prj.ownerId } });
+        }
+        return json(res, 200, { ok: true, document: doc, projectId: prj.id });
+      }
+      if (p.match(/^\/api\/documents\/[^/]+$/) && (method === 'PATCH' || method === 'DELETE')) {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const did = p.split('/')[3];
+        const doc = store.documentById(did);
+        if (!doc) return err(res, 404, 'documento não encontrado');
+        const prj = store.data.projects.find((x) => (x.documents || []).some((d2) => d2.id === did));
+        if (!prj || (prj.ownerId !== a.user.id && a.user.role !== 'ADMIN')) return err(res, 404, 'documento não encontrado');
+        if (method === 'DELETE') {
+          await store.deleteDocument(did, prj.ownerId);
+          await store.audit({ type: 'document_deleted', actorId: a.user.id, subjectId: did, action: 'delete_document', detail: { projectId: prj.id } });
+          return json(res, 200, { ok: true });
+        }
+        const body = await readBody(req);
+        const patch = {};
+        ['title', 'note', 'reviewNote'].forEach((k) => { if (body[k] !== undefined) patch[k] = String(body[k]).slice(0, 1000); });
+        if (body.reviewed !== undefined) patch.reviewed = !!body.reviewed;
+        const updated = await store.updateDocument(did, prj.ownerId, patch);
+        await store.audit({ type: 'document_reviewed', actorId: a.user.id, subjectId: did, action: 'update_document', detail: { projectId: prj.id, fields: Object.keys(patch), reviewed: updated.reviewed } });
+        return json(res, 200, { ok: true, document: Object.assign({}, updated, { text: undefined, preview: String(updated.text || '').slice(0, 300), textChars: String(updated.text || '').length }) });
+      }
+
       if (p.match(/^\/api\/projects\/[^/]+\/summary$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
         const pid = p.split('/')[3];
@@ -1405,6 +1587,12 @@ export async function createApi(opts) {
         return json(res, 200, {
           ok: true,
           keyVault: { enabled: vault.enabled, reason: vault.reason },
+          documents: {
+            pdfMaxBytes: PDF_LIMITS.maxBytes, htmlMaxBytes: DOC_MAX_HTML, maxRedirects: DOC_MAX_REDIRECTS,
+            pdfText: 'extraído com /ToUnicode; sem OCR; cifra não é contornada',
+            humanReview: 'obrigatória: nenhuma prova nasce de uma extracção',
+            localFetch: localFetchAllowed() ? 'permitido (ambiente de teste local)' : 'proibido'
+          },
           providers: registryPublic().map((pr) => {
             const c = mine.filter((x) => x.provider === pr.id)[0] || null;
             const br = breakerState(pr.id + ':' + ((c && c.model) || ''));

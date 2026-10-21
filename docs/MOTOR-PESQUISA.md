@@ -17,7 +17,7 @@ e a execução pára em vez de continuar com conteúdo inventado.
 | 5 | multilingue | IA | variantes noutras línguas do âmbito |
 | 6 | primarias | local | fontes primárias previstas e prioritárias |
 | 7 | secundarias | local | fontes secundárias e excluídas |
-| 8 | recolher | recolha | pedidos HTTP reais às URLs indicadas (hash, tamanho, estado) |
+| 8 | recolher | recolha | pedidos HTTP reais às URLs indicadas (hash, tamanho, estado); PDF com texto extraído por `/ToUnicode`, método e avisos registados no próprio passo |
 | 9 | excertos | IA | excertos literais que respondem à pergunta (candidatos, não provas) |
 | 10 | alegacoes | IA | entidades, datas e alegações presentes nos documentos |
 | 11 | resolver | local | resolução de entidades com a regra anti-homónimo |

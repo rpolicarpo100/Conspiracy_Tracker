@@ -257,6 +257,23 @@ O identificador declarado passa a ser o desambiguador canónico do nó fundido. 
 operação é recusada (`400`); a ligação é reversível (`DELETE /api/entity-links/{id}` com motivo) e
 fica na auditoria (`entity_link_created`, `entity_link_retracted`).
 
+### `projects[].documents` — documentos recolhidos com texto extraído (v5, fase 3E)
+
+```js
+{ id: 'doc-…', url, canonicalUrl, host, kind: 'pdf'|'html'|'desconhecido',
+  title, note, ok, status, bytes, hash,            // hash = sha256 do conteúdo lido
+  error,                                           // preenchido quando a fonte é inacessível
+  text,                                            // até 60 000 caracteres; entregue só a pedido
+  extraction: { method, pages, chars, usedToUnicode, streams, imageOnly, encrypted,
+                streamFailures, warnings: [], needsHumanReview: true },
+  needsReview: true, reviewed: bool, reviewedAt, reviewNote,
+  createdAt, createdBy }
+```
+
+Regras: o documento **nunca** cria provas (não existe caminho no servidor que o faça); uma fonte
+inacessível fica com `ok:false` e `error` em vez de desaparecer; o texto completo só é servido por
+`GET /api/documents/{id}` (lista e detalhe do projeto levam apenas `preview` de 300 caracteres).
+
 ### Reposição de cópias
 
 `GET /api/auth/backup` exporta tudo excepto segredos; `POST /api/auth/restore` cria projectos

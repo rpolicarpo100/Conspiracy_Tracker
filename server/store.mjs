@@ -234,6 +234,48 @@ export function createStore(dir) {
       await persist(); return true;
     },
 
+    /* --- documentos recolhidos (texto extraído para revisão humana) --- */
+    async addDocument(pid, ownerId, doc) {
+      const prj = db.projects.find((x) => x.id === pid && (!ownerId || x.ownerId === ownerId));
+      if (!prj) return null;
+      prj.documents = prj.documents || [];
+      const d = Object.assign({ id: id('doc'), createdAt: new Date().toISOString() }, doc);
+      prj.documents.push(d);
+      prj.updatedAt = d.createdAt;
+      await persist(); return d;
+    },
+    documentsOf(pid) {
+      const prj = db.projects.find((x) => x.id === pid);
+      return prj ? (prj.documents || []).slice() : [];
+    },
+    documentById(did) {
+      for (const prj of db.projects) {
+        const d = (prj.documents || []).find((x) => x.id === did);
+        if (d) return d;
+      }
+      return null;
+    },
+    async updateDocument(did, ownerId, patch) {
+      for (const prj of db.projects) {
+        const d = (prj.documents || []).find((x) => x.id === did);
+        if (!d) continue;
+        if (ownerId && prj.ownerId !== ownerId) return null;
+        ['title', 'note', 'reviewed', 'reviewNote'].forEach((k) => { if (patch[k] !== undefined) d[k] = patch[k]; });
+        if (patch.reviewed === true && !d.reviewedAt) d.reviewedAt = new Date().toISOString();
+        await persist(); return d;
+      }
+      return null;
+    },
+    async deleteDocument(did, ownerId) {
+      for (const prj of db.projects) {
+        if (ownerId && prj.ownerId !== ownerId) continue;
+        const before = (prj.documents || []).length;
+        prj.documents = (prj.documents || []).filter((x) => x.id !== did);
+        if (prj.documents.length !== before) { await persist(); return true; }
+      }
+      return false;
+    },
+
     /* --- credenciais de IA (cifradas) --- */
     async upsertCredential({ userId, provider, keyCipher, keyMask, model, meta }) {
       let c = db.credentials.find((x) => x.userId === userId && x.provider === provider);

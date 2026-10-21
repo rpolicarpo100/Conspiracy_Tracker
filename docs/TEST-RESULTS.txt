@@ -535,3 +535,53 @@ Sondas reais em https://conspiracy-aitracker.onrender.com (conta descartável cr
   · reposição → 201, projectos 1 → 2, um deles com marca restoredFrom;
   · eliminação da conta → 200.
 tests/deployed.mjs: 6/6.
+
+== 27. FASE 3E — DOCUMENTOS E TEXTO DE PDF (versão 2.0.0-fase3e)
+
+Extração (server/pdftext.mjs), com dois PDFs reais:
+  · tests/fixtures/relatorio-chromium.pdf — 19 494 B, 2 páginas, gerado pelo motor do Chromium
+    (fontes subconjuntas DejaVu, /Encoding /Identity-H, /ToUnicode, FlateDecode);
+  · docs/exemplo-resumo.pdf — escrito pelo gerador da própria aplicação (sem /ToUnicode).
+  Resultado nos dois: texto extraído IDÊNTICO, palavra a palavra, ao `pdftotext` (poppler) depois de
+  normalizado o espaço. Acentos, «250 000 euros» e «Segunda página» presentes; ligaduras ﬁ/ﬂ
+  resolvidas; nenhum U+FFFD.
+  Recusas verificadas: PDF cifrado («não se contorna protecção»), PDF só com imagem (declara a
+  ausência de OCR), ficheiro que não é PDF, ficheiro vazio, limite de tamanho, corte por limite de
+  caracteres, bomba de descompressão (fluxo de 4 MB com tecto de 64 KB — ignorado e declarado),
+  lixo depois de %PDF-.
+  Bug encontrado e corrigido nesta fase: com a fonte por resolver, o extrator aplicava um CMap de
+  2 bytes e duplicava cada carácter («\u0000H\u0000O» em vez de «HO»); e quebrava palavras a cada
+  reposicionamento `Td` («ficheir o», «ver dade»). Corrigido: `/ToUnicode` por página com fontes de
+  1 e 2 bytes, e mudança de linha só quando o deslocamento vertical muda (as palavras separam-se
+  pelo glifo de espaço do documento).
+
+Recolha (fetchDocument):
+  · SSRF: 127.0.0.1, localhost, 10.0.0.1 e 169.254.169.254 recusados antes de qualquer pedido;
+    file:// e ftp:// recusados; redireccionamentos seguidos à mão (máx. 5) com destino revalidado;
+  · limites 2 MB (HTML) / 12 MB (PDF), 20 s, hash SHA-256 do conteúdo lido;
+  · excepção VN_ALLOW_LOCAL_FETCH: fechada por omissão, aberta só em teste local, fechada com
+    RENDER ou NODE_ENV=production (testada nos três estados).
+
+Rotas novas de documentos (sessão + CSRF + fronteira por conta):
+  · POST/GET /api/projects/{id}/documents · GET/PATCH/DELETE /api/documents/{id};
+  · teste explícito de que recolher um PDF deixa o registo de provas em 0;
+  · fonte inacessível (HTTP 404) fica guardada com estado e erro, não desaparece da lista;
+  · outra conta: GET documento, GET projecto, DELETE e POST devolvem 404 (não 403) e não revelam
+    conteúdo;
+  · limite de 40 recolhas/hora → 429 com razão escrita (atingido à 37.ª na execução registada,
+    por recolhas anteriores do mesmo teste);
+  · auditoria: document_fetched, document_reviewed, document_deleted.
+
+Motor: o passo 8 passa a registar kind, hash, extraction.method, pages, usedToUnicode e
+needsHumanReview na própria saída do passo (testado com os passos 1–7 já concluídos, sem IA).
+
+Interface: painel «Documentos e texto extraído» com recolha, leitura do texto, «Usar excerto na nova
+prova» (pré-preenche, não registra) e «Marcar como revisto». Captura docs/shot-27-documentos.png.
+
+Resultados desta execução:
+  · tests/pdftext.mjs 19/19;
+  · tests/fase3e.mjs 21/21;
+  · tests/documents-ui.mjs 6/6, 0 erros de runtime;
+  · regressão: fase3d 18/18, fase3c 28/28, evidence 17/17, graph 13/13, agents-p3 16/16,
+    agents 18/18, apis 13/13, server 26/26, research 19/19, flow 14/14, search 17/17, smoke 0 erros;
+  · interface: account-ui 15/15, agents-ui 5/5, apis-ui 7/7.
