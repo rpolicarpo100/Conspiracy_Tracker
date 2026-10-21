@@ -456,3 +456,25 @@ Correcções que os testes provocaram (não eram cosméticas):
 Interface: tests/account-ui.mjs 14/14 (novo teste de filtro/exportação/acesso), 0 erros de
 runtime; capturas docs/shot-23-filtro-exportacao.png e docs/shot-24-exportacao-svg.png.
 Regressão: server 26/26 · evidence 17/17 · graph 13/13 · agents-p3 16/16.
+
+== 28. FASE 3C NO SERVIÇO PÚBLICO (commit bdf7083, versão 2.0.0-fase3c)
+
+Sondas reais em https://conspiracy-aitracker.onrender.com (conta descartável criada e eliminada):
+  · /api/meta → versão 2.0.0-fase3c, accessChecks (4 estados + política) e quotas publicados;
+  · verificação de acesso a https://example.com/ → 200 «acessivel», HTTP 200, 577 B, 609 ms,
+    sugestão nula com a nota «a fonte respondeu agora; isso não valida o conteúdo nem o excerto»;
+    estado de validação da prova ficou «insuficiente» antes e depois (não mudou sozinho);
+  · tentativa de verificar http://127.0.0.1:8080/api/meta → «bloqueado: endereço IPv4
+    interno/reservado» (a rota não é um proxy);
+  · grafo com ?periodFrom=2020&periodTo=2020 → filter.applied=true e cronologia recortada;
+  · ?periodFrom=2020-13 → 400 «datas do filtro devem ser AAAA, AAAA-MM ou AAAA-MM-DD»;
+  · exportação SVG → 200 image/svg+xml, com o aviso «uma linha não é prova»; JSON → 3 avisos +
+    filtro; DOT → digraph válido;
+  · agente local (cronologia) → concluido, quota restante 39/40;
+  · eliminação da conta → 200.
+tests/deployed.mjs: 6/6 (inclui a recusa de SSRF no servidor público e o proxy fechado).
+
+Estado do cofre em produção: /ready → keyVault {ok:true, mode:"aes-256-gcm"} — o APP_SECRET
+configurado pelo proprietário resolveu o bloqueio da fase anterior. A IA continua
+`nao-executado` enquanto não existir uma chave de fornecedor validada: nenhuma foi criada nem
+pedida.
