@@ -94,3 +94,47 @@ escala 5000 nós / 12499 ligações: sincronização 7466 ms · layout 3939 ms �
 
 == 7. FUMAÇO VISUAL (tests/smoke.mjs)
 ERRORS: 0
+
+== 8. APIs — NÚCLEO (tests/apis.mjs)
+APIs — NÚCLEO
+PASS catálogo: entradas completas e datadas → 12 APIs · todas com limite declarado, licença e https
+PASS resposta boa → pontuações altas nas três dimensões → S 65 · F 95 · U 94 → condicional
+PASS servidor instável é penalizado na fiabilidade (e explicado) → 1/3 pedidos com a resposta esperada (2xx) → fiabilidade 44
+PASS 200 com corpo de erro não conta como estrutura válida → corpo recebido mas não é JSON — não é utilizável por um agente (estrutura 0/20)
+PASS HTTP 401 com chave declarada não é tratado como avaria → exige credenciais (HTTP 401): não é avaria, mas também não é uma fonte verificável sem chave → fiabilidade 64
+PASS HTTP sem TLS é penalizado na segurança → segurança 65 · veredicto rejeitada · Falha bloqueante: sem TLS
+PASS robots.txt proibitivo bloqueia a auditoria → rejeitada: Falha bloqueante: sem TLS; robots.txt proíbe
+PASS descoberta: extrai candidatos por termo sem inventar endpoints → 1 candidato para «contratos» · 2 sem termo · endpoint só a partir de swaggerUrl
+PASS deriveProbe escolhe GET sem parâmetros obrigatórios → https://api.exemplo.pt/v1/estado · auth declarada: apiKey
+PASS deriveProbe: Swagger 2.0 com parâmetros no item de caminho → ignorou o caminho com parâmetro obrigatório · https://api.exemplo.pt/v2/estado
+PASS deriveProbe: segurança global impede sonda (não inventa pedido anónimo) → sem pedido testável · auth: apiKey
+PASS auditoria de candidato: especificação + pedido derivado → spec 2 caminhos · pedido derivado GET /saude · estado rejeitada
+PASS entrada personalizada: validação e metadados → válida aceite · inválida recusada com 2 motivos · chave na URL detectada
+
+13/13 passaram
+
+== 9. APIs — INTERFACE (tests/apis-ui.mjs)
+APIs — INTERFACE
+PASS separador «APIs» com catálogo, pesos e guardas → 12 entradas no catálogo · 3 dimensões explicadas
+PASS auditoria real de uma API (GLEIF) produz pontuações e razões → pontuações seg/fia/uti: 100 · 95 · 93
+PASS detalhe mostra cabeçalhos observados e SHA-256 das respostas → cabeçalhos e tentativas visíveis
+PASS API personalizada: validação recusa URL inválido e aceita válido → recusou URL inválido · aceitou e persistiu a válida (18 linhas)
+PASS agente de descoberta: candidatos reais do APIs.guru para «contracts» → 1 candidatos · tabela de candidatos com ligação à especificação OpenAPI
+PASS auditoria de candidato deriva pedido da especificação (sem inventar) → spec lida · pedido: https://api.loket.nl/v2/achmeainsurancecontracts · veredicto: condicional
+PASS cada auditoria fica no livro de provas (cadeia intacta) → 1 auditorias registadas · Integridade confirmada: 7 entradas, cadeia intacta
+erros de runtime: 0 []
+
+7/7 passaram
+
+== 10. SITE PUBLICADO (tests/deployed.mjs, https://conspiracy-aitracker.onrender.com)
+PASS mapa carrega com semente e legenda → grafo visível · 69 entidades / 126 relações · 14/69 entidades · 30/126 relações
+    ·
+    sem 
+PASS pesquisa profunda responde na versão publicada → 9 resultados · correcção «accionsta → accionista» na versão publicada
+PASS agente local (/api/fetch) funciona no servidor público → HTTP 200 · 6771 B · hash confirmado dos dois lados
+PASS separador APIs audita uma API a partir do servidor público → VIES: seg 80 · fia 80 · uti 83
+PASS /api/fetch recusa origem externa (proxy não é aberto) → HTTP 403 · origem não autorizada: o agente local só responde ao próprio
+PASS endereço interno recusado no servidor público (SSRF) → endereço privado/local proibido (SSRF)
+erros de runtime: 0 []
+
+6/6 passaram

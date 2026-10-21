@@ -8,6 +8,10 @@ e data**. Painéis de detalhe, caminhos, cronologia e exportação com provas s�
 > **Os dados incluídos são fictícios** (caso «Meridiano», marcado em todo o lado). Servem para testar
 > a plataforma. O modo real aceita apenas dados com proveniência verificável — ver `docs/SCHEMA.md`.
 
+**Instância pública:** https://conspiracy-aitracker.onrender.com (Render, plano gratuito — o primeiro
+acesso após inactividade pode demorar ~30 s).
+Repositório: https://github.com/rpolicarpo100/Conspiracy_Tracker
+
 ## Como abrir
 
 ```bash
