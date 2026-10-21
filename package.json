@@ -19,8 +19,9 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "dev": "node tools/serve.mjs",
-    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs",
-    "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs",
-    "audit:apis": "node tools/audit-catalog.mjs --attempts=3"
+    "test": "node tests/flow.mjs && node tests/search.mjs && node tests/agents.mjs && node tests/apis.mjs && node tests/server.mjs",
+    "test:ui": "node tests/agents-ui.mjs && node tests/apis-ui.mjs && node tests/account-ui.mjs",
+    "audit:apis": "node tools/audit-catalog.mjs --attempts=3",
+    "test:deployed": "node tests/deployed.mjs"
   }
 }

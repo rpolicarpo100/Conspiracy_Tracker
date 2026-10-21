@@ -138,3 +138,54 @@ PASS endereço interno recusado no servidor público (SSRF) → endereço privad
 erros de runtime: 0 []
 
 6/6 passaram
+
+== 11. SERVIDOR: AUTENTICAÇÃO, PAPÉIS, PROJECTOS, FORNECEDORES (tests/server.mjs)
+SERVIDOR — AUTENTICAÇÃO, PERMISSÕES, CHAVES E FORNECEDORES
+PASS /health e /ready respondem com estado real → health alive · ready ready · cofre aes-256-gcm
+PASS registo recusa palavra-passe fraca e falta de consentimento → password fraca → 400 · sem consentimento → 400
+PASS registo válido cria conta USER com sessão → conta criada · sessão activa · sem hashes na resposta
+PASS ADMIN_EMAIL promove o dono a ADMIN (e só o primeiro) → dono → ADMIN · outro registo → USER
+PASS registo com "role":"ADMIN" no corpo não concede privilégios → papel forçado ignorado · /api/admin/metrics → 403
+PASS login inválido e email inexistente dão a mesma resposta (sem enumeração) → ambos 401 com «credenciais inválidas»
+PASS login válido e logout invalidam a sessão → login 200 · após logout /me devolve null
+PASS limite de tentativas bloqueia após 8 falhas (429) → bloqueio activo antes da 10.ª tentativa
+PASS CSRF: escrita sem cabeçalho é recusada → 403 sem token CSRF
+PASS utilizador cria projecto e só ele o vê → projecto prj-XiC1YSlT5WVs · lista de Bob vazia
+PASS acesso directo ao ID alheio dá 404 (não revela existência) → GET/PATCH/DELETE alheios → 404 · conteúdo intacto
+PASS métricas administrativas vêm de dados reais → 4 utilizadores (coincide com a lista) · 3 métricas declaradas indisponíveis
+PASS administrador vê projectos de outro utilizador e o acesso fica auditado → projecto acedido · evento admin_access com autor, motivo e data
+PASS administrador não vê chaves em claro (só máscara) → nenhuma chave no dump · só metadados e máscara
+PASS chave guardada é cifrada, mascarada e nunca devolvida → máscara «chav…reta» · ausente das respostas e do disco (AES-256-GCM)
+PASS validação com fornecedor real (simulado): modelo e ligação confirmados → modelos listados · geração ok · usage {"promptTokens":5,"completionTokens":1} · 1 ms
+PASS chave inválida é detectada como erro de autenticação → auth → credencial recusada (HTTP 401)
+PASS modelo inexistente é detectado antes de qualquer geração → modelo «nao-existe» não existe na conta; disponíveis: modelo-teste, modelo-lento
+PASS timeout é tratado e reportado → timeout após 300 ms
+PASS circuit breaker abre após falhas repetidas → aberto após 3 falhas · chamada bloqueada com tempo de nova tentativa
+PASS URL de fornecedor para endereço interno é recusada (SSRF) → o fornecedor tem de usar https; endereço privado/local proibido (SSRF)
+PASS chamada de IA pela API exige validação prévia e regista utilização → chamada sem validação → 409 (não confia no frontend)
+PASS exportação de dados devolve apenas o próprio utilizador → projectos 1 · sem dados de terceiros · sem chaves
+PASS suspensão de conta revoga sessões e impede login → suspensa · sessões revogadas · login 401
+PASS eliminação de conta remove projectos e sessões → conta, projectos e sessões removidos · evento account_deleted conservado sem dados pessoais
+PASS auditoria existe e não contém segredos → 36 eventos · tipos: account_deleted, project_created, session_created, user_registered, login_failed, admin_user_status, admin_access, data_exported
+
+26/26 passaram
+
+== 12. CONTA E ADMINISTRAÇÃO — INTERFACE (tests/account-ui.mjs)
+CONTA E ADMINISTRAÇÃO — INTERFACE
+PASS botão Conta abre a área de autenticação → formulário de entrada visível (Entrar. Sem conta, os dados de investigação continuam a vive…)
+PASS registo pela interface cria sessão e mostra o email → sessão criada para uimvien42b@ex.pt
+PASS política de palavra-passe é aplicada pelo servidor, não pela interface → registo com «123» → 400 (palavra-passe fraca: pelo menos 10 caracteres, uma minúscula)
+PASS projecto criado na interface aparece na lista → projecto visível na tabela
+PASS separador de chaves mostra o estado do cofre e recusa guardar sem APP_SECRET? (cofre activo) → 8 fornecedores listados · cofre activo
+PASS chave de IA: guardada com máscara e validada contra o fornecedor real → máscara «chav…123» · Groq falhou em «auth»: credencial recusada (HTTP 401)uimvien42b@ex
+PASS sessão terminada esconde os dados privados → formulário de autenticação reposto, sem dados privados e sessão inválida no servidor
+PASS administrador vê métricas reais e auditoria → utilizadores: 2 · auditoria com eventos reais · indisponíveis declarados
+PASS utilizador comum não vê a área de administração → sem separador · métricas/utilizadores/auditoria → 403 no servidor
+erros de runtime: 0 []
+
+9/9 passaram
+
+== 13. REGRESSÃO APÓS AS ALTERAÇÕES DESTA FASE
+flow: 14 PASS · search: 17 PASS · agents: 18 PASS · apis: 13 PASS
+}
+ERRORS: 0

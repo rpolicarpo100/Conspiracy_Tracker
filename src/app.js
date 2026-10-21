@@ -15,6 +15,23 @@
   const TYPE_LABEL = () => model.entityTypes;
 
   /* ---------------- arranque ---------------- */
+  /* Conta / projectos / chaves de IA / administração */
+  function wireAccount() {
+    const btn = D.el ? document.getElementById('btnAccount') : document.getElementById('btnAccount');
+    if (!btn || !VN.accountUI) return;
+    btn.addEventListener('click', () => {
+      const body = VN.accountUI.mount();
+      VN.panels.modal('Conta e administração', body, { wide: true });
+    });
+    fetch('api/auth/me', { credentials: 'same-origin' }).then((r) => r.json()).then((d) => {
+      if (d && d.user) {
+        const label = document.getElementById('accLabel');
+        if (label) label.textContent = d.user.email.split('@')[0];
+        btn.title = 'Sessão: ' + d.user.email + ' (' + d.user.role + ')';
+      }
+    }).catch(() => {});
+  }
+
   function boot() {
     model = VN.model.normalize(selectDataset());
     store = VN.createStore(model);
@@ -74,6 +91,7 @@
     wireSidebar();
     wireKeyboard();
     wireSearch();
+    wireAccount();
     restoreHash();
 
     D.toast('Semente: ' + store.state.loaded.size + ' entidades com mais ligações. Pesquise (⌘K) ou expanda.', '', 6000);

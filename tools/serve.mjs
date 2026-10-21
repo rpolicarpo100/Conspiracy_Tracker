@@ -2,13 +2,25 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { handleFetchApi } from './fetch-api.mjs';
+import { createApi } from '../server/api.mjs';
 const root = process.cwd();
+/* API do servidor (autenticação, projectos, fornecedores de IA, administração).
+   Não interfere com os ficheiros estáticos: apenas /api/* e /health, /ready. */
+const api = await createApi({
+  dataDir: process.env.DATA_DIR || undefined,
+  appSecret: process.env.APP_SECRET || '',
+  adminEmail: process.env.ADMIN_EMAIL || '',
+  secure: true
+});
+console.log('[api] pronta · cofre de chaves:', api.vault.enabled ? 'activo' : 'DESACTIVADO (' + api.vault.reason + ')');
+if (!process.env.ADMIN_EMAIL) console.log('[api] ADMIN_EMAIL não definido: o primeiro registo não se torna administrador automaticamente');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
 createServer(async (req, res) => {
   try {
     const u = new URL(req.url, 'http://x');
     let p = decodeURIComponent(u.pathname);
     if (p === '/api/fetch') return await handleFetchApi(req, res);
+    if (p === '/health' || p === '/ready' || p.startsWith('/api/')) return await api.handle(req, res, u);
     if (p === '/robots.txt') {
       // o próprio servidor de desenvolvimento declara regras: nenhum rastreador deve tocar no agente
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });

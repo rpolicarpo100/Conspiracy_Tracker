@@ -1,0 +1,111 @@
+# Auditoria de código — matriz de estado real
+
+Data: 2026-10-21 · Repositório: `rpolicarpo100/Conspiracy_Tracker` (público) · Instância: https://conspiracy-aitracker.onrender.com
+Método: leitura do código, execução das suites locais e sondagens HTTP reais ao serviço publicado.
+Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **OBSERVADO NO AMBIENTE PÚBLICO** ·
+**IMPLEMENTADO MAS NÃO TESTADO EM PRODUÇÃO** · **HIPÓTESE** · **NÃO TESTADO** · **BLOQUEADO**.
+
+## Parte A — Estabilidade e diagnóstico do 503
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| Disponibilidade do serviço publicado | Disponível; 503 **não** reproduzido | 10 sondagens HTTP (`curl`) a `/` e `/api/meta`: todas 200; primeira após *cold start* em 13,46 s, seguintes ~0,22 s | P2 | Documentar que o plano gratuito do Render suspende a instância por inactividade e que a primeira resposta é lenta; não confundir com erro de aplicação |
+| Causa provável do 503 relatado | **HIPÓTESE**: instância adormecida / arranque a frio durante o *health check* | Histórico de deploys do Render: 5 deploys, 0 falhas; nenhuma resposta 5xx observada nas sondagens | P2 | Manter `/health` e `/ready` baratos; não fazer I/O pesado no arranque |
+| Rotas de diagnóstico | `/health`, `/ready`, `/api/meta` respondem | `tools/serve.mjs` monta-as antes do estático; `tests/server.mjs` e sondagens públicas | P3 | — |
+| Diagnóstico administrativo protegido | Só ADMIN vê métricas e auditoria | `GET /api/admin/*` → 403 para USER (medido no browser) | P3 | — |
+| Fuga de credenciais/stack traces nas respostas | Não observada | Erros devolvem `{ok:false,error:{code,message}}`; 500 genérico | P1 | Rever mensagens de erro de fornecedores (já truncadas a 300 chars) |
+
+## Parte B — Autenticação e sessões
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| Registo/login/logout | Funcionam; logout invalida a sessão no servidor | `tests/server.mjs` 26/26; `tests/account-ui.mjs` 9/9 (após terminar sessão, `GET /api/auth/me` → `user:null`) | P0 concluído | — |
+| Política de palavra-passe | Aplicada no servidor | UI com «123» → 400 «palavra-passe fraca…» | P1 concluído | — |
+| Hash de credenciais | `scrypt` N=32768, r=8, p=1, salt 16 B, `maxmem` explícito | `server/auth.mjs`; inspecção do `store.json` | P0 concluído | — |
+| Sessões: listar e revogar | Sim, por sessão e todas | `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{id}`, `POST /api/auth/logout-all` | P1 concluído | — |
+| Token de sessão | 32 bytes aleatórios; guardado apenas como SHA-256 | `server/auth.mjs` | P0 concluído | — |
+| Rate limiting | 8 falhas/login, 10 registos/hora por IP; evento `login_blocked` | Teste 429 em `tests/server.mjs` | P1 concluído | — |
+| Anti-enumeração | 401 idêntico para email desconhecido e palavra-passe errada | `tests/server.mjs` | P1 concluído | — |
+| CSRF | Double-submit obrigatório; sem cabeçalho → 403 | `tests/server.mjs` | P0 concluído | — |
+| Cookies | `HttpOnly`, `SameSite=Lax`, `Secure` em HTTPS, 12 h | `server/auth.mjs` | P1 concluído | — |
+| Alteração de palavra-passe | Sim, exige a actual e revoga as outras sessões | `POST /api/auth/password` | P1 concluído | — |
+| Exportar dados próprios | JSON completo, sem segredos | `GET /api/auth/export`; evento `data_exported` | P1 concluído | — |
+| Eliminar conta | Remove utilizador, sessões, projectos, chaves, uso; guarda `account_deleted` sem dados pessoais | `tests/server.mjs` (asserção sobre o ficheiro de dados) | P1 concluído | — |
+| **MFA (TOTP)** | **Não implementado** | — | P1 | Prioridade seguinte; obrigatório para ADMIN |
+| Recuperação de palavra-passe por email | **Não implementada** (não há envio de email configurado) | — | P1 | Requer serviço de email; declarar como pendente, não simular |
+| Reautenticação para acções sensíveis | Não existe | — | P2 | Adicionar em eliminar-conta/alterações de chave |
+
+## Parte C — Papéis e isolamento
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| Papéis USER/ADMIN | Implementados; `ADMIN` só por `ADMIN_EMAIL` no primeiro registo | `tests/server.mjs`; UI mostra separador só a ADMIN | P0 concluído | — |
+| Auto-promoção | Impossível: `role` no corpo é ignorado | Teste dedicado | P0 concluído | — |
+| Isolamento entre utilizadores | Projecto de outro → 404 sem revelar conteúdo | Teste dedicado com verificação do ficheiro | P0 concluído | — |
+| Acesso administrativo auditado | Evento `admin_access` com actor/recurso/data/motivo | Teste dedicado | P1 concluído | Exigir motivo com 400 quando ausente (hoje aceita «não indicado») |
+| Suspensão de conta | Revoga sessões de imediato | Teste dedicado | P1 concluído | Exigir confirmação extra ao suspender outro ADMIN |
+| Métricas reais no painel | Utilizadores, admins, sessões, projectos, chamadas, falhas; 3 métricas marcadas «Não disponível» | UI (`tests/account-ui.mjs`) + `tests/server.mjs` | P2 | Instrumentar custo e tarefas em fila antes de os mostrar |
+| Papel ANALYST | **Não implementado** | — | P3 | Opcional; decidir se entra |
+
+## Parte D — Projectos e dados
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| CRUD de projectos | Criar, listar, ler, actualizar, eliminar, por dono | `server/api.mjs`; suite 26/26 e UI | P1 concluído | — |
+| Modelo de investigação completo | Parcial: título, pergunta, objectivo, descrição, âmbito, palavras-chave. **Faltam** hipóteses, subperguntas, fontes incl./excl., critérios de conclusão, orçamento, limite temporal, histórico, notas, documentos, provas, entidades, relações, cronologia, relatório | `store.createProject` | P2 | Próxima fase: alargar o esquema + migração versionada |
+| Duplicar/arquivar/retomar/cancelar/exportar projecto | **Não implementado** | — | P2 | — |
+| Persistência | Atómica (ficheiro JSON + `rename`), `DATA_DIR` configurável | `server/store.mjs` | P1 | — |
+| **Persistência em produção** | **Não garantida**: plano gratuito sem disco; dados perdem-se em cada deploy, `/api/meta` reporta `durableBetweenDeploys:false` | `server/api.mjs` | **P0 em produção** | Montar disco persistente (plano pago) ou base de dados externa; declarar a limitação na interface (já declarada) |
+| Backups/rollback | Rollback por deploy do Render (funciona); backup de dados **não** existe em produção | — | P1 | Copiar `store.json` de forma agendada para fora da instância |
+| Migrações | Campo `version: 1` no ficheiro, sem migradores por passo | `server/store.mjs` | P2 | Escrever migradores antes de alterar o esquema dos projectos |
+| Retenção | **Não implementada** (sem purga de auditoria, sessões expiradas ou uso) | — | P1 | Definir prazos (auditoria 180 d, sessões 30 d, uso 90 d) e implementar |
+
+## Parte E — Fornecedores de IA e chaves
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| 8 adaptadores | gemini, groq, openrouter, cerebras, mistral, huggingface, cloudflare, custom | `server/providers.mjs`; UI lista os 8 | P1 concluído | — |
+| Caminho único compatível com OpenAI | Um só `/chat/completions`, sem duplicação | `urlFor()` + `complete()` | P2 concluído | — |
+| Cifra das chaves | AES-256-GCM, `APP_SECRET` ≥24 caracteres obrigatório | Teste de ficheiro em disco: só texto cifrado | P0 concluído | — |
+| Máscara e não exposição | Só `chav…123` em respostas e auditoria | `tests/server.mjs` | P0 concluído | — |
+| Validação antes de operacional | `POST /api/providers/{p}/test` real; `complete` antes de validar → 409 | Teste: groq → `auth`, «credencial recusada (HTTP 401)» | P1 concluído | — |
+| Modelo inexistente | Recusado antes de gerar | Teste dedicado | P2 concluído | — |
+| Timeout / retry / circuit breaker | 20 s, 2 tentativas, abre após 3 falhas (60 s) | Testes dedicados | P2 concluído | — |
+| SSRF | Hosts privados/link-local recusados; `169.254.169.254` → refused | Teste + sondagem pública | P0 concluído | Rever lista de IPs periodicamente |
+| Custos | Uso e latência registados; custo marcado «não reportado» quando o fornecedor não o envia | `store.addUsage` | P2 | Não estimar sem tabela de preços verificada |
+| Modelo preferido por agente, fallback, quotas por utilizador | **Não implementado** | — | P2 | Fase seguinte do router |
+| Chaves de administração (plataforma) | **Não implementado** | — | P2 | Só com consentimento explícito e contabilização por utilizador |
+
+## Parte F — Pesquisa, provas e agentes (V2)
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| Pesquisa local sobre o conjunto fictício | Funciona, com correcção ortográfica | `tests/search.mjs` 17/17 | P3 concluído | — |
+| Recolha real de páginas | `/api/fetch` com limites de tamanho, timeout e bloqueio SSRF | `tests/real-fetch.mjs`; sondagem pública 6 771 B com hash | P2 concluído | — |
+| 13 agentes com I/O estruturado | Protótipo local com guardas e *budget*; sem persistência de execuções | `tests/agents.mjs` 18/18 | P2 | Fase P3: `agent_runs`, versão de prompt, estado, logs |
+| Pipeline de 20 passos (pesquisa profunda) | **Parcial**: interpretação, variantes de consulta, recolha, extracção básica. Faltam deduplicação, verificação de datas/origem/integridade, contra-provas, lacunas, grafo, relatório rastreável, revisão humana | `src/core/research.js` | P2 | Fase P2 |
+| Registo de provas (ID único, hash, datas, excerto, estado) | **Não implementado** no servidor (existe modelo local) | — | P2 | Fase P2 — é o alicerce do relatório rastreável |
+| Perfis de profundidade Rápida/Normal/Profunda/Exaustiva | Parcial (limites por perfil no motor local); sem exposição do motivo de paragem na UI | `src/core/agents.js` | P2 | Mostrar «parou porque…» e fontes efectivamente consultadas |
+| Conectores declarados (cobertura, licença, limites…) | Catálogo real auditado (12 APIs, 3 tentativas) | `docs/APIS-auditoria.json`; `docs/APIS.md` | P2 concluído | — |
+| Conteúdo web/PDF como não confiável | Guardas de injecção no motor de agentes (testes locais) | `tests/agents.mjs` | P0 na fase P2 | Revalidar quando a extracção de PDF entrar |
+| Grafo visual (69/126 fictícios) | Funciona, com estados de validação e legenda | `tests/deployed.mjs` 6/6 no serviço publicado | P2 concluído | Acrescentar tipos de entidade/relação do V2 e confiança justificada |
+
+## Parte G — Interface, acessibilidade e higiene
+
+| Componente | Estado real | Evidência | Risco | Acção |
+| --- | --- | --- | --- | --- |
+| Área de conta na interface | Login/registo, conta, sessões, palavra-passe, exportar, eliminar, projectos, chaves, administração | `tests/account-ui.mjs` 9/9, captura `docs/shot-17-conta.png` | P1 concluído | — |
+| Repintagem destrutiva de formulários | Corrigida (estado `DRAFT` + mensagens sem repintar) | Regressão coberta pelo teste de chaves | P2 concluído | Manter regra para novos painéis |
+| Rotulagem de dados fictícios | Presente na interface e nos documentos | inspecção + capturas | P0 concluído | — |
+| Cabeçalhos de segurança | CSP sem `unsafe-eval`, `no-referrer`, `nosniff` | `tools/serve.mjs` | P1 concluído | `frame-ancestors` explícito em vez de `*` |
+| Erros de runtime na UI | 0 nas suites de interface | `tests/account-ui.mjs` | P2 concluído | — |
+| Testes de regressão | flow 14/14, search 17/17, agents 18/18, apis 13/13, smoke 0 erros, server 26/26, conta-UI 9/9, publicado 6/6 | logs desta sessão | P0 concluído | Incluir `server`/`account-ui` no `npm test` |
+
+## Prioridades resultantes
+
+- **P0**: persistência em produção (sem disco ⇒ perda de dados em cada deploy); MFA ausente para ADMIN.
+- **P1**: recuperação de palavra-passe; retenção/purga; backups; motivo obrigatório no acesso
+  administrativo; reautenticação em acções sensíveis.
+- **P2**: esquema completo de investigação; registo de provas; pipeline de pesquisa profunda;
+  router com preferências/quotas; migrações versionadas; `frame-ancestors`.
+- **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

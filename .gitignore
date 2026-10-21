@@ -10,3 +10,6 @@ tests/_*.mjs
 .config/
 .sudo_as_admin_successful
 .ssh/
+
+# dados locais de execução (contas, projectos, chaves)
+.data/

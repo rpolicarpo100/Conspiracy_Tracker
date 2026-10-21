@@ -16,8 +16,12 @@ Repositório: https://github.com/rpolicarpo100/Conspiracy_Tracker
 
 ```bash
 npm install
-node tools/serve.mjs          # http://localhost:8080
+APP_SECRET='segredo-com-pelo-menos-24-caracteres' ADMIN_EMAIL='admin@exemplo.pt' \
+DATA_DIR="$PWD/.data" node tools/serve.mjs   # http://localhost:8080
 ```
+
+`APP_SECRET` é obrigatório para guardar chaves de IA (cofre AES-256-GCM); `ADMIN_EMAIL` promove o
+primeiro registo com esse email; `DATA_DIR` guarda o `store.json` fora do código.
 
 Ou, numa sessão Arena, abrir o `index.html` com o servidor de pré-visualização.
 Dependências visuais: Cytoscape.js + fcose (MIT), servidas localmente em `node_modules` — nada de CDN.
@@ -103,10 +107,18 @@ src/core/realdata.js       portão de importação de dados reais
 src/graph/adapter.js       único ficheiro que conhece Cytoscape (substituível)
 src/graph/avatars.js       avatares/logótipos procedimentais + proveniência
 src/ui/*.js                painéis, detalhes, caminhos, cronologia, relatório, consola,
-                           paleta de comandos (palette.js) e página de pesquisa (searchpage.js)
+                           paleta de comandos (palette.js), página de pesquisa (searchpage.js)
+src/ui/account.js          área de conta: entrar/registar, sessões, palavra-passe, exportar,
+                           eliminar conta, projectos, chaves de IA e administração
+server/store.mjs           persistência atómica (DATA_DIR): utilizadores, sessões, projectos,
+                           credenciais, uso, auditoria, contadores
+server/auth.mjs            scrypt, tokens de sessão com SHA-256, cookies, CSRF, rate limiting
+server/crypto-keys.mjs     cofre AES-256-GCM para as chaves de IA (exige APP_SECRET)
+server/providers.mjs       8 adaptadores de IA (compatíveis com OpenAI), retry, timeout, disjuntor
+server/api.mjs             rotas, permissões no servidor, auditoria de acessos administrativos
 data/*.js                  conjunto fictício (69 entidades, 126 relações)
-tests/                     testes funcionais e de desempenho (Playwright)
-tools/                     servidor local e comparação de bibliotecas
+tests/                     testes funcionais, de servidor e de interface (Playwright)
+tools/                     servidor (estático + API) e comparação de bibliotecas
 docs/                      aceitação, esquema, benchmarks, capturas
 ```
 
@@ -120,7 +132,34 @@ docs/                      aceitação, esquema, benchmarks, capturas
 - `docs/APIS.md` — catálogo, método de pontuação, auditoria real (com recusas) e agente de descoberta.
 - `docs/IA-E-EVIDENCIA.md` — contrato imposto à IA, o que o validador rejeita, como ligar um modelo,
   privacidade, e que agentes faz sentido automatizar (e quais nunca).
+- `docs/PRIVACIDADE.md` — política de privacidade e RGPD: o que é guardado, base legal, cookies,
+  acesso administrativo auditado, direitos, retenção e o que ainda não está feito.
+- `docs/PERMISSOES.md` — papéis, matriz completa de permissões, isolamento entre utilizadores,
+  limites de abuso.
+- `docs/FORNECEDORES.md` — os 8 fornecedores de IA, cofre de chaves, como validar, resiliência e
+  limites.
+- `docs/AUDITORIA-CODIGO.md` — matriz de auditoria (componente, estado real, evidência, risco,
+  acção) e diagnóstico da disponibilidade.
 - `docs/TEST-RESULTS.txt` — saída integral dos testes.
+
+## Contas, papéis e chaves de IA
+
+A aplicação passou a ter contas (opcional): sem sessão, os dados continuam a viver apenas no
+navegador; com sessão, projectos e chaves ficam associados ao utilizador e isolados de outros.
+
+- **Registo/entrada** com verificação de força de palavra-passe no servidor, `scrypt`, sessões de
+  12 h revogáveis e CSRF por *double-submit*.
+- **USER** vê apenas os seus projectos, as suas chaves e o seu histórico; **ADMIN** acrescenta
+  utilizadores, métricas reais, auditoria e consulta de projectos **com motivo registado**.
+- **Chaves de IA por utilizador** (Gemini, Groq, OpenRouter, Cerebras, Mistral, Hugging Face,
+  Cloudflare Workers AI e endpoint compatível com OpenAI): cifradas com AES-256-GCM, mostradas
+  apenas em máscara (`chav…123`) e validadas por uma chamada real antes de serem dadas como
+  operacionais. Uma chave inválida é reportada como inválida (ex.: «credencial recusada (HTTP 401)»).
+- **Exportar** e **eliminar** a conta fazem-se na própria interface.
+
+Variáveis de ambiente relevantes (nunca com segredos no repositório): `APP_SECRET` (≥24 caracteres,
+obrigatório para guardar chaves), `ADMIN_EMAIL` (promove o primeiro registo com esse email),
+`DATA_DIR` (pasta de dados), `LOGIN_MAX_ATTEMPTS`, `REGISTER_MAX`, `AGENT_BUDGET`, `PORT`.
 
 ## Publicar (Render, plano gratuito)
 
@@ -144,11 +183,17 @@ Notas de produção já aplicadas no servidor (`tools/serve.mjs`):
 - ficheiros ocultos não são servidos; nenhum segredo está no código.
 
 O plano gratuito do Render **adormece** a instância após inactividade: o primeiro acesso pode demorar
-~30 s. Todo o estado de trabalho (livro de provas, APIs personalizadas, pesquisas recentes) vive no
-`localStorage` do navegador — nada é enviado para servidores.
+13–30 s (medido: 13,46 s no primeiro pedido da sessão, ~0,22 s depois). O estado da investigação
+continua no `localStorage` do navegador quando não há sessão; com sessão, o que a API guarda fica em
+`DATA_DIR` — e **o plano gratuito não tem disco persistente**, pelo que esses dados se perdem em cada
+deploy. `/api/meta` declara essa limitação (`durableBetweenDeploys`).
 
 ## Limitações
 
-Sem back-end de dados (o livro de provas e o histórico vivem no navegador), sem OCR, sem assinatura digital do livro, e acima de ~500 nós
-visíveis é necessário trocar o adaptador por WebGL. Nada disto é substituído por confiança: está
-listado em `docs/ACEITACAO.md` §«O que não está feito».
+Persistência garantida em produção **não existe** enquanto o serviço correr no plano gratuito (sem
+disco): um deploy apaga contas, projectos e chaves guardadas no servidor. Não há MFA, recuperação de
+palavra-passe por email, retenção automática nem backups de dados. Não há OCR nem assinatura digital
+do livro de provas, e acima de ~500 nós visíveis é necessário trocar o adaptador por WebGL.
+
+Nada disto é substituído por confiança: está listado, com classificação por item, em
+`docs/AUDITORIA-CODIGO.md` e em `docs/ACEITACAO.md` §«O que não está feito».
