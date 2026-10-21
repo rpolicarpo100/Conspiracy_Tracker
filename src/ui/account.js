@@ -18,6 +18,9 @@
     graphView: null,        // referência ao SVG desenhado (para exportar PNG)
     period: { from: '', to: '' },   // filtro temporal do grafo
     accessOut: null,        // último resultado de verificação de acesso
+    memory: [],             // memória da investigação do projecto aberto
+    memoryKinds: null,
+    entityLinks: [],        // ligações de homónimos declaradas
     report: null            // relatório de 18 secções aberto
   };
 
@@ -232,6 +235,32 @@
           note('Exportação descarregada (operação registada em auditoria).', 'ok');
         }
       }),
+      el('a', {
+        class: 'btn sm', href: '/api/auth/backup', download: '', text: 'Cópia de segurança completa (JSON)',
+        title: 'projectos, provas, conclusões, relações, memória e ligações — sem chaves nem palavras-passe'
+      }),
+      el('button', {
+        class: 'btn sm', type: 'button', text: 'Repor a partir de cópia',
+        onclick: async () => {
+          const inp = document.createElement('input');
+          inp.type = 'file'; inp.accept = 'application/json,.json';
+          inp.onchange = async () => {
+            const file = inp.files && inp.files[0];
+            if (!file) return;
+            let parsed = null;
+            try { parsed = JSON.parse(await file.text()); } catch { return note('Ficheiro não é JSON válido', 'bad'); }
+            if (parsed.format !== 'meridiano-backup/1') return note('Este ficheiro não é uma cópia do Meridiano (' + (parsed.format || 'sem formato') + ')', 'bad');
+            if (!confirm('Repor ' + ((parsed.projects || []).length) + ' projecto(s) desta cópia? Os projectos são criados de novo (não substituem os existentes).')) return;
+            const r = await api('/api/auth/restore', { method: 'POST', body: { backup: parsed } });
+            if (!r.ok) return note('Reposição falhou: ' + r.error.message, 'bad');
+            const s2 = r.json.restored;
+            note('Reposto: ' + s2.projects + ' projecto(s), ' + s2.evidence + ' prova(s), ' + s2.claims + ' conclusão(ões), ' +
+              s2.notes + ' nota(s). Chaves de IA não são repostas (reintroduza-as no separador de chaves).', 'ok');
+            await refresh();
+          };
+          inp.click();
+        }
+      }),
       el('button', {
         class: 'btn sm danger', type: 'button', text: 'Eliminar conta',
         onclick: async () => {
@@ -295,6 +324,7 @@
   async function openProject(id) {
     S.report = null;                      // abrir um projecto sai da vista de relatório
     S.path = null;
+    DRAFT.memory = DRAFT.memory || { kind: 'nota', title: '', body: '', reason: '' };
     /* o filtro temporal é do projecto: trocar de projecto não herda o recorte do anterior */
     if (!S.detail || !S.detail.project || S.detail.project.id !== id) S.period = { from: '', to: '' };
     const [p, ev, cl, rn] = await Promise.all([
@@ -306,6 +336,7 @@
     const gr = await api('/api/projects/' + id + '/graph' + qs);
     const ag = await api('/api/agents');
     const ar = await api('/api/projects/' + id + '/agent-runs');
+    const mm = await api('/api/projects/' + id + '/memory');
     S.detail = {
       project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [],
       runs: rn.ok ? rn.json.runs : [], profiles: rn.ok ? rn.json.profiles : ['rapida', 'normal', 'profunda', 'exaustiva'],
@@ -314,7 +345,9 @@
       agents: ag.ok ? ag.json.agents : [],
       agentRuns: ar.ok ? ar.json.runs : [],
       agentQuotas: ar.ok ? (ar.json.quotas || {}) : {},
-      quotaRules: ar.ok ? ar.json.quotaRules : null
+      quotaRules: ar.ok ? ar.json.quotaRules : null,
+      memoryKinds: mm.ok ? mm.json.kinds : null,
+      memory: mm.ok ? mm.json.notes : []
     };
     paint();
   }
@@ -618,7 +651,7 @@
       ]));
     }
 
-    /* caminho entre entidades */
+    /* caminho entre entidades, com restrições */
     if (d.graph && d.graph.graph && d.graph.graph.nodes.length > 1) {
       const pf = DRAFT.path || (DRAFT.path = {});
       root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Caminho entre entidades' }));
@@ -631,26 +664,101 @@
           class: 'btn sm', type: 'button', text: 'Procurar caminho',
           onclick: async () => {
             if (!pf.from || !pf.to) return note('Escolha as duas entidades', 'warn');
-            const r = await api('/api/projects/' + p.id + '/graph?from=' + encodeURIComponent(pf.from) + '&to=' + encodeURIComponent(pf.to));
+            const q = [];
+            if (pf.type) q.push('pathTypes=' + encodeURIComponent(pf.type));
+            if (pf.noInferred) q.push('pathExcludeInferred=1');
+            if (pf.notBefore) q.push('pathNotBefore=' + encodeURIComponent(pf.notBefore));
+            if (pf.notAfter) q.push('pathNotAfter=' + encodeURIComponent(pf.notAfter));
+            const r = await api('/api/projects/' + p.id + '/graph?from=' + encodeURIComponent(pf.from) +
+              '&to=' + encodeURIComponent(pf.to) + (q.length ? '&' + q.join('&') : ''));
             if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
             S.path = r.json.caminho;
             paint();
           }
         })
       ]));
+      /* restrições: opcionais, e sempre visíveis na resposta */
+      const relTypes = Object.keys(d.graph.relationTypes || {});
+      root.appendChild(el('div', { class: 'chips', style: 'margin-top:4px' }, [
+        el('span', { style: 'font-size:9px;color:var(--muted)', text: 'restrições:' }),
+        el('select', { id: 'pathType', onchange: (e) => { pf.type = e.target.value; } },
+          [el('option', { value: '', text: 'todas as relações' })].concat(relTypes.map((k) =>
+            el('option', { value: k, selected: pf.type === k, text: (d.graph.relationTypes[k].label || k) })))),
+        el('input', { id: 'pathNotBefore', placeholder: 'de AAAA-MM-DD', value: pf.notBefore || '', style: 'width:110px', oninput: (e) => { pf.notBefore = e.target.value.trim(); } }),
+        el('input', { id: 'pathNotAfter', placeholder: 'até AAAA-MM-DD', value: pf.notAfter || '', style: 'width:110px', oninput: (e) => { pf.notAfter = e.target.value.trim(); } }),
+        el('label', { style: 'font-size:9px;color:var(--muted);display:flex;gap:4px;align-items:center' }, [
+          el('input', { id: 'pathNoInferred', type: 'checkbox', onchange: (e) => { pf.noInferred = e.target.checked; } }),
+          el('span', { text: 'excluir relações inferidas' })
+        ])
+      ]));
       if (S.path) {
         if (!S.path.found) {
-          root.appendChild(el('div', { class: 'warnbox', style: 'font-size:11px', text: 'Sem caminho registado: ' + S.path.reason }));
+          root.appendChild(el('div', { class: 'warnbox', style: 'font-size:11px', text: 'Sem caminho: ' + S.path.reason }));
         } else {
+          const r = S.path.restricoes || {};
           root.appendChild(el('div', { class: 'warnbox', style: 'font-size:11px' }, [
             el('b', { text: S.path.saltos + ' salto(s)' }),
+            r.aplicadas ? el('div', { style: 'font-size:9px;color:var(--muted)', text:
+              'restrições aplicadas · ' + r.arestasUsadas + ' de ' + r.arestasNoGrafo + ' relações usáveis (' + r.arestasExcluidas + ' excluídas)' +
+              (r.tipos ? ' · tipos: ' + r.tipos.join(', ') : '') + (r.excluirInferidas ? ' · sem inferências' : '') }) : null,
             el('div', { style: 'font-size:10px;color:var(--muted)', text: S.path.aviso }),
             ...S.path.passos.map((st) => el('div', { style: 'font-size:10px;margin-top:3px' }, [
               el('b', { text: st.de + ' → ' + st.para }),
               el('span', { text: ' · ' + st.tipo + ' · ' + st.confianca.level + ' · ' + st.provas.length + ' prova(s)' + (st.inferida ? ' · inferida' : '') })
             ]))
-          ]));
+          ].filter(Boolean)));
         }
+      }
+    }
+
+    /* fusão de homónimos com identificador */
+    if (d.graph && d.graph.graph) {
+      const gg2 = d.graph.graph;
+      const lk = DRAFT.link || (DRAFT.link = {});
+      root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Homónimos: fundir com identificador' }));
+      root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+        'O grafo nunca junta dois nomes iguais por parecerem a mesma pessoa. Só funde quando é declarado o identificador que o prova (NIPC, LEI, registo). A ligação é reversível e fica na auditoria.' }));
+      root.appendChild(el('div', { class: 'chips' }, [
+        el('select', { id: 'linkFrom', onchange: (e) => { lk.from = e.target.value; } },
+          [el('option', { value: '', text: 'entrada a fundir…' })].concat(gg2.nodes.map((n) => el('option', { value: n.id, text: n.name })))),
+        el('select', { id: 'linkTo', onchange: (e) => { lk.to = e.target.value; } },
+          [el('option', { value: '', text: 'entidade de referência…' })].concat(gg2.nodes.map((n) => el('option', { value: n.id, text: n.name })))),
+        el('input', { id: 'linkIdentifier', placeholder: 'identificador (NIPC, LEI…)', value: lk.identifier || '', oninput: (e) => { lk.identifier = e.target.value; } }),
+        el('input', { id: 'linkReason', placeholder: 'motivo', value: lk.reason || '', oninput: (e) => { lk.reason = e.target.value; } }),
+        el('button', {
+          class: 'btn sm', type: 'button', text: 'Fundir',
+          onclick: async () => {
+            const find = (key) => gg2.nodes.find((n) => n.id === key);
+            const a2 = find(lk.from), b2 = find(lk.to);
+            if (!a2 || !b2) return note('Escolha as duas entradas', 'warn');
+            const r = await api('/api/projects/' + p.id + '/entities/link', { method: 'POST', body: {
+              from: { name: a2.name, disambiguator: a2.disambiguator }, to: { name: b2.name, disambiguator: b2.disambiguator },
+              identifier: lk.identifier, reason: lk.reason
+            } });
+            if (!r.ok) return note('Fusão recusada: ' + r.error.message, 'bad');
+            note('Entidades fundidas com identificador ' + r.json.link.identifier + ' (reversível).', 'ok');
+            await reloadDetail();
+          }
+        })
+      ]));
+      const links2 = gg2.entityLinks || [];
+      if (links2.length) {
+        root.appendChild(el('div', { class: 'warnbox', style: 'font-size:10px;margin-top:4px' }, [
+          el('b', { text: 'Ligações declaradas (' + links2.length + ')' }),
+          ...links2.map((l) => el('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:2px' }, [
+            el('span', { text: (l.from && l.from.name) + ' = ' + (l.to && l.to.name) + ' · ' + l.identifier + ' · ' + l.reason }),
+            el('button', {
+              class: 'btn sm', type: 'button', text: 'Desfazer', style: 'margin-left:auto',
+              onclick: async () => {
+                const reason = prompt('Motivo para desfazer a ligação:', '');
+                if (!reason) return;
+                const r = await api('/api/entity-links/' + l.id, { method: 'DELETE', body: { reason } });
+                if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+                await reloadDetail();
+              }
+            })
+          ]))
+        ]));
       }
     }
 
@@ -704,6 +812,90 @@
         ]))
       ]));
     }
+
+    /* memória da investigação */
+    const kinds = d.memoryKinds || { nota: { label: 'Nota' }, decisao: { label: 'Decisão' }, glossario: { label: 'Glossário' }, lacuna: { label: 'Lacuna' }, correcao: { label: 'Correcção' } };
+    const notes = d.memory || [];
+    const mf = DRAFT.memory || (DRAFT.memory = { kind: 'nota', title: '', body: '', reason: '' });
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Memória da investigação (' + notes.length + ')' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+      'O que não pode depender de alguém se lembrar: decisões com motivo, vocabulário, lacunas e correcções. A memória explica; não altera estados de conclusões nem cria provas.' }));
+    if (notes.length) {
+      notes.filter((n) => !n.archivedAt).slice(0, 20).forEach((n) => {
+        root.appendChild(el('div', { class: 'warnbox', style: 'margin:4px 0' }, [
+          el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+            el('span', { class: 'tag ' + (n.kind === 'lacuna' ? 'warn' : n.kind === 'correcao' ? 'bad' : 'ok'), text: (kinds[n.kind] && kinds[n.kind].label) || n.kind }),
+            el('b', { style: 'font-size:11px', text: n.title }),
+            n.pinned ? el('span', { class: 'tag', text: 'fixada' }) : null,
+            el('span', { style: 'font-size:9px;color:var(--muted)', text: String(n.createdAt || '').slice(0, 10) }),
+            el('button', {
+              class: 'btn sm', type: 'button', text: 'Arquivar', style: 'margin-left:auto',
+              onclick: async () => {
+                const reason = prompt('Motivo para arquivar esta entrada (fica registado):', '');
+                if (!reason) return;
+                const r = await api('/api/memory/' + n.id, { method: 'DELETE', body: { reason } });
+                if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+                await reloadDetail();
+              }
+            })
+          ].filter(Boolean)),
+          el('div', { style: 'font-size:10px;margin-top:2px', text: n.body }),
+          n.reason ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'motivo: ' + n.reason }) : null,
+          (n.links && (n.links.evidenceIds || []).length) ? el('div', { style: 'font-size:9px;color:var(--muted)', text: 'ligada a ' + n.links.evidenceIds.length + ' prova(s)' }) : null
+        ].filter(Boolean)));
+      });
+      const archived = notes.filter((n) => n.archivedAt).length;
+      if (archived) root.appendChild(el('div', { style: 'font-size:9px;color:var(--muted)', text: archived + ' entrada(s) arquivada(s) — conservadas no histórico, fora da vista.' }));
+    } else {
+      root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Sem entradas: nenhuma decisão registada ainda.' }));
+    }
+    root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:6px' }, [
+      el('div', { class: 'chips' }, [
+        el('select', { id: 'memKind', onchange: (e) => { mf.kind = e.target.value; paint(); } },
+          Object.keys(kinds).map((k) => el('option', { value: k, selected: mf.kind === k, text: kinds[k].label }))),
+        el('input', { id: 'memTitle', placeholder: 'título', value: mf.title || '', style: 'flex:1;min-width:180px', oninput: (e) => { mf.title = e.target.value; } })
+      ]),
+      el('textarea', {
+        id: 'memBody', placeholder: 'o que fica registado', value: mf.body || '',
+        style: 'width:100%;min-height:52px;margin-top:4px',
+        oninput: (e) => { mf.body = e.target.value; }
+      }),
+      ['decisao', 'correcao'].includes(mf.kind) ? el('input', {
+        id: 'memReason', placeholder: 'motivo / fundamento (obrigatório)', value: mf.reason || '', style: 'width:100%;margin-top:4px',
+        oninput: (e) => { mf.reason = e.target.value; }
+      }) : null,
+      el('button', {
+        class: 'btn sm primary', type: 'button', text: 'Registar na memória', style: 'margin-top:4px',
+        onclick: async () => {
+          const r = await api('/api/projects/' + p.id + '/memory', { method: 'POST', body: {
+            kind: mf.kind, title: mf.title, body: mf.body, reason: mf.reason
+          } });
+          if (!r.ok) return note('Recusado: ' + r.error.message, 'bad');
+          DRAFT.memory = { kind: 'nota', title: '', body: '', reason: '' };
+          note('Registado na memória (' + r.json.note.kind + ').', 'ok');
+          await reloadDetail();
+        }
+      })
+    ].filter(Boolean)));
+
+    /* resumo descarregável */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Resumo da investigação' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+      'Descarrega o resumo construído a partir dos dados registados. Um resumo não é prova: cada conclusão traz o estado atribuído, o estado que as provas sustentam e o número de origens independentes.' }));
+    root.appendChild(el('div', { class: 'chips' }, ['pdf', 'md', 'csv', 'json'].map((f) => el('a', {
+      class: 'btn sm' + (f === 'pdf' ? ' primary' : ''), href: '/api/projects/' + p.id + '/summary?format=' + f,
+      download: '', text: 'Resumo ' + f.toUpperCase()
+    })).concat([
+      el('button', {
+        id: 'memMd', class: 'btn sm', type: 'button', text: 'Memória (MD)',
+        onclick: async () => {
+          const r = await fetch('/api/projects/' + p.id + '/memory?format=md', { credentials: 'same-origin' });
+          if (!r.ok) return note('Memória indisponível', 'bad');
+          VN.dom.download('meridiano-memoria-' + p.id + '.md', await r.text(), 'text/markdown');
+          note('Memória descarregada em Markdown.', 'ok');
+        }
+      })
+    ])));
 
     /* pesquisa profunda */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Pesquisa profunda (' + (d.runs || []).length + ')' }));

@@ -186,7 +186,52 @@ export function relationInWindow(period, win) {
   return true;
 }
 
-export function buildGraph({ project, evidence, relations, claims, window: win }) {
+/* ---------------- fusão de homónimos com identificador ----------------
+
+   O grafo nunca funde dois nomes iguais por parecerem a mesma pessoa. Pode,
+   porém, aceitar uma declaração EXPLÍCITA do utilizador de que duas entradas
+   são a mesma entidade, desde que traga o identificador que o prova (NIPC,
+   LEI, número de registo) e o motivo. A ligação é reversível e auditada. */
+
+export function validateEntityLink(input) {
+  const errors = [];
+  const from = { name: String((input.from && input.from.name) || input.fromName || '').trim().slice(0, 200),
+    disambiguator: String((input.from && input.from.disambiguator) || input.fromDisambiguator || '').trim().slice(0, 160) || null };
+  const to = { name: String((input.to && input.to.name) || input.toName || '').trim().slice(0, 200),
+    disambiguator: String((input.to && input.to.disambiguator) || input.toDisambiguator || '').trim().slice(0, 160) || null };
+  const identifier = String(input.identifier || '').trim().slice(0, 120);
+  const identifierType = String(input.identifierType || '').trim().slice(0, 40) || null;
+  const reason = String(input.reason || '').trim().slice(0, 1000);
+  if (!from.name || !to.name) errors.push('indique as duas entradas (from e to)');
+  if (from.name && to.name && entityKey(from.name, from.disambiguator) === entityKey(to.name, to.disambiguator)) {
+    errors.push('as duas entradas são já a mesma: nada a fundir');
+  }
+  if (identifier.length < 4) errors.push('fundir nomes exige o identificador que o prova (mínimo 4 caracteres): sem identificador, homónimos não se juntam');
+  if (reason.length < 10) errors.push('fundir entidades exige o motivo escrito (mínimo 10 caracteres)');
+  return { ok: errors.length === 0, errors, link: { from, to, identifier, identifierType, reason } };
+}
+
+const linkMap = (links) => {
+  const m = new Map();
+  const info = new Map();
+  (links || []).filter((l) => !l.retractedAt).forEach((l) => {
+    /* o identificador declarado é o desambiguador canónico: se a entidade de
+       referência não trouxer identificador próprio, o da ligação passa a ser o
+       dela. Assim uma prova que só diz «Ana Silva» fica no mesmo nó que
+       «A. Silva» — porque foi declarado que ambas são NIPC 500000000. */
+    const canonicalDisamb = (l.to && l.to.disambiguator) || l.identifier;
+    const canonicalKey = entityKey(l.to && l.to.name, canonicalDisamb);
+    const fromKey = entityKey(l.from && l.from.name, l.from && l.from.disambiguator);
+    const toKey = entityKey(l.to && l.to.name, l.to && l.to.disambiguator);
+    const target = { key: canonicalKey, name: l.to && l.to.name, disambiguator: canonicalDisamb, identifier: l.identifier };
+    if (fromKey !== canonicalKey) m.set(fromKey, target);
+    if (toKey !== canonicalKey) m.set(toKey, target);
+    info.set(canonicalKey, target);
+  });
+  return { map: m, info };
+};
+
+export function buildGraph({ project, evidence, relations, claims, window: win, entityLinks }) {
   evidence = evidence || [];
   relations = relations || [];
   const active = evidence.filter((e) => !e.retractedAt);
@@ -208,10 +253,20 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
   }
   const byId = new Map(evidence.map((e) => [e.id, e]));
 
-  /* nós: só entidades que aparecem em provas registadas */
+  /* nós: só entidades que aparecem em provas registadas.
+     As ligações declaradas (com identificador) resolvem-se antes de criar o nó. */
+  const linkInfo = linkMap(entityLinks);
+  const links = linkInfo.map;
+  const resolve = (name, disambiguator) => {
+    let key = entityKey(name, disambiguator);
+    let hops = 0;
+    let target = links.get(key);
+    while (target && hops < 10) { key = target.key; target = links.get(key); hops++; }
+    return key;
+  };
   const nodes = new Map();
   const addNode = (name, meta) => {
-    const key = entityKey(name, meta && meta.disambiguator);
+    const key = resolve(name, meta && meta.disambiguator);
     let n = nodes.get(key);
     if (!n) {
       n = {
@@ -224,7 +279,13 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
       nodes.set(key, n);
     }
     if (meta && meta.type && n.type === 'unknown') { n.type = meta.type; n.typeLabel = ENTITY_TYPES[meta.type].label; n.color = ENTITY_TYPES[meta.type].color; }
+    /* o identificador declarado passa a ser o desambiguador do nó */
+    if (!n.disambiguator) {
+      const info = linkInfo.info.get(key);
+      if (info && info.disambiguator) { n.disambiguator = info.disambiguator; n.disambiguatorSource = 'ligação declarada com identificador'; }
+    }
     if (meta && meta.alias && n.aliases.indexOf(meta.alias) < 0) n.aliases.push(meta.alias);
+    if (entityKey(name, meta && meta.disambiguator) !== key && norm(name) !== norm(n.name) && n.aliases.indexOf(String(name)) < 0) n.aliases.push(String(name));
     if (n.namesSeen.indexOf(String(name)) < 0) n.namesSeen.push(String(name));
     return n;
   };
@@ -242,10 +303,12 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
   const edges = [];
   relations.filter((r) => !r.retractedAt).forEach((r) => {
     const evs = (r.evidenceIds || []).map((id) => byId.get(id)).filter((x) => x && !x.retractedAt);
-    const fromKey = entityKey(r.from, r.fromDisambiguator);
-    const toKey = entityKey(r.to, r.toDisambiguator);
-    if (!nodes.has(fromKey)) addNode(r.from, { type: r.fromType || 'unknown', disambiguator: r.fromDisambiguator });
-    if (!nodes.has(toKey)) addNode(r.to, { type: r.toType || 'unknown', disambiguator: r.toDisambiguator });
+    const fromKey = resolve(r.from, r.fromDisambiguator);
+    const toKey = resolve(r.to, r.toDisambiguator);
+    /* addNode é idempotente e regista aliases: chamá-lo sempre faz com que um
+       nome alternativo usado só numa relação fique visível no nó fundido */
+    addNode(r.from, { type: r.fromType || 'unknown', disambiguator: r.fromDisambiguator });
+    addNode(r.to, { type: r.toType || 'unknown', disambiguator: r.toDisambiguator });
     const conf = edgeConfidence(r, evs);
     const type = RELATION_TYPES[r.type] || { label: r.type, family: 'outra', directed: true };
     edges.push({
@@ -272,7 +335,7 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
     /* as chaves usam o mesmo critério dos nós (com desambiguador, quando existe) */
     const ents = (e.entities || []).map((x) => (typeof x === 'string' ? { name: x } : (x || {})))
       .filter((x) => x.name)
-      .map((x) => ({ key: entityKey(x.name, x.disambiguator), name: x.name }));
+      .map((x) => ({ key: resolve(x.name, x.disambiguator), name: x.name }));
     for (let i = 0; i < ents.length; i++) {
       for (let j = i + 1; j < ents.length; j++) {
         const a = ents[i].key, b = ents[j].key;
@@ -298,9 +361,15 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
     homonymRisk: !n.disambiguator && (n.namesSeen.length > 1 ? true : false)
   }));
 
+  const activeLinks = (entityLinks || []).filter((l) => !l.retractedAt);
   return {
     project: { id: project.id, title: project.title },
     filter,
+    entityLinks: activeLinks.map((l) => ({
+      id: l.id, from: l.from, to: l.to, identifier: l.identifier, identifierType: l.identifierType || null,
+      reason: l.reason, createdAt: l.createdAt,
+      note: 'ligação declarada pelo utilizador com identificador; reversível e auditada'
+    })),
     nodes: nodeList,
     edges,
     candidates,
@@ -323,6 +392,7 @@ export function buildGraph({ project, evidence, relations, claims, window: win }
       inferred: edges.filter((e) => e.inferred).length,
       candidates: candidates.length,
       entitiesWithoutDisambiguator: nodeList.filter((n) => !n.disambiguator).length,
+      mergedByLink: nodeList.filter((n) => (n.aliases || []).length).length,
       evidenceUsed: new Set(edges.flatMap((e) => e.evidenceIds)).size,
       evidenceTotal: active.length,
       claims: (claims || []).length

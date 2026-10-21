@@ -107,6 +107,12 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Grafo na interface | SVG próprio: zoom, arrasto, procura, filtros por tipo, co-ocorrências a pedido, proveniência ao clicar, legenda com 4 avisos | `tests/account-ui.mjs` («grafo das provas desenha…») · `docs/shot-21-grafo.png` | P2 concluído | — |
 | Filtro temporal do grafo | **Implementado e testado**: `periodFrom`/`periodTo`, datas validadas (impossíveis → 400), relações sem período e com período aberto ficam incluídas e contadas na resposta | `tests/fase3c.mjs` · `docs/GRAFO.md` §10 | P3 concluído | Caminhos com restrições |
 | Exportação do grafo | **Implementada e testada**: JSON/SVG/DOT no servidor com proveniência e avisos, PNG no browser; cada exportação auditada | `tests/fase3c.mjs` (5 testes) · `docs/exemplo-exportacao-grafo.svg` · `docs/shot-24-exportacao-svg.png` | P3 concluído | — |
+| Memória da investigação | **Implementada e testada**: 5 tipos, decisões e correcções com motivo obrigatório, append-only, arquivar com motivo, não altera estados, exportação MD | `tests/fase3d.mjs` · `docs/ESTADO-ATUAL.md` | P3 concluído | — |
+| Resumo descarregável | **Implementado e testado**: JSON, MD, CSV (BOM, «;»), PDF próprio sem dependências; marca conclusões acima do sustentado | `tests/fase3d.mjs` · `docs/exemplo-resumo.pdf` | P3 concluído | — |
+| Cópia de segurança e reposição | **Implementadas e testadas**: exportação sem chaves/hashes, reposição com remapeamento de ligações | `tests/fase3d.mjs` | P1 concluído | Cópia automática agendada (exige disco) |
+| Homónimos com identificador | **Implementado e testado**: ligação declarada, reversível, auditada; sem identificador recusada | `tests/fase3d.mjs` · `docs/GRAFO.md` | P3 concluído | — |
+| Caminhos com restrições | **Implementado e testado**: por tipo, sem inferências, por janela; conta as arestas excluídas | `tests/fase3d.mjs` | P3 concluído | — |
+| Estado do trabalho documentado | `docs/ESTADO-ATUAL.md` com bloco gerado por `tools/status.mjs --check` | `npm run status:check` | P0 concluído | — |
 | Orçamento dos agentes | **Implementado e testado**: 40 execuções/projecto/dia (locais), 8 (IA), 120 por conta; `429` antes de executar, aviso a 2 restantes, `resetsAt` | `tests/fase3c.mjs` · `docs/AGENTES-P3.md` §7 | P3 concluído | Fila persistente de execuções |
 | Secção 11 do relatório (Relações) | Deixou de estar «indisponível» quando há relações: lista-as com provas, origens e avisos | `tests/graph.mjs` e `tests/research.mjs` | P2 concluído | — |
 
@@ -136,8 +142,7 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 - **P3 (feito agora)**: 13 agentes com execuções persistidas, auditor adversário com 10 regras,
   caminho entre entidades, cronologia e vista de contradições. Corrigida a chave de origem: uma cópia
   sindicada deixa de contar como origem independente (era um furo real na corroboração).
-- **P3 (em falta)**: caminhos com restrições (datas/tipos), fusão assistida de homónimos,
-  extracção automática de entidades, fila persistente de execuções.
+- **P3 (em falta)**: extracção automática de entidades, fila persistente de execuções.
 - **P2 (em falta)**: extracção de PDF/OCR; descoberta
   automática de fontes; router com preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

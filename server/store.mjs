@@ -9,12 +9,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
   users: [], sessions: [], projects: [], credentials: [], usage: [],
-  evidence: [], claims: [], runs: [], relations: [], agentRuns: [],
+  evidence: [], claims: [], runs: [], relations: [], agentRuns: [], notes: [], entityLinks: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -54,6 +54,14 @@ const MIGRATIONS = {
     const changes = [];
     if (!Array.isArray(db.agentRuns)) db.agentRuns = [];
     if (missing && missing.indexOf('agentRuns') >= 0) changes.push('criada a colecção agentRuns (execuções dos 13 agentes)');
+    return changes;
+  },
+  5: (db, missing) => {
+    const changes = [];
+    if (!Array.isArray(db.notes)) db.notes = [];
+    if (missing && missing.indexOf('notes') >= 0) changes.push('criada a colecção notes (memória da investigação)');
+    if (!Array.isArray(db.entityLinks)) db.entityLinks = [];
+    if (missing && missing.indexOf('entityLinks') >= 0) changes.push('criada a colecção entityLinks (fusão de homónimos com identificador, reversível)');
     return changes;
   }
 };
@@ -153,6 +161,8 @@ export function createStore(dir) {
       db.credentials = db.credentials.filter((c) => c.userId !== uid);
       const mine = new Set(db.projects.filter((p) => p.ownerId === uid).map((p) => p.id));
       db.evidence = db.evidence.filter((e) => !mine.has(e.projectId));
+      db.notes = db.notes.filter((n) => !mine.has(n.projectId));
+      db.entityLinks = db.entityLinks.filter((l) => !mine.has(l.projectId));
       db.claims = db.claims.filter((c) => !mine.has(c.projectId));
       db.runs = db.runs.filter((r) => !mine.has(r.projectId));
       db.relations = db.relations.filter((r) => !mine.has(r.projectId));
@@ -384,6 +394,48 @@ export function createStore(dir) {
     latestAgentRun(projectId, agentId) {
       const list = db.agentRuns.filter((r) => r.projectId === projectId && r.agentId === agentId);
       return list.length ? list[list.length - 1] : null;
+    },
+
+    /* --- memória da investigação (append-only, com histórico) --- */
+    async addNote(projectId, note, by) {
+      const now = new Date().toISOString();
+      const n = Object.assign({ id: 'mem-' + crypto.randomBytes(8).toString('base64url'),
+        projectId, createdAt: now, updatedAt: now, createdBy: by || null,
+        archivedAt: null, archiveReason: null, history: [], links: {}, tags: [] }, note || {});
+      n.history.push({ at: now, action: 'criada', by: by || null, kind: n.kind || null });
+      db.notes.push(n); await persist(); return n;
+    },
+    notesOf(projectId) { return db.notes.filter((n) => n.projectId === projectId); },
+    noteById(id) { return db.notes.find((n) => n.id === id) || null; },
+    async updateNote(id, patch, by, action) {
+      const n = db.notes.find((x) => x.id === id); if (!n) return null;
+      Object.assign(n, patch, { updatedAt: new Date().toISOString() });
+      n.history.push({ at: n.updatedAt, action: action || 'actualizada', by: by || null, fields: Object.keys(patch) });
+      await persist(); return n;
+    },
+    async archiveNote(id, reason, by) {
+      const n = db.notes.find((x) => x.id === id); if (!n) return null;
+      if (n.archivedAt) return n;
+      n.archivedAt = new Date().toISOString();
+      n.archiveReason = String(reason || '').slice(0, 500);
+      n.history.push({ at: n.archivedAt, action: 'arquivada', by: by || null, reason: n.archiveReason });
+      await persist(); return n;
+    },
+
+    /* --- fusão de homónimos: ligações declaradas, reversíveis --- */
+    async addEntityLink(projectId, link, by) {
+      const l = Object.assign({ id: 'elnk-' + crypto.randomBytes(8).toString('base64url'),
+        projectId, createdAt: new Date().toISOString(), createdBy: by || null, retractedAt: null, retractReason: null }, link || {});
+      db.entityLinks.push(l); await persist(); return l;
+    },
+    entityLinksOf(projectId) { return db.entityLinks.filter((l) => l.projectId === projectId); },
+    async retractEntityLink(id, reason, by) {
+      const l = db.entityLinks.find((x) => x.id === id); if (!l) return null;
+      if (l.retractedAt) return l;
+      l.retractedAt = new Date().toISOString();
+      l.retractReason = String(reason || '').slice(0, 500);
+      l.retractedBy = by || null;
+      await persist(); return l;
     },
 
     /* --- execuções de pesquisa (registadas, retomáveis) --- */

@@ -478,3 +478,44 @@ Estado do cofre em produção: /ready → keyVault {ok:true, mode:"aes-256-gcm"}
 configurado pelo proprietário resolveu o bloqueio da fase anterior. A IA continua
 `nao-executado` enquanto não existir uma chave de fornecedor validada: nenhuma foi criada nem
 pedida.
+
+== 29. FASE 3D — MEMÓRIA, RESUMO DESCARREGÁVEL, CÓPIA DE SEGURANÇA, HOMÓNIMOS E CAMINHOS RESTRITOS (2026-10-21)
+
+Novo: tests/fase3d.mjs — 18 asserções, todas verdes.
+  · memória: criação com ligação a provas e auditoria; decisão sem motivo recusada; tipo inventado
+    recusado; ligação a prova de outro projecto recusada; arquivar exige motivo e conserva a
+    entrada; a memória NÃO altera estados de conclusões nem cria provas; isolamento entre contas;
+  · homónimos: sem identificador recusado; com identificador o grafo passa de 3 para 2 nós, o
+    identificador torna-se o desambiguador e o alias fica registado; ligação reversível e auditada;
+  · caminhos restritos: excluir inferidas devolve o caminho alternativo de 2 saltos sem passo
+    inferido; filtro por tipo deixa de encontrar e explica porquê; janela temporal recusa a relação
+    de 2021; passo sem período é incluído e declarado; data inválida assinalada;
+  · resumo: JSON marca «acima do sustentado» quando o estado excede as provas (testado com uma
+    conclusão forçada a corroborada-independente com 2 origens); MD com aviso e secções; CSV com BOM
+    e «;»; PDF com assinatura, %%EOF, conclusões e o aviso no rodapé; formato inválido → 400;
+    descarregamento auditado; outra conta → 404;
+  · gerador de PDF: paginação com 4000 palavras, segunda parte preservada, caracteres fora do
+    Latin-1 substituídos, ficheiro terminado correctamente (validado também com pdfinfo/pdftotext
+    do poppler: título, 2 páginas, texto com acentos);
+  · cópia de segurança: inclui dados, NÃO inclui chave em claro, hash/salt nem cifra, e declara o
+    que fica de fora; reposição cria projectos novos com marca restoredFrom, remapeia conclusões →
+    provas e memória, não deixa ligações penduradas; formato errado → 400; repor a cópia de outra
+    conta não dá acesso ao projecto original (404).
+
+Correcções que os testes provocaram:
+  1. `POST /api/claims` descartava `evidenceIds` em silêncio — a conclusão nascia «sem prova» sem
+     aviso. Agora valida e liga as provas indicadas (ou recusa com 400);
+  2. a fusão de homónimos exigia que a entidade de referência já trouxesse desambiguador; agora o
+     identificador declarado É o desambiguador canónico, e o nó fundido mostra o alias e a origem
+     do identificador;
+  3. aliases de nomes usados só como extremo de uma relação perdiam-se (o nó já existia e não era
+     revisitado);
+  4. `/api/projects` não expunha `restoredFrom`: um projecto reposto era indistinguível de um criado
+     à mão.
+
+Interface: tests/account-ui.mjs 15/15 (novo teste de memória, resumo e fusão), 0 erros de runtime;
+capturas docs/shot-26-memoria.png.
+Regressão: server 26/26 · evidence 17/17 · graph 13/13 · agents-p3 16/16 · fase3c 28/28.
+Esquema: v5 (migração 4→5 registada: colecções notes e entityLinks).
+Ferramenta nova: tools/status.mjs (--write actualiza o bloco automático de docs/ESTADO-ATUAL.md,
+--check falha se a documentação divergir do código).

@@ -15,12 +15,15 @@ import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES, periodWindo
 import { graphToSvg, graphToDot, graphExportPayload } from './graph-export.mjs';
 import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_REDIRECTS } from './access.mjs';
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
+import { validateEntityLink } from './graph.mjs';
+import { MEMORY_KINDS, MEMORY_LIMITS, validateMemory, memoryToMarkdown } from './memory.mjs';
+import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3c';
+const APP_VERSION = '2.0.0-fase3d';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -126,15 +129,39 @@ export async function createApi(opts) {
 
   /* Caminho mais curto no grafo (BFS). Devolve cada passo com as provas de cada aresta:
      um caminho NÃO é prova de coordenação — junta-se a explicação no resultado. */
-  function shortestPath(g, fromKey, toKey) {
+  function shortestPath(g, fromKey, toKey, opts) {
+    const o = opts || {};
+    const allowed = (e) => {
+      if (o.excludeInferred && e.inferred) return false;
+      if (o.types && o.types.length && o.types.indexOf(e.type) < 0) return false;
+      const p = e.period || {};
+      /* um passo sem período não é excluído por data: é contado e o caminho diz que o incluiu */
+      const inWin = relationInWindow(p, { from: o.notBefore || null, to: o.notAfter || null, applied: !!(o.notBefore || o.notAfter) });
+      if (inWin === false) return false;
+      return true;
+    };
+    const all = g.edges || [];
+    const usable = all.filter(allowed);
     const adj = new Map();
-    g.edges.forEach((e) => {
+    usable.forEach((e) => {
       if (!adj.has(e.from)) adj.set(e.from, []);
       if (!adj.has(e.to)) adj.set(e.to, []);
       adj.get(e.from).push({ to: e.to, edge: e });
       adj.get(e.to).push({ to: e.from, edge: e });
     });
-    if (!adj.has(fromKey) || !adj.has(toKey)) return { found: false, reason: 'uma das entidades não existe no grafo' };
+    const restricoes = {
+      aplicadas: !!(o.types || o.excludeInferred || o.notBefore || o.notAfter),
+      tipos: o.types || null, excluirInferidas: !!o.excludeInferred,
+      periodo: (o.notBefore || o.notAfter) ? { de: o.notBefore || null, ate: o.notAfter || null } : null,
+      arestasNoGrafo: all.length, arestasUsadas: usable.length,
+      arestasExcluidas: all.length - usable.length
+    };
+    if (!adj.has(fromKey) || !adj.has(toKey)) {
+      return { found: false, restricoes,
+        reason: restricoes.aplicadas
+          ? 'uma das entidades não tem qualquer relação que cumpra as restrições pedidas'
+          : 'uma das entidades não existe no grafo' };
+    }
     const prev = new Map([[fromKey, null]]);
     const queue = [fromKey];
     while (queue.length) {
@@ -144,18 +171,27 @@ export async function createApi(opts) {
         if (!prev.has(n.to)) { prev.set(n.to, { from: cur, edge: n.edge }); queue.push(n.to); }
       });
     }
-    if (!prev.has(toKey)) return { found: false, reason: 'nenhum caminho registado entre as duas entidades' };
+    if (!prev.has(toKey)) {
+      return { found: false, restricoes,
+        reason: restricoes.aplicadas
+          ? 'nenhum caminho registado cumpre as restrições pedidas (com todas as relações, o caminho pode existir)'
+          : 'nenhum caminho registado entre as duas entidades' };
+    }
     const passos = [];
     let cur = toKey;
     while (prev.get(cur)) {
       const step = prev.get(cur);
       passos.unshift({ de: step.edge.fromName, para: step.edge.toName, id: step.edge.id, tipo: step.edge.label,
-        confianca: step.edge.confidence, provas: step.edge.evidenceIds, inferida: step.edge.inferred });
+        confianca: step.edge.confidence, provas: step.edge.evidenceIds, inferida: step.edge.inferred,
+        periodo: step.edge.period || { from: null, to: null } });
       cur = step.from;
     }
+    const semPeriodo = passos.filter((p) => !p.periodo.from && !p.periodo.to).length;
     return {
-      found: true, passos, saltos: passos.length,
-      aviso: 'um caminho é uma sequência de relações registadas, não prova de coordenação, intenção ou controlo comum; cada passo traz as suas provas e a sua confiança'
+      found: true, passos, saltos: passos.length, restricoes,
+      semPeriodo: restricoes.periodo ? semPeriodo : 0,
+      aviso: 'um caminho é uma sequência de relações registadas, não prova de coordenação, intenção ou controlo comum; cada passo traz as suas provas e a sua confiança' +
+        (restricoes.periodo && semPeriodo ? ' · ' + semPeriodo + ' passo(s) sem período declarado foram incluídos: não se exclui por data o que não tem data' : '')
     };
   }
 
@@ -331,8 +367,19 @@ export async function createApi(opts) {
   function projectGraph(prj, pid, win) {
     return buildGraph({
       project: prj, evidence: store.evidenceOf(pid), relations: store.relationsOf(pid),
-      claims: store.claimsOf(pid), window: win
+      claims: store.claimsOf(pid), window: win, entityLinks: store.entityLinksOf(pid)
     });
+  }
+
+  /* parâmetros de restrição do caminho (nomes próprios: não colidem com from/to) */
+  function pathOptions(url) {
+    const types = String(url.searchParams.get('pathTypes') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const w = periodWindow({ from: url.searchParams.get('pathNotBefore'), to: url.searchParams.get('pathNotAfter') });
+    return { ok: w.ok, error: w.error, opts: {
+      types: types.length ? types : null,
+      excludeInferred: url.searchParams.get('pathExcludeInferred') === '1',
+      notBefore: w.window && w.window.from, notAfter: w.window && w.window.to
+    } };
   }
 
   /* janela temporal vinda da query. Nomes explícitos (periodFrom/periodTo, ou
@@ -539,6 +586,173 @@ export async function createApi(opts) {
         });
       }
 
+      /* ---------- cópia de segurança completa (e reposição) ----------
+         O plano gratuito tem disco efémero: um deploy apaga os dados. A cópia
+         não é um extra, é a única forma de o utilizador não perder trabalho. */
+      if (p === '/api/auth/backup' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const projects = store.projectsOf(a.user.id).map((prj) => ({
+          project: prj,
+          evidence: store.evidenceOf(prj.id),
+          claims: store.claimsOf(prj.id),
+          relations: store.relationsOf(prj.id),
+          runs: store.runsOf(prj.id),
+          agentRuns: store.agentRunsOf(prj.id),
+          notes: store.notesOf(prj.id),
+          entityLinks: store.entityLinksOf(prj.id)
+        }));
+        const payload = {
+          format: 'meridiano-backup/1',
+          exportedAt: now(),
+          app: { version: APP_VERSION, schemaVersion: store.schemaVersion() },
+          user: { id: a.user.id, email: a.user.email, role: a.user.role, createdAt: a.user.createdAt },
+          counts: {
+            projects: projects.length,
+            evidence: projects.reduce((n, x) => n + x.evidence.length, 0),
+            claims: projects.reduce((n, x) => n + x.claims.length, 0),
+            relations: projects.reduce((n, x) => n + x.relations.length, 0),
+            notes: projects.reduce((n, x) => n + x.notes.length, 0)
+          },
+          notIncluded: ['chaves de IA (guardadas apenas cifradas, nunca exportadas)', 'sessões e tokens',
+            'palavra-passe', 'eventos de auditoria de outros utilizadores'],
+          projects
+        };
+        await store.audit({ type: 'backup_exported', actorId: a.user.id, subjectId: a.user.id, ip: ipOf(req),
+          action: 'export_backup', detail: { projects: payload.counts.projects, evidence: payload.counts.evidence } });
+        await store.count('backups_exported');
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'content-disposition': 'attachment; filename="meridiano-copia-' + now().slice(0, 10) + '.json"',
+          'cache-control': 'no-store'
+        });
+        return res.end(JSON.stringify(payload, null, 2));
+      }
+      if (p === '/api/auth/restore' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const backup = body.backup;
+        if (!backup || typeof backup !== 'object') return err(res, 400, 'corpo sem campo «backup»');
+        if (backup.format !== 'meridiano-backup/1') {
+          return err(res, 400, 'formato de cópia desconhecido', { expected: 'meridiano-backup/1', got: backup.format || null });
+        }
+        const list = Array.isArray(backup.projects) ? backup.projects : null;
+        if (!list) return err(res, 400, 'a cópia não tem lista de projectos');
+        if (list.length > 50) return err(res, 400, 'a cópia excede 50 projectos: reponha por partes');
+        const STR = (v, n) => (v == null ? null : String(v).slice(0, n || 2000));
+        const DATE = (v) => { const d = new Date(v || ''); return isNaN(d.getTime()) ? null : d.toISOString(); };
+        const restored = { projects: 0, evidence: 0, claims: 0, relations: 0, notes: 0, entityLinks: 0, runs: 0, skipped: [] };
+        for (const entry of list) {
+          const src = entry && entry.project;
+          if (!src || !STR(src.title)) { restored.skipped.push({ project: null, reason: 'entrada sem título de projecto' }); continue; }
+          const prj = await store.createProject(a.user.id, {
+            title: STR(src.title, 200), question: STR(src.question, 2000) || '', objective: STR(src.objective, 4000) || '',
+            status: ['draft', 'active', 'paused', 'archived'].includes(src.status) ? src.status : 'draft',
+            referenceDate: DATE(src.referenceDate), scope: src.scope && typeof src.scope === 'object' ? {
+              geo: STR(src.scope.geo, 200) || '', languages: Array.isArray(src.scope.languages) ? src.scope.languages.slice(0, 12).map((x) => STR(x, 40)) : [],
+              period: src.scope.period && typeof src.scope.period === 'object' ? { from: DATE(src.scope.period.from), to: DATE(src.scope.period.to) } : { from: null, to: null }
+            } : { geo: '', period: { from: null, to: null }, languages: [] },
+            hypotheses: Array.isArray(src.hypotheses) ? src.hypotheses.slice(0, 50).map((x) => STR(x, 500)) : [],
+            subquestions: Array.isArray(src.subquestions) ? src.subquestions.slice(0, 50).map((x) => STR(x, 500)) : [],
+            completionCriteria: Array.isArray(src.completionCriteria) ? src.completionCriteria.slice(0, 30).map((x) => STR(x, 500)) : [],
+            prioritySources: Array.isArray(src.prioritySources) ? src.prioritySources.slice(0, 30).map((x) => STR(x, 300)) : [],
+            excludedSources: Array.isArray(src.excludedSources) ? src.excludedSources.slice(0, 30).map((x) => STR(x, 300)) : [],
+            restoredFrom: { backupExportedAt: backup.exportedAt || null, originalProjectId: STR(src.id, 80) }
+          });
+          restored.projects++;
+          const pid = prj.id;
+          const evMap = new Map(), clMap = new Map(), relMap = new Map(), runMap = new Map();
+          for (const e of (entry.evidence || []).slice(0, 1000)) {
+            if (!STR(e.excerpt) || !STR(e.title)) { restored.skipped.push({ project: pid, reason: 'prova sem título ou excerto' }); continue; }
+            const saved = await store.addEvidence(pid, {
+              title: STR(e.title, 300), sourceType: e.sourceType || 'secundaria', stance: e.stance || 'favoravel',
+              originalUrl: STR(e.originalUrl, 1500), archiveUrl: STR(e.archiveUrl, 1500), canonicalUrl: STR(e.canonicalUrl, 1500),
+              excerpt: STR(e.excerpt, 6000), location: STR(e.location, 300), language: STR(e.language, 20),
+              author: STR(e.author, 200), publicationDate: DATE(e.publicationDate), eventDate: DATE(e.eventDate),
+              collectionDate: DATE(e.collectionDate), verificationDate: DATE(e.verificationDate),
+              extractionMethod: e.extractionMethod || 'manual', limitations: STR(e.limitations, 1000),
+              validationState: STATES.includes(e.validationState) ? e.validationState : 'insuficiente',
+              entities: Array.isArray(e.entities) ? e.entities.slice(0, 50) : [], originKey: STR(e.originKey, 200),
+              contentHash: STR(e.contentHash, 200), dedupeKey: STR(e.dedupeKey, 300),
+              syndicationOf: STR(e.syndicationOf, 1500), retractedAt: DATE(e.retractedAt), retractReason: STR(e.retractReason, 500),
+              access: e.access && typeof e.access === 'object' ? e.access : null,
+              createdBy: a.user.id
+            });
+            evMap.set(e.id, saved.id);
+            restored.evidence++;
+          }
+          for (const c of (entry.claims || []).slice(0, 500)) {
+            if (!STR(c.text)) continue;
+            const saved = await store.createClaim(pid, {
+              text: STR(c.text, 2000), kind: c.kind || 'facto',
+              state: STATES.includes(c.state) ? c.state : 'hipotese',
+              confidence: c.confidence || null, reasoning: STR(c.reasoning, 4000),
+              evidenceIds: (Array.isArray(c.evidenceIds) ? c.evidenceIds : []).map((id) => evMap.get(id)).filter(Boolean),
+              createdBy: a.user.id
+            });
+            clMap.set(c.id, saved.id);
+            restored.claims++;
+          }
+          for (const r of (entry.relations || []).slice(0, 500)) {
+            if (!STR(r.from) || !STR(r.to)) continue;
+            const saved = await store.addRelation(pid, {
+              from: STR(r.from, 200), to: STR(r.to, 200), type: r.type,
+              fromDisambiguator: STR(r.fromDisambiguator, 160), toDisambiguator: STR(r.toDisambiguator, 160),
+              fromType: r.fromType || null, toType: r.toType || null, direction: r.direction || 'directed',
+              period: r.period || { from: null, to: null },
+              evidenceIds: (Array.isArray(r.evidenceIds) ? r.evidenceIds : []).map((id) => evMap.get(id)).filter(Boolean),
+              inferred: r.inferred === true, reasoning: STR(r.reasoning, 2000), limitations: STR(r.limitations, 1000),
+              retractedAt: DATE(r.retractedAt), retractReason: STR(r.retractReason, 500)
+            }, a.user.id);
+            relMap.set(r.id, saved.id);
+            restored.relations++;
+          }
+          for (const n of (entry.notes || []).slice(0, 1000)) {
+            if (!STR(n.title) || !STR(n.body)) continue;
+            const links = n.links || {};
+            await store.addNote(pid, {
+              kind: MEMORY_KINDS[n.kind] ? n.kind : 'nota', title: STR(n.title, 200), body: STR(n.body, 8000),
+              tags: Array.isArray(n.tags) ? n.tags.slice(0, 8).map((t) => STR(t, 40)) : [],
+              reason: STR(n.reason, 2000), pinned: n.pinned === true,
+              links: {
+                evidenceIds: (links.evidenceIds || []).map((id) => evMap.get(id)).filter(Boolean),
+                claimIds: (links.claimIds || []).map((id) => clMap.get(id)).filter(Boolean),
+                relationIds: (links.relationIds || []).map((id) => relMap.get(id)).filter(Boolean),
+                runIds: []
+              },
+              archivedAt: DATE(n.archivedAt), archiveReason: STR(n.archiveReason, 500)
+            }, a.user.id);
+            restored.notes++;
+          }
+          for (const l of (entry.entityLinks || []).slice(0, 500)) {
+            if (!l.from || !l.to || !STR(l.identifier)) continue;
+            const saved = await store.addEntityLink(pid, {
+              from: l.from, to: l.to, identifier: STR(l.identifier, 120),
+              identifierType: STR(l.identifierType, 40), reason: STR(l.reason, 1000),
+              retractedAt: DATE(l.retractedAt), retractReason: STR(l.retractReason, 500)
+            }, a.user.id);
+            void saved;
+            restored.entityLinks++;
+          }
+          for (const r of (entry.runs || []).slice(0, 200)) {
+            await store.createRun(pid, {
+              profile: r.profile || 'normal', status: r.status || 'stopped', step: r.step || 0,
+              steps: Array.isArray(r.steps) ? r.steps.slice(0, 30) : [], stopReason: STR(r.stopReason, 500),
+              stopDetail: STR(r.stopDetail, 1000), sourcesConsulted: Array.isArray(r.sourcesConsulted) ? r.sourcesConsulted.slice(0, 200) : [],
+              finishedAt: DATE(r.finishedAt)
+            });
+            runMap.set(r.id, true);
+            restored.runs++;
+          }
+        }
+        await store.audit({ type: 'backup_restored', actorId: a.user.id, subjectId: a.user.id, ip: ipOf(req),
+          action: 'restore_backup', detail: { projetos: restored.projects, provas: restored.evidence, conclusoes: restored.claims } });
+        await store.count('backups_restored');
+        return json(res, 201, { ok: true, restored,
+          notRestored: ['chaves de IA (a cópia nunca as inclui: reintroduza-as no separador de chaves)', 'execuções dos agentes de IA (histórico de execução)'],
+          note: 'cada projecto reposto recebe identificadores novos: as ligações entre provas, conclusões e relações foram remapeadas' });
+      }
+
       if (p === '/api/auth/account' && method === 'DELETE') {
         const a = await requireUser(req, res); if (!a) return;
         if (!requireCsrf(req, res, a)) return;
@@ -679,6 +893,135 @@ export async function createApi(opts) {
         return json(res, 200, { ok: true, evidence: out });
       }
 
+      /* ---------- memória da investigação ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/memory$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const notes = store.notesOf(pid);
+        if (String(url.searchParams.get('format') || 'json') === 'md') {
+          const md = memoryToMarkdown(notes, { projectTitle: prj.title });
+          return jsonOrFile(res, 200, md, 'text/markdown; charset=utf-8', 'meridiano-memoria-' + pid + '.md');
+        }
+        return json(res, 200, {
+          ok: true, kinds: MEMORY_KINDS, limits: MEMORY_LIMITS,
+          notes: notes.slice().sort((a2, b2) => String(b2.createdAt).localeCompare(String(a2.createdAt))),
+          counts: notes.reduce((acc, n) => { const k = n.archivedAt ? 'arquivadas' : n.kind; acc[k] = (acc[k] || 0) + 1; return acc; }, {}),
+          note: 'a memória explica decisões e lacunas; não altera estados de conclusões nem cria provas'
+        });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/memory$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const v = validateMemory(body, { count: store.notesOf(pid).filter((n) => !n.archivedAt).length });
+        if (!v.ok) return err(res, 400, 'entrada de memória recusada: ' + v.errors.join('; '), { errors: v.errors });
+        /* as ligações têm de apontar para objectos deste projecto */
+        const evIds = new Set(store.evidenceOf(pid).map((e) => e.id));
+        const clIds = new Set(store.claimsOf(pid).map((c) => c.id));
+        const rlIds = new Set(store.relationsOf(pid).map((r) => r.id));
+        const bad = v.note.links.evidenceIds.filter((id) => !evIds.has(id))
+          .concat(v.note.links.claimIds.filter((id) => !clIds.has(id)))
+          .concat(v.note.links.relationIds.filter((id) => !rlIds.has(id)));
+        if (bad.length) return err(res, 400, 'ligações a objectos inexistentes neste projecto: ' + bad.join(', '));
+        const saved = await store.addNote(pid, v.note, a.user.id);
+        await store.audit({ type: 'memory_added', actorId: a.user.id, subjectId: saved.id, action: 'add_memory',
+          detail: { projectId: pid, kind: saved.kind, pinned: saved.pinned } });
+        await store.count('memory_entries');
+        return json(res, 201, { ok: true, note: saved });
+      }
+      if (p.match(/^\/api\/memory\/[^/]+$/) && (method === 'PATCH' || method === 'DELETE')) {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = p.split('/')[3];
+        const n = store.noteById(id);
+        if (!n || !projectFor(a, n.projectId)) return err(res, 404, 'entrada de memória não encontrada');
+        const body = await readBody(req);
+        if (method === 'DELETE') {
+          const reason = String(body.reason || '').trim();
+          if (reason.length < 5) return err(res, 400, 'arquivar uma entrada exige motivo escrito (mínimo 5 caracteres)');
+          const out = await store.archiveNote(id, reason, a.user.id);
+          await store.audit({ type: 'memory_archived', actorId: a.user.id, subjectId: id, action: 'archive_memory',
+            reason, detail: { projectId: n.projectId } });
+          return json(res, 200, { ok: true, note: out, note_text: 'a entrada foi arquivada, não apagada: mantém-se no histórico' });
+        }
+        const patch = {};
+        if (body.title !== undefined) patch.title = String(body.title).trim().slice(0, MEMORY_LIMITS.title);
+        if (body.body !== undefined) patch.body = String(body.body).trim().slice(0, MEMORY_LIMITS.body);
+        if (body.reason !== undefined) patch.reason = String(body.reason).trim().slice(0, 2000) || null;
+        if (body.pinned !== undefined) patch.pinned = body.pinned === true;
+        if (!Object.keys(patch).length) return err(res, 400, 'nada para actualizar');
+        if (patch.title !== undefined && patch.title.length < 3) return err(res, 400, 'título demasiado curto');
+        if (patch.body !== undefined && patch.body.length < 3) return err(res, 400, 'corpo demasiado curto');
+        const out = await store.updateNote(id, patch, a.user.id, 'actualizada');
+        await store.audit({ type: 'memory_updated', actorId: a.user.id, subjectId: id, action: 'update_memory',
+          detail: { fields: Object.keys(patch) } });
+        return json(res, 200, { ok: true, note: out });
+      }
+
+      /* ---------- fusão de homónimos com identificador ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/entities\/link$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const v = validateEntityLink(body);
+        if (!v.ok) return err(res, 400, 'fusão recusada: ' + v.errors.join('; '), { errors: v.errors });
+        const link = await store.addEntityLink(pid, v.link, a.user.id);
+        await store.audit({ type: 'entity_link_created', actorId: a.user.id, subjectId: link.id, action: 'link_entities',
+          detail: { projectId: pid, from: link.from.name, to: link.to.name, identifier: link.identifier } });
+        await store.count('entity_links');
+        return json(res, 201, { ok: true, link,
+          note: 'ligação declarada e reversível: o grafo passa a tratar as duas entradas como a mesma entidade, com o identificador indicado' });
+      }
+      if (p.match(/^\/api\/entity-links\/[^/]+$/) && method === 'DELETE') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = p.split('/')[3];
+        const link = store.entityLinksOf ? (store.data.entityLinks || []).find((l) => l.id === id) : null;
+        if (!link || !projectFor(a, link.projectId)) return err(res, 404, 'ligação não encontrada');
+        const body = await readBody(req);
+        const reason = String(body.reason || '').trim();
+        if (reason.length < 5) return err(res, 400, 'desfazer uma ligação exige motivo escrito (mínimo 5 caracteres)');
+        const out = await store.retractEntityLink(id, reason, a.user.id);
+        await store.audit({ type: 'entity_link_retracted', actorId: a.user.id, subjectId: id, action: 'unlink_entities',
+          reason, detail: { projectId: link.projectId } });
+        return json(res, 200, { ok: true, link: out });
+      }
+
+      /* ---------- resumo descarregável (MD / JSON / CSV / PDF) ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/summary$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const format = String(url.searchParams.get('format') || 'json').toLowerCase();
+        if (!['json', 'md', 'csv', 'pdf'].includes(format)) return err(res, 400, 'formato inválido', { allowed: ['json', 'md', 'csv', 'pdf'] });
+        const s = buildSummary({
+          project: prj, evidence: store.evidenceOf(pid), claims: store.claimsOf(pid),
+          relations: store.relationsOf(pid), runs: store.runsOf(pid), memory: store.notesOf(pid),
+          usage: store.data.usage.filter((u) => u.userId === a.user.id), agentRuns: store.agentRunsOf(pid)
+        });
+        await store.audit({ type: 'summary_downloaded', actorId: a.user.id, subjectId: pid, action: 'download_summary',
+          detail: { projectId: pid, format, conclusoes: s.estado.conclusoes, provas: s.estado.provasActivas } });
+        await store.count('summary_downloads');
+        if (format === 'pdf') {
+          const buf = summaryToPdf(s);
+          res.writeHead(200, { 'content-type': 'application/pdf',
+            'content-disposition': 'attachment; filename="' + summaryFilename(prj, 'pdf') + '"',
+            'content-length': buf.length, 'cache-control': 'no-store' });
+          return res.end(buf);
+        }
+        if (format === 'md') return jsonOrFile(res, 200, summaryToMarkdown(s), 'text/markdown; charset=utf-8', summaryFilename(prj, 'md'));
+        if (format === 'csv') return jsonOrFile(res, 200, summaryToCsv(s), 'text/csv; charset=utf-8', summaryFilename(prj, 'csv'));
+        return json(res, 200, Object.assign({ ok: true }, s));
+      }
+
       /* ---------- verificação de acesso às fontes (uma página, a pedido) ----------
          Não contorna barreiras, não guarda conteúdo, não muda estados sozinho. */
       if (p.match(/^\/api\/evidence\/[^/]+\/check-access$/) && method === 'POST') {
@@ -755,10 +1098,19 @@ export async function createApi(opts) {
         if (!['hipotese', 'insuficiente', 'alegacao-atribuida'].includes(state)) {
           return err(res, 409, 'uma alegação nova começa como hipótese/insuficiente/alegação atribuída; o estado forte é atribuído depois de reunir provas e é validado pelo servidor');
         }
+        /* provas indicadas na criação são ligadas aqui: antes eram descartadas em
+           silêncio, o que fazia a conclusão nascer «sem prova» sem aviso */
+        const evidenceIds = Array.isArray(body.evidenceIds) ? body.evidenceIds.slice(0, 30).map(String) : [];
+        if (evidenceIds.length) {
+          const byId = new Map(store.evidenceOf(pid).map((e) => [e.id, e]));
+          const bad = evidenceIds.filter((id) => { const e = byId.get(id); return !e || e.retractedAt; });
+          if (bad.length) return err(res, 400, 'provas inexistentes ou retiradas neste projecto: ' + bad.join(', '));
+        }
         const claim = await store.createClaim(pid, {
           text: text.slice(0, 2000), kind, state,
           confidence: ['baixa', 'media', 'alta'].includes(body.confidence) ? body.confidence : null,
-          reasoning: String(body.reasoning || '').slice(0, 4000), createdBy: a.user.id
+          reasoning: String(body.reasoning || '').slice(0, 4000), createdBy: a.user.id,
+          evidenceIds: [...new Set(evidenceIds)]
         });
         await store.audit({ type: 'claim_created', actorId: a.user.id, subjectId: claim.id, action: 'create_claim',
           detail: { projectId: pid, kind, state } });
@@ -874,7 +1226,11 @@ export async function createApi(opts) {
           entityTypes: ENTITY_TYPES, relationTypes: RELATION_TYPES,
           contradicoes: contradicoesOf(pid, g),
           caminho: (url.searchParams.get('from') && url.searchParams.get('to'))
-            ? shortestPath(g, url.searchParams.get('from'), url.searchParams.get('to')) : null,
+            ? (() => {
+              const po = pathOptions(url);
+              if (!po.ok) return { found: false, reason: 'restrições de caminho inválidas: ' + po.error };
+              return shortestPath(g, url.searchParams.get('from'), url.searchParams.get('to'), po.opts);
+            })() : null,
           timeline: timelineOf(store, pid, w.window),
           filter: g.filter,
           access: { method: ACCESS_METHOD, maxRedirects: MAX_REDIRECTS, states: ACCESS_STATE_LABEL }
@@ -1248,6 +1604,7 @@ export async function createApi(opts) {
     return {
       id: p.id, title: p.title, question: p.question, status: p.status,
       createdAt: p.createdAt, updatedAt: p.updatedAt, archivedAt: p.archivedAt,
+      restoredFrom: p.restoredFrom || null,
       counters: { documents: (p.documents || []).length, evidence: (p.evidence || []).length, relations: (p.relations || []).length }
     };
   }

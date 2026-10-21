@@ -423,7 +423,7 @@ await t('filtro temporal, exportação e verificação de acesso funcionam na in
   if (!filtro.limpar) throw new Error('sem forma de limpar o filtro');
 
   /* exportação: ligações reais com o filtro aplicado, e PNG a partir do desenho */
-  const links = await p.evaluate(() => [...document.querySelectorAll('#accroot a[download]')].map((a) => ({
+  const links = await p.evaluate(() => [...document.querySelectorAll('#accroot a[href*="/graph/export"]')].map((a) => ({
     text: a.textContent, href: a.getAttribute('href')
   })));
   const formatos = links.map((l) => l.text);
@@ -469,6 +469,84 @@ await t('filtro temporal, exportação e verificação de acesso funcionam na in
   await p.waitForTimeout(400);
   await p.screenshot({ path: '/home/user/docs/shot-23-filtro-exportacao.png' });
   return 'filtro 2024 aplicado com contagens explicadas · 3 exportações com o filtro · SVG com aviso · verificação de acesso na tabela';
+});
+
+await t('memória, resumo descarregável e fusão de homónimos funcionam na interface', async () => {
+  /* memória: registar uma decisão pela interface */
+  await waitText(/Memória da investigação/, 'secção de memória ausente');
+  await p.evaluate(() => {
+    const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Memória da investigação/.test(x.textContent));
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
+  await p.evaluate(() => {
+    const sel = document.getElementById('memKind');
+    const title = document.getElementById('memTitle');
+    const body = document.getElementById('memBody');
+    if (!sel || !title || !body) throw new Error('formulário de memória ausente');
+    sel.value = 'decisao'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await p.evaluate(() => {
+    document.getElementById('memTitle').value = 'Âmbito limitado a Portugal';
+    document.getElementById('memTitle').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('memBody').value = 'Só entidades com registo português nesta fase.';
+    document.getElementById('memBody').dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.evaluate(() => {
+    const r = document.getElementById('memReason');
+    if (r) { r.value = 'pedido do cliente em 2026-10'; r.dispatchEvent(new Event('input', { bubbles: true })); }
+  });
+  await clickText('#accroot .btn', 'Registar na memória');
+  await waitText(/Âmbito limitado a Portugal/, 'entrada de memória não apareceu');
+  const memoriaVisivel = await p.evaluate(() => /Motivo|motivo:/.test(document.getElementById('accroot').textContent));
+  if (!memoriaVisivel) throw new Error('motivo da decisão não é mostrado');
+
+  /* resumo: ligações de descarregamento e conteúdo real */
+  const resumoLinks = await p.evaluate(() => [...document.querySelectorAll('#accroot a[href*="/summary?format="]')].map((a) => a.getAttribute('href')));
+  if (resumoLinks.length !== 4) throw new Error('ligações de resumo: ' + resumoLinks.length);
+  const pdf = await p.evaluate(async (href) => {
+    const r = await fetch(href, { credentials: 'same-origin' });
+    const b = new Uint8Array(await r.arrayBuffer());
+    return { status: r.status, type: r.headers.get('content-type'), sig: String.fromCharCode(...b.slice(0, 5)) };
+  }, resumoLinks.find((h) => /pdf/.test(h)));
+  if (pdf.status !== 200 || pdf.type !== 'application/pdf' || pdf.sig !== '%PDF-') throw new Error('PDF do resumo inválido: ' + JSON.stringify(pdf));
+  const resumo = await p.evaluate(async (href) => {
+    const r = await fetch(href, { credentials: 'same-origin' });
+    const j = await r.json();
+    return { conclusoes: j.estado.conclusoes, avisos: j.avisos.length, acima: (j.conclusoes || []).some((c) => c.acimaDoSustentado) };
+  }, resumoLinks.find((h) => /json/.test(h)));
+  if (resumo.avisos < 4) throw new Error('resumo sem avisos');
+
+  /* fusão de homónimos: sem identificador é recusada, com identificador funciona */
+  await waitText(/Homónimos: fundir com identificador/, 'secção de homónimos ausente');
+  const nomes = await p.evaluate(() => {
+    const a = document.getElementById('linkFrom'), b = document.getElementById('linkTo');
+    if (!a || !b) throw new Error('selectores de fusão ausentes');
+    return [...a.options].map((o) => o.value).filter(Boolean);
+  });
+  if (nomes.length < 2) throw new Error('entidades insuficientes para fundir: ' + nomes.length);
+  await p.evaluate((vals) => {
+    const a = document.getElementById('linkFrom'), b = document.getElementById('linkTo');
+    a.value = vals[0]; a.dispatchEvent(new Event('change', { bubbles: true }));
+    b.value = vals[1]; b.dispatchEvent(new Event('change', { bubbles: true }));
+    const id = document.getElementById('linkIdentifier'), rs = document.getElementById('linkReason');
+    id.value = ''; id.dispatchEvent(new Event('input', { bubbles: true }));
+    rs.value = 'mesmo registo comercial'; rs.dispatchEvent(new Event('input', { bubbles: true }));
+  }, nomes);
+  await clickText('#accroot .btn', 'Fundir');
+  await waitText(/Fusão recusada/, 'fusão sem identificador não foi recusada pela interface');
+  await p.evaluate(() => {
+    const id = document.getElementById('linkIdentifier');
+    id.value = 'NIPC 500000000'; id.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('#accroot .btn', 'Fundir');
+  await waitText(/Ligações declaradas \(1\)/, 'ligação declarada não apareceu');
+  await p.evaluate(() => {
+    const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Memória da investigação/.test(x.textContent));
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
+  await p.waitForTimeout(400);
+  await p.screenshot({ path: '/home/user/docs/shot-26-memoria.png' });
+  return 'decisão registada com motivo · 4 formatos de resumo (PDF ' + pdf.sig + ') · fusão recusada sem identificador e aceite com NIPC';
 });
 
 /* captura final: conclusão com factores de corroboração visíveis */

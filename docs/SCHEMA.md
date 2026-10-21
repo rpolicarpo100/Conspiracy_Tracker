@@ -225,3 +225,40 @@ execuções reais registadas — e nenhuma é simulada.
   leitura a partir das provas ligadas; não é guardada como opinião.
 - `version: 3` acrescenta a colecção `relations`; a migração `2 → 3` regista apenas o que o ficheiro
   não tinha (uma base criada já na v3 declara-o explicitamente em `migrations`).
+
+
+## v5 — memória, ligações de entidades e cópia de segurança
+
+Duas colecções novas (migração `4 → 5`, registada em `migrations`):
+
+### `notes` — memória da investigação
+
+```js
+{ id: 'mem-…', projectId, kind: 'nota'|'decisao'|'glossario'|'lacuna'|'correcao',
+  title, body, reason,            // reason obrigatório em decisao e correcao
+  tags: [], pinned: bool,
+  links: { evidenceIds: [], claimIds: [], relationIds: [], runIds: [] },
+  createdAt, updatedAt, createdBy, archivedAt, archiveReason, history: [] }
+```
+
+Append-only na prática: editar guarda `history`; «apagar» significa arquivar com motivo. Proibição
+explícita: a memória **não** altera `claims[].state` nem cria provas (há teste que compara o estado
+antes e depois).
+
+### `entityLinks` — fusão de homónimos declarada
+
+```js
+{ id: 'elnk-…', projectId, from: { name, disambiguator }, to: { name, disambiguator },
+  identifier: 'NIPC 500000000', identifierType: 'NIPC', reason,
+  createdAt, createdBy, retractedAt, retractReason }
+```
+
+O identificador declarado passa a ser o desambiguador canónico do nó fundido. Sem identificador a
+operação é recusada (`400`); a ligação é reversível (`DELETE /api/entity-links/{id}` com motivo) e
+fica na auditoria (`entity_link_created`, `entity_link_retracted`).
+
+### Reposição de cópias
+
+`GET /api/auth/backup` exporta tudo excepto segredos; `POST /api/auth/restore` cria projectos
+novos com identificadores remapeados (`ev-…`, `cl-…`, `rel-…`), preservando as ligações entre
+provos, conclusões, relações e memória. O projecto reposto leva `restoredFrom`.

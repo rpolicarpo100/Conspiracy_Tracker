@@ -374,7 +374,7 @@ await t('meta publica a política de verificação de acesso', async () => {
   const r = await A.call('GET', '/api/meta');
   ok(r.json.accessChecks && r.json.accessChecks.states.acessivel === 'acessível', 'estados');
   ok(/sem contornar/.test(r.json.accessChecks.policy), 'política');
-  ok(r.json.version === '2.0.0-fase3c', 'versão: ' + r.json.version);
+  ok(r.json.version === '2.0.0-fase3d', 'versão: ' + r.json.version);
 });
 
 srv.kill('SIGKILL');
