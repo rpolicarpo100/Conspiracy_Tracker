@@ -13,7 +13,8 @@
   let S = {
     me: null, csrf: null, tab: 'account', projects: [], meta: null,
     providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false,
-    detail: null,           // projecto aberto: { project, evidence, claims, runs }
+    detail: null,           // projecto aberto: { project, evidence, claims, runs, graph, agents, agentRuns }
+    path: null,             // caminho entre entidades pedido
     report: null            // relatório de 18 secções aberto
   };
 
@@ -290,17 +291,22 @@
 
   async function openProject(id) {
     S.report = null;                      // abrir um projecto sai da vista de relatório
+    S.path = null;
     const [p, ev, cl, rn] = await Promise.all([
       api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'),
       api('/api/projects/' + id + '/claims'), api('/api/projects/' + id + '/runs')
     ]);
     if (!p.ok) return note('Não foi possível abrir o projecto: ' + (p.error && p.error.message), 'bad');
     const gr = await api('/api/projects/' + id + '/graph');
+    const ag = await api('/api/agents');
+    const ar = await api('/api/projects/' + id + '/agent-runs');
     S.detail = {
       project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [],
       runs: rn.ok ? rn.json.runs : [], profiles: rn.ok ? rn.json.profiles : ['rapida', 'normal', 'profunda', 'exaustiva'],
       steps: rn.ok ? rn.json.steps : [],
-      graph: gr.ok ? gr.json : null
+      graph: gr.ok ? gr.json : null,
+      agents: ag.ok ? ag.json.agents : [],
+      agentRuns: ar.ok ? ar.json.runs : []
     };
     paint();
   }
@@ -350,7 +356,7 @@
   function paintProjectDetail(root) {
     const d = S.detail, p = d.project;
     root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:6px' }, [
-      el('button', { class: 'btn sm', type: 'button', text: '← Todos os projectos', onclick: () => { S.detail = null; S.report = null; paint(); } }),
+      el('button', { class: 'btn sm', type: 'button', text: '← Todos os projectos', onclick: () => { S.detail = null; S.report = null; S.path = null; paint(); } }),
       el('button', { class: 'btn sm', type: 'button', text: 'Relatório', onclick: () => openReport(p.id) }),
       el('span', { class: 'tag ' + (p.status === 'archived' ? 'muted' : 'ok'), text: p.status }),
       el('span', { style: 'font-size:10px;color:var(--muted)', text: p.id })
@@ -514,6 +520,116 @@
             }
           })
         ])
+      ]));
+    }
+
+    /* contradições */
+    const contrad = (d.graph && d.graph.contradicoes) || [];
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Contradições (' + contrad.length + ')' }));
+    if (!contrad.length) {
+      root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Nenhuma contradição registada entre provas ligadas. A ausência de contradição não é confirmação: é uma lacuna por preencher.' }));
+    } else {
+      contrad.forEach((c) => {
+        root.appendChild(el('div', { class: 'warnbox', style: 'margin:4px 0;font-size:11px' }, [
+          el('span', { class: 'tag bad', text: c.tipo }),
+          el('b', { text: ' ' + c.descricao }),
+          el('div', { style: 'font-size:10px;color:var(--muted)', text: c.provas.map((p) => (p.posicao === 'contraria' ? '✗ ' : '✓ ') + (p.titulo || p.id)).join(' · ') })
+        ]));
+      });
+    }
+
+    /* cronologia */
+    const tl = (d.graph && d.graph.timeline) || { eventos: [] };
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Cronologia (' + (tl.total || 0) + ')' }));
+    if (!tl.total) {
+      root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: tl.nota || 'Sem datas registadas: nada a ordenar.' }));
+    } else {
+      root.appendChild(el('table', { class: 'listtable' }, [
+        el('thead', {}, [el('tr', {}, ['data', 'tipo', 'evento', ''].map((x) => el('th', { text: x })))]),
+        el('tbody', {}, tl.eventos.slice(0, 30).map((e) => el('tr', {}, [
+          el('td', { style: 'font-size:10px', text: String(e.data).slice(0, 10) }),
+          el('td', { style: 'font-size:10px', text: e.tipo }),
+          el('td', { style: 'font-size:10px', text: e.titulo }),
+          el('td', { style: 'font-size:9px;color:var(--muted)', text: e.prova || e.relacao || '' })
+        ])))
+      ]));
+    }
+
+    /* caminho entre entidades */
+    if (d.graph && d.graph.graph && d.graph.graph.nodes.length > 1) {
+      const pf = DRAFT.path || (DRAFT.path = {});
+      root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Caminho entre entidades' }));
+      root.appendChild(el('div', { class: 'chips' }, [
+        el('select', { id: 'pathFrom', onchange: (e) => { pf.from = e.target.value; } },
+          [el('option', { value: '', text: 'de…' })].concat(d.graph.graph.nodes.map((n) => el('option', { value: n.id, text: n.name })))),
+        el('select', { id: 'pathTo', onchange: (e) => { pf.to = e.target.value; } },
+          [el('option', { value: '', text: 'para…' })].concat(d.graph.graph.nodes.map((n) => el('option', { value: n.id, text: n.name })))),
+        el('button', {
+          class: 'btn sm', type: 'button', text: 'Procurar caminho',
+          onclick: async () => {
+            if (!pf.from || !pf.to) return note('Escolha as duas entidades', 'warn');
+            const r = await api('/api/projects/' + p.id + '/graph?from=' + encodeURIComponent(pf.from) + '&to=' + encodeURIComponent(pf.to));
+            if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+            S.path = r.json.caminho;
+            paint();
+          }
+        })
+      ]));
+      if (S.path) {
+        if (!S.path.found) {
+          root.appendChild(el('div', { class: 'warnbox', style: 'font-size:11px', text: 'Sem caminho registado: ' + S.path.reason }));
+        } else {
+          root.appendChild(el('div', { class: 'warnbox', style: 'font-size:11px' }, [
+            el('b', { text: S.path.saltos + ' salto(s)' }),
+            el('div', { style: 'font-size:10px;color:var(--muted)', text: S.path.aviso }),
+            ...S.path.passos.map((st) => el('div', { style: 'font-size:10px;margin-top:3px' }, [
+              el('b', { text: st.de + ' → ' + st.para }),
+              el('span', { text: ' · ' + st.tipo + ' · ' + st.confianca.level + ' · ' + st.provas.length + ' prova(s)' + (st.inferida ? ' · inferida' : '') })
+            ]))
+          ]));
+        }
+      }
+    }
+
+    /* agentes */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Agentes (' + (d.agents || []).length + ')' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'Agentes locais analisam o que está registado. Agentes de IA exigem chave validada e devolvem propostas — nunca escrevem conclusões nem promovem hipóteses a facto.' }));
+    const runsByAgent = {};
+    (d.agentRuns || []).forEach((r) => { runsByAgent[r.agentId] = r; });
+    root.appendChild(el('table', { class: 'listtable' }, [
+      el('thead', {}, [el('tr', {}, ['agente', 'tipo', 'última execução', ''].map((x) => el('th', { text: x })))]),
+      el('tbody', {}, (d.agents || []).map((ag) => {
+        const last = runsByAgent[ag.id];
+        return el('tr', {}, [
+          el('td', { style: 'font-size:11px' }, [el('b', { text: ag.name }), el('div', { style: 'font-size:9px;color:var(--muted)', text: ag.contract.out.join(' · ') })]),
+          el('td', {}, [el('span', { class: 'tag ' + (ag.kind === 'local' ? 'ok' : 'warn'), text: ag.kind })]),
+          el('td', { style: 'font-size:10px' }, [
+            last ? el('span', { class: 'tag ' + (last.status === 'concluido' ? 'ok' : last.status === 'nao-executado' ? 'warn' : 'bad'), text: last.status }) : el('span', { style: 'color:var(--muted)', text: 'nunca executado' }),
+            last && last.reason ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.reason.slice(0, 80) }) : null,
+            last && last.findings ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.findings.length + ' achado(s)' }) : null
+          ].filter(Boolean)),
+          el('td', {}, [el('button', {
+            class: 'btn sm', type: 'button', text: 'Executar',
+            onclick: async () => {
+              const r = await api('/api/projects/' + p.id + '/agents/' + ag.id + '/run', { method: 'POST', body: {} });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              const run = r.json.run;
+              note(ag.name + ': ' + run.status + (run.reason ? ' — ' + run.reason : '') +
+                (run.findings ? ' · ' + run.findings.length + ' achado(s)' : ''), run.status === 'concluido' ? 'ok' : 'warn');
+              await reloadDetail();
+            }
+          })])
+        ]);
+      }))
+    ]));
+    const ultimoAuditor = runsByAgent['red-team'];
+    if (ultimoAuditor && ultimoAuditor.findings && ultimoAuditor.findings.length) {
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:6px' }, [
+        el('b', { style: 'font-size:11px', text: 'Achados do auditor adversário (' + ultimoAuditor.findings.length + ')' }),
+        ...ultimoAuditor.findings.slice(0, 12).map((f) => el('div', { style: 'font-size:10px;margin-top:2px' }, [
+          el('span', { class: 'tag ' + (f.severity === 'alta' ? 'bad' : f.severity === 'media' ? 'warn' : 'muted'), text: f.severity }),
+          el('span', { text: ' ' + f.code + ' — ' + f.message })
+        ]))
       ]));
     }
 

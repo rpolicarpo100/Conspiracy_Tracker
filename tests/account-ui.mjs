@@ -23,7 +23,7 @@ const seed = await fetch(BASE + '/api/auth/register', {
   body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASS, acceptTerms: true })
 });
 if (seed.status !== 201) throw new Error('semeadura do administrador falhou: HTTP ' + seed.status);
-const B = await chromium.launch({ executablePath: '/tmp/pw/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
+const B = await chromium.launch({ executablePath: '/home/user/.cache/ms-playwright/chromium-1140/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 1000 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));
@@ -264,7 +264,7 @@ await t('projecto aberto mostra provas, origens independentes e estado sugerido'
   await clickText('#accroot .btn', 'Registar prova');
   await waitText(/Prova registada/, 'prova não foi aceite');
   const txt1 = await p.textContent('#accroot');
-  if (!/host:exemplo\.pt/.test(txt1)) throw new Error('origem não mostrada na lista de provas');
+  if (!/src:exemplo\.pt/.test(txt1)) throw new Error('origem não mostrada na lista de provas');
   if (!/utm_source/.test(txt1) === false) throw new Error('o URL canónico devia estar sem UTM');
 
   /* mesma prova outra vez (o formulário fica limpo depois de guardar): não duplica */
@@ -291,7 +291,7 @@ await t('projecto aberto mostra provas, origens independentes e estado sugerido'
   await waitText(/origens independentes 1/, 'factores de corroboração não visíveis');
   const txt2 = await p.textContent('#accroot');
   if (!/sugerido pelas provas: insuficiente/.test(txt2)) throw new Error('estado sugerido incorreto: ' + (txt2.match(/sugerido pelas provas: \w[-\w]*/) || ['?'])[0]);
-  return 'prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»';
+  return 'prova primária registada · origem src:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»';
 });
 
 await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta', async () => {
@@ -365,6 +365,43 @@ await t('grafo das provas desenha entidades, relações e proveniência sem trat
   return shapes.circles + ' nós · ' + shapes.lines + ' aresta(s) · legenda e avisos visíveis · proveniência ao clicar (' + 'confiança corroborada' + ')';
 });
 
+await t('agentes, contradições e cronologia aparecem no projecto com os estados reais', async () => {
+  await waitText(/Agentes \(13\)/, 'secção de agentes ausente');
+  await waitText(/Contradições/, 'secção de contradições ausente');
+  await waitText(/Cronologia/, 'secção de cronologia ausente');
+  const antes = await p.textContent('#accroot');
+  if (!/nunca executado/.test(antes)) throw new Error('agentes sem estado inicial «nunca executado»');
+  /* executar o orquestrador (local) e o auditor pela interface */
+  await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('#accroot tr')];
+    const pick = (nome) => rows.find((r) => r.textContent.includes(nome));
+    const clicar = (nome) => {
+      const tr = pick(nome);
+      const b = tr && [...tr.querySelectorAll('button')].find((x) => /Executar/.test(x.textContent));
+      if (b) b.click();
+    };
+    clicar('Auditor adversário');
+  });
+  await waitText(/Achados do auditor adversário/, 'auditor não devolveu achados');
+  const depois = await p.textContent('#accroot');
+  if (!/alta|media|baixa/.test(depois)) throw new Error('achados sem gravidade');
+  if (!/conclusao-sem-prova|linguagem-absoluta|prova-sem-data/.test(depois)) throw new Error('achados sem código de regra');
+  /* caminho entre entidades */
+  await p.evaluate(() => {
+    const a = document.getElementById('pathFrom'), b = document.getElementById('pathTo');
+    if (!a || !b) throw new Error('selectores de caminho ausentes');
+    const vals = [...a.options].map((o) => o.value).filter(Boolean);
+    a.value = vals[0]; a.dispatchEvent(new Event('change', { bubbles: true }));
+    b.value = vals[1] || vals[0]; b.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await clickText('#accroot .btn', 'Procurar caminho');
+  await waitText(/salto\(s\)|Sem caminho registado/, 'caminho não respondeu');
+  const final = await p.textContent('#accroot');
+  const temAviso = /não prova de coordenação/.test(final);
+  if (/salto\(s\)/.test(final) && !temAviso) throw new Error('caminho sem aviso de que não é prova de coordenação');
+  return '13 agentes com estado real · achados do auditor com gravidade e código · caminho com aviso';
+});
+
 /* captura final: conclusão com factores de corroboração visíveis */
 await clickText('#accroot .btn', '← Voltar ao projecto');
 await waitText(/Conclusões e alegações/, 'não voltou ao projecto');
@@ -380,6 +417,12 @@ await p.evaluate(() => {
 });
 await p.waitForTimeout(300);
 await p.screenshot({ path: '/home/user/docs/shot-19-pesquisa.png' });
+await p.evaluate(() => {
+  const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Agentes \(/.test(x.textContent));
+  if (h) h.scrollIntoView({ block: 'start' });
+});
+await p.waitForTimeout(300);
+await p.screenshot({ path: '/home/user/docs/shot-22-agentes.png' });
 await p.screenshot({ path: '/home/user/docs/shot-17-conta.png' });
 await B.close();
 srv.kill('SIGTERM');

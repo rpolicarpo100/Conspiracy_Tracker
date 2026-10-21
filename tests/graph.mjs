@@ -12,6 +12,9 @@
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { buildGraph, entityKey, validateRelation, edgeConfidence, RELATION_TYPES, ENTITY_TYPES } from '../server/graph.mjs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 let pass = 0, fail = 0;
 const t = async (name, fn) => {
@@ -262,11 +265,14 @@ await t('estatísticas do grafo dizem o que não está provado', async () => {
   return 'nós ' + g.stats.nodes + ' · arestas ' + g.stats.edges + ' (1 origem: ' + g.stats.edgesWithSingleOrigin + ', corroboradas: ' + g.stats.edgesCorroborated + ') · candidatos ' + g.stats.candidates + ' · avisos 3';
 });
 
-await t('esquema migra para v3 com a colecção de relações', async () => {
+await t('esquema com colecção de relações registada na migração', async () => {
   const meta = await (await fetch(BASE + '/api/meta')).json();
-  ok(meta.schemaVersion === 3, 'versão: ' + meta.schemaVersion);
-  ok(meta.migrations.length >= 1 && meta.migrations[meta.migrations.length - 1].to === 3, 'migração v3 não registada');
-  return 'schemaVersion 3 · migração registada · ' + meta.migrations.length + ' passo(s)';
+  ok(meta.schemaVersion >= 3, 'versão: ' + meta.schemaVersion);
+  ok(meta.migrations.some((m) => m.to >= 3), 'migração das relações não registada');
+  const fs = await import('node:fs/promises');
+  const db = JSON.parse(await fs.readFile(path.join(DATA, 'db.json'), 'utf8'));
+  ok(Array.isArray(db.relations), 'colecção relations ausente');
+  return 'schemaVersion ' + meta.schemaVersion + ' · ' + meta.migrations.length + ' passo(s) de migração registados';
 });
 
 srv.kill('SIGTERM');

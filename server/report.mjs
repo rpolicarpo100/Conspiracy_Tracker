@@ -134,7 +134,7 @@ export function buildReport({ project, evidence, claims, runs, relations, usage 
   const activeRels = relations.filter((r) => !r.retractedAt);
   const relLine = (r) => {
     const evs = evidence.filter((e) => (r.evidenceIds || []).includes(e.id) && !e.retractedAt);
-    const origins = new Set(evs.map((e) => e.syndicationOf || e.originKey || e.canonicalUrl));
+    const origins = new Set(evs.map((e) => e.originKey || e.canonicalUrl));
     return {
       de: r.from, para: r.to, tipo: r.type, direccao: r.direction || 'directed',
       periodo: r.period || { from: null, to: null },

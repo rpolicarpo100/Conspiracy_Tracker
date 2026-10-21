@@ -84,13 +84,19 @@ export function contentHash(excerpt) {
   return crypto.createHash('sha256').update(n, 'utf8').digest('hex');
 }
 
-/* Chave de ORIGEM: cópias/sindicadas da mesma peça contam como uma origem. */
+/* Chave de ORIGEM — a regra que impede contar cópias como confirmações.
+
+   Segue a sindicação até à peça original e agrupa pelo DOMÍNIO dessa origem
+   final. Consequências, todas conservadoras:
+   · uma cópia que declara syndicationOf cai na origem da peça original;
+   · dois artigos da mesma redacção contam como UMA origem (mesma fonte de
+     informação, ainda que documentos diferentes);
+   · sem URL, cai no hash do próprio conteúdo. */
 export function originKey(ev) {
   if (!ev) return null;
-  if (ev.syndicationOf) return 'sind:' + (canonicalUrl(ev.syndicationOf) || norm(ev.syndicationOf));
-  const c = canonicalUrl(ev.canonicalUrl || ev.originalUrl);
-  const h = hostOf(c);
-  if (h) return 'host:' + h;
+  const finalUrl = canonicalUrl(ev.syndicationOf || ev.canonicalUrl || ev.originalUrl);
+  const h = hostOf(finalUrl);
+  if (h) return 'src:' + h;
   return 'hash:' + (ev.contentHash || contentHash(ev.excerpt));
 }
 

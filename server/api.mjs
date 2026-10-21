@@ -12,12 +12,13 @@ import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, is
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
 import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
 import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES } from './graph.mjs';
+import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION } from './agents.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3';
+const APP_VERSION = '2.0.0-fase3b';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -110,6 +111,60 @@ export async function createApi(opts) {
     return out;
   }
 
+  /* Caminho mais curto no grafo (BFS). Devolve cada passo com as provas de cada aresta:
+     um caminho NÃO é prova de coordenação — junta-se a explicação no resultado. */
+  function shortestPath(g, fromKey, toKey) {
+    const adj = new Map();
+    g.edges.forEach((e) => {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      if (!adj.has(e.to)) adj.set(e.to, []);
+      adj.get(e.from).push({ to: e.to, edge: e });
+      adj.get(e.to).push({ to: e.from, edge: e });
+    });
+    if (!adj.has(fromKey) || !adj.has(toKey)) return { found: false, reason: 'uma das entidades não existe no grafo' };
+    const prev = new Map([[fromKey, null]]);
+    const queue = [fromKey];
+    while (queue.length) {
+      const cur = queue.shift();
+      if (cur === toKey) break;
+      (adj.get(cur) || []).forEach((n) => {
+        if (!prev.has(n.to)) { prev.set(n.to, { from: cur, edge: n.edge }); queue.push(n.to); }
+      });
+    }
+    if (!prev.has(toKey)) return { found: false, reason: 'nenhum caminho registado entre as duas entidades' };
+    const passos = [];
+    let cur = toKey;
+    while (prev.get(cur)) {
+      const step = prev.get(cur);
+      passos.unshift({ de: step.edge.fromName, para: step.edge.toName, id: step.edge.id, tipo: step.edge.label,
+        confianca: step.edge.confidence, provas: step.edge.evidenceIds, inferida: step.edge.inferred });
+      cur = step.from;
+    }
+    return {
+      found: true, passos, saltos: passos.length,
+      aviso: 'um caminho é uma sequência de relações registadas, não prova de coordenação, intenção ou controlo comum; cada passo traz as suas provas e a sua confiança'
+    };
+  }
+
+  /* Cronologia a partir de provas e relações: cada evento aponta a sua prova. */
+  function timelineOf(store, pid) {
+    const evs = store.evidenceOf(pid).filter((e) => !e.retractedAt);
+    const eventos = evs.filter((e) => e.eventDate || e.publicationDate).map((e) => ({
+      data: e.eventDate || e.publicationDate,
+      tipo: e.eventDate ? 'acontecimento' : 'publicação',
+      titulo: e.title, prova: e.id, posicao: e.stance, estado: e.validationState
+    })).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    const rels = store.relationsOf(pid).filter((r) => !r.retractedAt && r.period && (r.period.from || r.period.to)).map((r) => ({
+      data: r.period.from || r.period.to,
+      tipo: 'relação',
+      titulo: r.from + ' → ' + r.to,
+      relacao: r.id,
+      ate: r.period.to || null
+    }));
+    const tudo = eventos.concat(rels).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    return { eventos: tudo, total: tudo.length, nota: tudo.length ? null : 'sem datas registadas: nada a ordenar (não se inventam datas)' };
+  }
+
   /* Recolha de documentos para o motor: mesma disciplina do agente local
      (sem hosts privados, limite de tamanho e de tempo, hash do conteúdo). */
   async function fetchDoc(url) {
@@ -160,6 +215,30 @@ export async function createApi(opts) {
         usage: r.usage, expectsJson: true, parsed: parsed.ok ? parsed.parsed : null,
         note: parsed.ok ? null : parsed.reason
       };
+    };
+  }
+
+  /* Executor genérico para os agentes de IA: mesmo cofre, mesma credencial validada. */
+  function agentAiRunner(user) {
+    const cred = store.credentialsOf(user.id).find((c) => c.status === 'operational') || null;
+    if (!cred || !vault.enabled) return null;
+    let apiKey = null;
+    try { apiKey = vault.open(cred.keyCipher); } catch { return null; }
+    return async function ai({ messages, timeoutMs }) {
+      const r = await complete({
+        provider: cred.provider, base: (cred.meta && cred.meta.base) || undefined, apiKey,
+        model: cred.model, accountId: (cred.meta && cred.meta.accountId) || undefined,
+        messages, timeoutMs: timeoutMs || 30000
+      });
+      await store.addUsage({
+        userId: user.id, provider: cred.provider, model: cred.model, kind: 'agent',
+        ok: !!r.ok, promptTokens: r.usage ? r.usage.promptTokens : null,
+        completionTokens: r.usage ? r.usage.completionTokens : null, cost: null,
+        latencyMs: r.latencyMs != null ? r.latencyMs : null
+      });
+      if (!r.ok) return { ok: false, error: r.error };
+      const parsed = parseAiJson(r.text);
+      return { ok: true, provider: cred.provider, model: cred.model, parsed: parsed.ok ? parsed.parsed : null, note: parsed.ok ? null : parsed.reason };
     };
   }
 
@@ -217,6 +296,7 @@ export async function createApi(opts) {
           migrations: store.migrations().map((m) => ({ to: m.to, at: m.at, changes: m.changes })),
           states: STATES.map((id) => ({ id, label: STATE_LABEL[id] })),
           research: { steps: STEPS.length, profiles: Object.keys(PROFILES), promptVersion: PROMPT_VERSION, reportSections: SECTION_TITLES.length },
+          agents: { total: AGENTS.length, promptVersion: AGENT_PROMPT_VERSION, local: AGENTS.filter((x) => x.kind === 'local').length, ai: AGENTS.filter((x) => x.kind === 'ai').length },
           providers: registryPublic(),
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           registration: {
@@ -574,6 +654,46 @@ export async function createApi(opts) {
         return json(res, 200, { ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs) });
       }
 
+      /* ---------- agentes ---------- */
+      if (p === '/api/agents' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, {
+          ok: true, promptVersion: AGENT_PROMPT_VERSION,
+          agents: AGENTS.map((ag) => ({ id: ag.id, name: ag.name, phase: ag.phase, kind: ag.kind,
+            contract: ag.contract, criteria: ag.criteria, limits: ag.limits })),
+          note: 'nenhum agente escreve conclusões: os agentes locais só analisam, os de IA devolvem propostas'
+        });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/agent-runs$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        return json(res, 200, { ok: true, runs: store.agentRunsOf(pid), agents: AGENTS.map((ag) => ag.id) });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/agents\/[^/]+\/run$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const parts = p.split('/');
+        const pid = parts[3], agentId = parts[5];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        if (!agentById(agentId)) return err(res, 404, 'agente desconhecido', { known: AGENTS.map((x) => x.id) });
+        const ctx = {
+          project: prj, evidence: store.evidenceOf(pid), claims: store.claimsOf(pid),
+          relations: store.relationsOf(pid), runs: store.runsOf(pid)
+        };
+        const ai = agentAiRunner(a.user);
+        const out = await executeAgent({ store }, agentId, ctx, { ai });
+        const saved = await store.addAgentRun(pid, out.run, a.user.id);
+        await store.audit({
+          type: 'agent_run', actorId: a.user.id, subjectId: saved.id, action: agentId,
+          detail: { projectId: pid, status: saved.status, kind: saved.kind,
+            findings: saved.findings ? saved.findings.length : null, reason: saved.reason || null }
+        });
+        await store.count('agent_runs');
+        return json(res, 201, { ok: true, run: saved, aiUsed: !!ai });
+      }
+
       /* ---------- grafo a partir de provas ---------- */
       if (p.match(/^\/api\/projects\/[^/]+\/graph$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
@@ -583,9 +703,38 @@ export async function createApi(opts) {
         const g = buildGraph({
           project: prj, evidence: store.evidenceOf(pid), relations: store.relationsOf(pid), claims: store.claimsOf(pid)
         });
+        /* contradições: arestas com prova contrária e conclusões em conflito */
+        const evById = new Map(store.evidenceOf(pid).map((e) => [e.id, e]));
+        const contradicoes = g.edges.filter((e) => e.confidence.level === 'contraditoria').map((e) => ({
+          tipo: 'relacao', id: e.id, descricao: e.fromName + ' → ' + e.toName + ' (' + e.label + ')',
+          provas: e.evidenceIds.map((id) => {
+            const ev = evById.get(id);
+            return ev ? { id, titulo: ev.title, posicao: ev.stance } : { id };
+          })
+        }));
+        store.claimsOf(pid).forEach((c) => {
+          const evs = store.evidenceOf(pid).filter((e) => (c.evidenceIds || []).includes(e.id) && !e.retractedAt);
+          const fav = evs.filter((e) => e.stance === 'favoravel');
+          const con = evs.filter((e) => e.stance === 'contraria');
+          if (fav.length && con.length) {
+            contradicoes.push({
+              tipo: 'conclusao', id: c.id, descricao: c.text, estado: c.state,
+              provas: fav.map((e) => ({ id: e.id, titulo: e.title, posicao: 'favoravel' }))
+                .concat(con.map((e) => ({ id: e.id, titulo: e.title, posicao: 'contraria' })))
+            });
+          }
+        });
+        /* caminho mais curto (BFS) entre duas entidades, se pedido */
+        let caminho = null;
+        const from = url.searchParams.get('from'), to = url.searchParams.get('to');
+        if (from && to) {
+          caminho = shortestPath(g, from, to);
+        }
         return json(res, 200, {
           ok: true, graph: g,
-          entityTypes: ENTITY_TYPES, relationTypes: RELATION_TYPES
+          entityTypes: ENTITY_TYPES, relationTypes: RELATION_TYPES,
+          contradicoes, caminho,
+          timeline: timelineOf(store, pid)
         });
       }
       if (p.match(/^\/api\/projects\/[^/]+\/relations$/) && method === 'POST') {

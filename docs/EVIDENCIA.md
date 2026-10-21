@@ -57,11 +57,15 @@ Regras:
 
 ## 3. Corroboração: origens, não ficheiros
 
-`originKey` de uma prova é, por ordem:
+`originKey` segue a sindicação até à peça original e agrupa pelo **domínio dessa origem final**:
 
-1. `sind:<url canónica>` se a prova declarar `syndicationOf` (é cópia/sindicada de outra);
-2. `host:<domínio>` do URL canónico;
-3. `hash:<hash do excerto>` se não houver URL.
+1. URL final = `syndicationOf` (se declarado) ou o URL canónico da própria prova;
+2. `src:<domínio>` desse URL final;
+3. `hash:<hash do excerto>` se não houver URL nenhum.
+
+Consequência deliberadamente conservadora: **dois artigos da mesma redacção contam como uma só
+origem**, ainda que sejam documentos diferentes — vêm da mesma fonte de informação. Uma cópia
+sindicada cai sempre na origem da peça original.
 
 Consequência prática, medida nos testes: **10 reproduções do mesmo comunicado em 10 sítios
 diferentes com `syndicationOf` comum contam como 1 origem independente**. O servidor recusa

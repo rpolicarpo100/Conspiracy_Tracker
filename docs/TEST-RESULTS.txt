@@ -359,3 +359,45 @@ PASS inferência sem raciocínio escrito → 400
 PASS retirar relação sem motivo → 400
 PASS relatório secção 11 disponível com o aviso «uma linha do grafo não é prova»
 PASS eliminar conta → 200 · tests/deployed.mjs 6/6
+
+== 24. FASE 3: AGENTES E VISTAS DO GRAFO (tests/agents-p3.mjs)
+
+== P3 · AGENTES, AUDITOR ADVERSÁRIO E VISTAS DO GRAFO (tests/agents-p3.mjs)
+
+PASS registo dos 13 agentes tem contrato, critérios e limites declarados → 13 agentes · 6 locais · 7 de IA · versão de prompt a1
+PASS agente de IA sem chave validada fica «nao-executado» com motivo → nao-executado · sem fornecedor de IA validado: configure e valide uma chave … · saída nula
+PASS agente desconhecido é recusado com a lista de agentes → 404 com 13 agentes conhecidos
+PASS orquestrador lista o que falta, sem inventar progresso → 3 provas · 3 conclusões · 1 relação · 2 próximos passos declarados
+PASS resolução de entidades distingue colisões de falta de desambiguador → colisão de homónimos detectada (2 identificadores) · entidade sem desambiguador listada
+PASS auditor adversário encontra conclusão acima das provas e cópias como corroboração → 4 achados · baixa: 2 · media: 1 · alta: 1 · legado: prova-sem-data,prova-sem-data,estado-acima-das-provas
+PASS auditor detecta citação que não corresponde a prova e excerto divergente → citação sem prova e excerto divergente detectados (gravidade alta) · 4 achados na auditoria real
+PASS auditor detecta relação sem prova activa e inferência sem raciocínio → relação sem prova activa e inferência sem raciocínio detectadas
+PASS contra-provas e verificador de factos apontam lacunas, não conclusões → contra-provas: 3 lacunas · verificador: hipotese→insuficiente, hipotese→insuficiente
+PASS nenhum agente alterou conclusões, provas ou relações → estados intactos · 1 relação (a registada por uma pessoa) · agentes só analisam
+PASS cronologia ordena eventos com prova e assinala datas suspeitas → 1 eventos ordenados · cronologia do grafo junta 2 (inclui período de relação)
+PASS caminho entre entidades traz provas por passo e o aviso de que não é prova de coordenação → caminho de 1 salto(s) com provas · aviso presente · entidade inexistente devolve found:false
+PASS vista de contradições lista conflitos com as provas dos dois lados → 2 contradição(ões) · 2 provas na relação · 3 na conclusão
+PASS execuções de agentes ficam guardadas, ordenadas e isoladas por conta → 11 execuções registadas · B recebe 404 (leitura e execução)
+PASS agente de IA com stub devolve saída estruturada e é registado → sucesso, JSON inválido e falha de fornecedor distinguidos · nada inventado
+PASS esquema v4 registado e meta publica os agentes → schemaVersion 4 · 6 agentes locais · 7 de IA · prompt a1
+
+16/16 passaram
+
+== 25. AGENTES E VISTAS NA INTERFACE (tests/account-ui.mjs, 13 testes)
+CONTA E ADMINISTRAÇÃO — INTERFACE
+PASS botão Conta abre a área de autenticação → formulário de entrada visível (Entrar. Sem conta, os dados de investigação continuam a vive…)
+PASS registo pela interface cria sessão e mostra o email → sessão criada para uimvihoa3i@ex.pt
+PASS política de palavra-passe é aplicada pelo servidor, não pela interface → registo com «123» → 400 (palavra-passe fraca: pelo menos 10 caracteres, uma minúscula)
+PASS projecto criado na interface aparece na lista → projecto visível na tabela
+PASS separador de chaves mostra o estado do cofre e recusa guardar sem APP_SECRET? (cofre activo) → 8 fornecedores listados · cofre activo
+PASS chave de IA: guardada com máscara e validada contra o fornecedor real → máscara «chav…123» · Groq falhou em «auth»: credencial recusada (HTTP 401)uimvihoa3i@ex
+PASS sessão terminada esconde os dados privados → formulário de autenticação reposto, sem dados privados e sessão inválida no servidor
+PASS administrador vê métricas reais e auditoria → utilizadores: 2 · auditoria com eventos reais · indisponíveis declarados
+PASS utilizador comum não vê a área de administração → sem separador · métricas/utilizadores/auditoria → 403 no servidor
+PASS projecto aberto mostra provas, origens independentes e estado sugerido → prova primária registada · origem src:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»
+PASS pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta → execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas
+PASS grafo das provas desenha entidades, relações e proveniência sem tratar co-ocorrência como relação → 2 nós · 1 aresta(s) · legenda e avisos visíveis · proveniência ao clicar (confiança corroborada)
+PASS agentes, contradições e cronologia aparecem no projecto com os estados reais → 13 agentes com estado real · achados do auditor com gravidade e código · caminho com aviso
+erros de runtime: 0 []
+
+13/13 passaram

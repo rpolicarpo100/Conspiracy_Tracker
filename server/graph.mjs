@@ -109,7 +109,7 @@ export function validateRelation(input, evidenceById) {
 /* Factores de confiança de uma aresta: sempre justificados, nunca um número mágico. */
 export function edgeConfidence(rels, evidenceList) {
   const usable = evidenceList.filter((e) => !e.retractedAt && e.validationState !== 'fonte-inacessivel');
-  const origins = new Set(usable.map((e) => e.syndicationOf || e.originKey || e.canonicalUrl || e.id));
+  const origins = new Set(usable.map((e) => e.originKey || e.canonicalUrl || e.id));
   const contrary = usable.filter((e) => e.stance === 'contraria');
   if (!usable.length) return { level: 'sem-prova', rationale: 'nenhuma prova acessível ligada a esta relação' };
   if (contrary.length) return { level: 'contraditoria', rationale: 'há prova contrária ligada (' + contrary.length + ')' };
@@ -173,7 +173,7 @@ export function buildGraph({ project, evidence, relations, claims }) {
       period: r.period || { from: null, to: null },
       evidenceIds: evs.map((e) => e.id),
       evidenceCount: evs.length,
-      origins: [...new Set(evs.map((e) => e.syndicationOf || e.originKey || e.canonicalUrl))],
+      origins: [...new Set(evs.map((e) => e.originKey || e.canonicalUrl))],
       confidence: conf,
       inferred: !!r.inferred,
       reasoning: r.reasoning || null,

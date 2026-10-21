@@ -83,7 +83,12 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | --- | --- | --- | --- | --- |
 | Pesquisa local sobre o conjunto fictício | Funciona, com correcção ortográfica | `tests/search.mjs` 17/17 | P3 concluído | — |
 | Recolha real de páginas | `/api/fetch` com limites de tamanho, timeout e bloqueio SSRF | `tests/real-fetch.mjs`; sondagem pública 6 771 B com hash | P2 concluído | — |
-| 13 agentes com I/O estruturado | Protótipo local com guardas e *budget*; sem persistência de execuções | `tests/agents.mjs` 18/18 | P2 | Fase P3: `agent_runs`, versão de prompt, estado, logs |
+| 13 agentes com I/O estruturado | **Implementado no servidor**: contrato de entrada/saída, critérios de conclusão, limites (tempo, itens), versão de prompt (`a1`), estado por execução, `agentRuns` persistidas e ordenadas. Agentes locais determinísticos; agentes de IA exigem chave validada e ficam «nao-executado» sem ela | `tests/agents-p3.mjs` 16/16 | P2/P3 concluído | Filas e orçamento por agente (P4) |
+| Auditor adversário (red team) | **Implementado**: 10 regras explícitas (citação sem prova, excerto divergente, prova sem excerto/localização/data, comunicado sem origem, conclusão sem prova, estado acima das provas, confiança inflacionada, linguagem absoluta, cópias como corroboração, relação sem prova, inferência sem raciocínio, confirmada com contraprova); achados com gravidade e sujeito | `tests/agents-p3.mjs` e auditoria real na interface (`docs/shot-22-agentes.png`) | **P0 concluído** | — |
+| Agentes não escrevem conclusões | Verificado: após executar orquestrador, auditor e mapeador, estados e relações ficam intactos | `tests/agents-p3.mjs` («nenhum agente alterou conclusões…») | P0 concluído | — |
+| Caminho entre entidades | BFS sobre arestas registadas, com provas por passo e aviso de que não é prova de coordenação | `tests/agents-p3.mjs`; interface com a vista | P2 concluído | Caminhos com restrições |
+| Cronologia sincronizada | Eventos de provas + períodos de relações, ordenados, com anomalias de data | `tests/agents-p3.mjs` | P2 concluído | Filtro por período no grafo |
+| Vista de contradições | Arestas com prova contrária + conclusões com provas dos dois lados | `tests/agents-p3.mjs` | P2 concluído | Filtro por período |
 | Pipeline de 20 passos (pesquisa profunda) | **Implementado no servidor**: 20 passos tipados (local/IA/recolha), perfis de esforço, orçamento, paragem com motivo escrito, retoma e cancelamento, execuções persistentes | `tests/research.mjs` 19/19 · `docs/MOTOR-PESQUISA.md` | P2 concluído (falta descoberta automática de fontes e extracção de PDF) | Fila em segundo plano (P4) |
 | Relatório rastreável de 18 secções | **Implementado**: JSON e Markdown, com `available:false` e «Não disponível: …» no que não está instrumentado; provas contrárias e fontes inacessíveis sempre presentes | `tests/research.mjs` (18 secções, markdown, secção de relações declaradamente em falta) | P2 concluído | Secção 11 (relações) depende do grafo |
 | Execuções (`runs`) persistentes e retomáveis | **Implementado** (runner síncrono com orçamento; retoma só passos em falta) | `tests/research.mjs` | P2 concluído | Mover para fila persistente e *worker* |
@@ -124,8 +129,10 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
   relatório de 18 secções em JSON e Markdown; detecção de injecção no conteúdo recolhido.
 - **P3 (feito agora)**: grafo alimentado por provas com regras duras (sem prova não há aresta,
   co-ocorrência não é relação, homónimos não fundidos) e secção 11 do relatório ligada.
-- **P3 (em falta)**: agentes com `agent_runs` persistidos e versionamento de prompt por agente,
-  caminhos/ligações indirectas no grafo, cronologia sincronizada, vista de contradições.
+- **P3 (feito agora)**: 13 agentes com execuções persistidas, auditor adversário com 10 regras,
+  caminho entre entidades, cronologia e vista de contradições. Corrigida a chave de origem: uma cópia
+  sindicada deixa de contar como origem independente (era um furo real na corroboração).
+- **P3 (em falta)**: filtro por período no grafo, caminhos com restrições, exportação do grafo.
 - **P2 (em falta)**: verificação automática de acessibilidade; extracção de PDF/OCR; descoberta
   automática de fontes; router com preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

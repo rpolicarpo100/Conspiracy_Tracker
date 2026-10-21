@@ -89,14 +89,28 @@ auditoria (`relation_retracted` com o motivo).
 Todas exigem sessão (CSRF nas que alteram estado); grafos e relações de outro utilizador devolvem
 `404` sem revelar conteúdo (testado).
 
-## 9. O que ainda não está feito
+## 9. Caminhos, cronologia e contradições (implementados)
 
-- **Caminhos e ligações indirectas** (por exemplo «que caminho liga A a C e com que provas por
-  passo»): não implementados. A disposição actual é um passo único; não há travessia.
-- **Cronologia sincronizada** com o grafo (filtrar por período usando `period` das arestas): o dado
-  existe na aresta, a interface ainda não filtra por ele.
-- **Vista de contradições** dedicada: as arestas contraditórias aparecem a vermelho, mas não há
-  ecrã que liste os pares em conflito.
+- **Caminho entre entidades** — `GET /api/projects/{id}/graph?from=<chave>&to=<chave>` faz BFS sobre
+  as arestas registadas e devolve cada passo com tipo, confiança e provas. A resposta inclui sempre:
+  «um caminho é uma sequência de relações registadas, **não prova de coordenação, intenção ou
+  controlo comum**». Sem caminho: `found: false` com o motivo.
+- **Cronologia** — `timeline.eventos` ordena acontecimentos e publicações das provas e os períodos
+  das relações; cada evento aponta a prova (ou a relação) que o sustenta. Sem datas, a lista fica
+  vazia com nota — não se inventam datas.
+- **Contradições** — `contradicoes[]` reúne (a) arestas com prova contrária e (b) conclusões com
+  provas favoráveis **e** contrárias, com a posição de cada prova. A ausência de contradições é
+  apresentada como lacuna por preencher, não como confirmação.
+
+## 10. O que ainda não está feito
+
+- **Filtro por período na interface**: o `period` das arestas já entra na cronologia, mas o grafo
+  ainda não se filtra por data.
+- **Pesquisa de caminhos com restrições** (por intervalo de datas, por tipo de relação, por excluir
+  inferências): hoje é o caminho mais curto sem filtros.
+- **Exportação do grafo** (SVG/PNG/JSON com proveniência).
+- **Fusão assistida de homónimos** quando o utilizador tem o identificador.
+- **Extracção automática de entidades**: continuam declaradas por quem regista a prova.
 - **Exportação do grafo** (SVG/PNG/JSON com proveniência): não implementada.
 - **Fusão assistida de homónimos**: o servidor recusa fundir sem identificador; falta a operação
   explícita de fusão quando o utilizador *tem* o identificador.

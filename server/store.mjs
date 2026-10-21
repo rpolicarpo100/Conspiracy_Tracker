@@ -9,12 +9,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
   users: [], sessions: [], projects: [], credentials: [], usage: [],
-  evidence: [], claims: [], runs: [], relations: [],
+  evidence: [], claims: [], runs: [], relations: [], agentRuns: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -48,6 +48,12 @@ const MIGRATIONS = {
     const changes = [];
     if (!Array.isArray(db.relations)) db.relations = [];
     if (missing && missing.indexOf('relations') >= 0) changes.push('criada a colecção relations (grafo a partir de provas)');
+    return changes;
+  },
+  4: (db, missing) => {
+    const changes = [];
+    if (!Array.isArray(db.agentRuns)) db.agentRuns = [];
+    if (missing && missing.indexOf('agentRuns') >= 0) changes.push('criada a colecção agentRuns (execuções dos 13 agentes)');
     return changes;
   }
 };
@@ -150,6 +156,7 @@ export function createStore(dir) {
       db.claims = db.claims.filter((c) => !mine.has(c.projectId));
       db.runs = db.runs.filter((r) => !mine.has(r.projectId));
       db.relations = db.relations.filter((r) => !mine.has(r.projectId));
+      db.agentRuns = db.agentRuns.filter((r) => !mine.has(r.projectId));
       await persist();
     },
 
@@ -363,6 +370,20 @@ export function createStore(dir) {
       r.retractReason = String(reason).slice(0, 500);
       r.history.push({ at: r.retractedAt, action: 'retirada', by: by || null, reason: r.retractReason });
       await persist(); return r;
+    },
+
+    /* --- execuções de agentes (histórico, nunca fonte de factos) --- */
+    async addAgentRun(projectId, run, by) {
+      const r = Object.assign({}, run, {
+        projectId, createdBy: by || null,
+        seq: db.agentRuns.filter((x) => x.projectId === projectId).length + 1
+      });
+      db.agentRuns.push(r); await persist(); return r;
+    },
+    agentRunsOf(projectId) { return db.agentRuns.filter((r) => r.projectId === projectId); },
+    latestAgentRun(projectId, agentId) {
+      const list = db.agentRuns.filter((r) => r.projectId === projectId && r.agentId === agentId);
+      return list.length ? list[list.length - 1] : null;
     },
 
     /* --- execuções de pesquisa (registadas, retomáveis) --- */

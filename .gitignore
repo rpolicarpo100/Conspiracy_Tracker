@@ -13,3 +13,7 @@ tests/_*.mjs
 
 # dados locais de execução (contas, projectos, chaves)
 .data/
+
+# artefactos de execução locais
+.cache/
+.ms-playwright/
