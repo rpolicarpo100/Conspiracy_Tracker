@@ -84,7 +84,11 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 | Pesquisa local sobre o conjunto fictício | Funciona, com correcção ortográfica | `tests/search.mjs` 17/17 | P3 concluído | — |
 | Recolha real de páginas | `/api/fetch` com limites de tamanho, timeout e bloqueio SSRF | `tests/real-fetch.mjs`; sondagem pública 6 771 B com hash | P2 concluído | — |
 | 13 agentes com I/O estruturado | Protótipo local com guardas e *budget*; sem persistência de execuções | `tests/agents.mjs` 18/18 | P2 | Fase P3: `agent_runs`, versão de prompt, estado, logs |
-| Pipeline de 20 passos (pesquisa profunda) | **Parcial**: interpretação, variantes de consulta, recolha, extracção básica. Faltam deduplicação, verificação de datas/origem/integridade, contra-provas, lacunas, grafo, relatório rastreável, revisão humana | `src/core/research.js` | P2 | Fase P2 |
+| Pipeline de 20 passos (pesquisa profunda) | **Implementado no servidor**: 20 passos tipados (local/IA/recolha), perfis de esforço, orçamento, paragem com motivo escrito, retoma e cancelamento, execuções persistentes | `tests/research.mjs` 19/19 · `docs/MOTOR-PESQUISA.md` | P2 concluído (falta descoberta automática de fontes e extracção de PDF) | Fila em segundo plano (P4) |
+| Relatório rastreável de 18 secções | **Implementado**: JSON e Markdown, com `available:false` e «Não disponível: …» no que não está instrumentado; provas contrárias e fontes inacessíveis sempre presentes | `tests/research.mjs` (18 secções, markdown, secção de relações declaradamente em falta) | P2 concluído | Secção 11 (relações) depende do grafo |
+| Execuções (`runs`) persistentes e retomáveis | **Implementado** (runner síncrono com orçamento; retoma só passos em falta) | `tests/research.mjs` | P2 concluído | Mover para fila persistente e *worker* |
+| Conteúdo web como não confiável | **Implementado no motor**: regra no prompt de sistema + detecção de padrões de injecção por documento recolhido | `tests/research.mjs` («conteúdo que dá ordens ao agente») | P0 concluído para HTML | Revalidar com PDF/OCR |
+| Custos instrumentados | Parcial: tokens reportados pelo fornecedor; custo marcado «não reportado» | secção 17 do relatório | P2 | Tabela de preços verificada |
 | Registo de provas (ID único, hash, datas, excerto, estado) | **Implementado e testado**: excerto obrigatório, SHA-256 do excerto, URL canónico (sem UTM/fragmento), datas de publicação/acontecimento/recolha/verificação, tipo de fonte, posição, método de extracção, limitações, histórico por prova | `tests/evidence.mjs` 17/17 · `docs/EVIDENCIA.md` | P2 concluído | Verificação automática de acessibilidade e extracção de PDF/OCR |
 | Corroboração independente e duplicados | **Implementado e testado**: `originKey` por `syndicationOf`/domínio/hash; 10 cópias de um comunicado = 1 origem; duplicado exacto devolvido em vez de contado; factores expostos em cada conclusão | `tests/evidence.mjs` («dez cópias… dão UMA origem») | P2 concluído | Pesos de fiabilidade por fonte |
 | Estados das conclusões (9) e recusa de promoção | **Implementado e testado**: `confirmada` exige 2 origens + 1 primária + sem contradição; prova contrária activa força «contraditória»; conclusão nasce fraca; sugestão nunca é aplicada automaticamente | `tests/evidence.mjs`; interface em `docs/shot-18-provas.png` | P2 concluído | — |
@@ -113,7 +117,9 @@ Classificação por item: **TESTADO E CONFIRMADO** · **POR INSPECÇÃO** · **O
 - **P2 (feito nesta fase)**: esquema completo de investigação, registo de provas, corroboração por
   origens independentes, nove estados validados no servidor, retirada com motivo, duplicar/arquivar/
   retomar/cancelar, migração v1→v2.
-- **P2 (em falta)**: pipeline de pesquisa profunda de 20 passos ligado a `runs`; relatório de 18
-  secções; grafo a partir de provas; verificação automática de acessibilidade; router com
+- **P2 (feito agora)**: motor de 20 passos com orçamento, paragem declarada, retoma e cancelamento;
+  relatório de 18 secções em JSON e Markdown; detecção de injecção no conteúdo recolhido.
+- **P2 (em falta)**: grafo alimentado por provas (secção 11 do relatório); verificação automática de
+  acessibilidade; extracção de PDF/OCR; descoberta automática de fontes; router com
   preferências/quotas; `frame-ancestors`.
 - **P3**: papel ANALYST; listagem dinâmica de modelos; instrumentação de custos e de tarefas em fila.

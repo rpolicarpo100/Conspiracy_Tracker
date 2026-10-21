@@ -4,9 +4,13 @@ import crypto from 'node:crypto';
 
 export function keyVault(secret) {
   if (!secret || String(secret).length < 24) {
+    /* Distingue «não definido» de «definido mas curto»: o comprimento é dito, o valor nunca. */
+    const reason = !secret
+      ? 'APP_SECRET não definido: as chaves de API não podem ser guardadas com segurança'
+      : 'APP_SECRET tem ' + String(secret).length + ' caracteres e o mínimo são 24: as chaves de API não podem ser guardadas com segurança (o valor não é revelado)';
     return {
       enabled: false,
-      reason: 'APP_SECRET não configurado (mínimo 24 caracteres): as chaves de API não podem ser guardadas com segurança',
+      reason,
       seal() { throw new Error('cofre desactivado'); },
       open() { throw new Error('cofre desactivado'); },
       mask() { return '—'; }

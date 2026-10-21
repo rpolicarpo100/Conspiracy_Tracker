@@ -13,7 +13,8 @@
   let S = {
     me: null, csrf: null, tab: 'account', projects: [], meta: null,
     providers: [], metrics: null, users: [], audit: [], sessions: [], msg: null, busy: false,
-    detail: null            // projecto aberto: { project, evidence, claims }
+    detail: null,           // projecto aberto: { project, evidence, claims, runs }
+    report: null            // relatório de 18 secções aberto
   };
 
   async function api(path, opts) {
@@ -241,6 +242,7 @@
   }
 
   function paintProjects(root) {
+    if (S.report) { paintReport(root); return; }
     if (S.detail) { paintProjectDetail(root); return; }
     const f = DRAFT.project;
     root.appendChild(el('p', { style: 'font-size:11px', text: 'Projectos independentes por utilizador. Um projecto guarda a pergunta, o âmbito, as hipóteses e os limites — não confunde hipótese com facto.' }));
@@ -287,12 +289,48 @@
   /* ---------------- projecto aberto: provas e conclusões ---------------- */
 
   async function openProject(id) {
-    const [p, ev, cl] = await Promise.all([
-      api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'), api('/api/projects/' + id + '/claims')
+    const [p, ev, cl, rn] = await Promise.all([
+      api('/api/projects/' + id), api('/api/projects/' + id + '/evidence'),
+      api('/api/projects/' + id + '/claims'), api('/api/projects/' + id + '/runs')
     ]);
     if (!p.ok) return note('Não foi possível abrir o projecto: ' + (p.error && p.error.message), 'bad');
-    S.detail = { project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [] };
+    S.detail = {
+      project: p.json.project, evidence: ev.ok ? ev.json.evidence : [], claims: cl.ok ? cl.json.claims : [],
+      runs: rn.ok ? rn.json.runs : [], profiles: rn.ok ? rn.json.profiles : ['rapida', 'normal', 'profunda', 'exaustiva'],
+      steps: rn.ok ? rn.json.steps : []
+    };
     paint();
+  }
+
+  /* relatório de 18 secções: 'Não disponível' é mostrado como tal, não escondido */
+  async function openReport(projectId) {
+    const r = await api('/api/projects/' + projectId + '/report');
+    if (!r.ok) return note('Relatório indisponível: ' + (r.error && r.error.message), 'bad');
+    S.report = r.json;
+    paint();
+  }
+
+  function paintReport(root) {
+    const rep = S.report;
+    root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:6px' }, [
+      el('button', { class: 'btn sm', type: 'button', text: '← Voltar ao projecto', onclick: () => { S.report = null; paint(); } }),
+      el('span', { class: 'tag ' + (rep.summary.unavailable ? 'warn' : 'ok'), text: rep.summary.available + '/' + rep.summary.sections + ' secções com dados' }),
+      el('span', { style: 'font-size:10px;color:var(--muted)', text: rep.summary.evidence + ' provas · ' + rep.summary.claims + ' conclusões · ' + rep.summary.runs + ' execuções' })
+    ]));
+    root.appendChild(el('h3', { style: 'margin:6px 0;font-size:14px', text: 'Relatório — ' + rep.project.title }));
+    rep.sections.forEach((sec) => {
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin:6px 0' }, [
+        el('div', { style: 'font-size:11px;font-weight:600', text: sec.n + '. ' + sec.title }),
+        sec.available === false
+          ? el('div', { style: 'font-size:10px;color:var(--bad,#c33)', text: sec.note || 'Não disponível' })
+          : el('pre', {
+            style: 'font-size:10px;white-space:pre-wrap;margin:4px 0 0;color:var(--muted)',
+            text: JSON.stringify(sec.content, null, 1).slice(0, 1200)
+          }),
+        sec.available !== false && sec.content && sec.content.nota
+          ? el('div', { style: 'font-size:10px;color:var(--muted)', text: 'nota: ' + sec.content.nota }) : null
+      ].filter(Boolean)));
+    });
   }
 
   async function reloadDetail() {
@@ -309,7 +347,8 @@
   function paintProjectDetail(root) {
     const d = S.detail, p = d.project;
     root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:6px' }, [
-      el('button', { class: 'btn sm', type: 'button', text: '← Todos os projectos', onclick: () => { S.detail = null; paint(); } }),
+      el('button', { class: 'btn sm', type: 'button', text: '← Todos os projectos', onclick: () => { S.detail = null; S.report = null; paint(); } }),
+      el('button', { class: 'btn sm', type: 'button', text: 'Relatório', onclick: () => openReport(p.id) }),
       el('span', { class: 'tag ' + (p.status === 'archived' ? 'muted' : 'ok'), text: p.status }),
       el('span', { style: 'font-size:10px;color:var(--muted)', text: p.id })
     ]));
@@ -394,6 +433,69 @@
       ]));
     }
     root.appendChild(addHypothesisForm);
+
+    /* pesquisa profunda */
+    root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Pesquisa profunda (' + (d.runs || []).length + ')' }));
+    const rf = DRAFT.run || (DRAFT.run = { profile: 'normal', urls: '' });
+    root.appendChild(el('div', { class: 'warnbox' }, [
+      el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'PERFIL DE EXECUÇÃO — um perfil define esforço, não cobertura: no fim é dito o que se consultou e por que parou' }),
+      el('div', { class: 'chips' }, [
+        el('select', { onchange: (e) => { rf.profile = e.target.value; } },
+          (d.profiles || ['rapida', 'normal', 'profunda', 'exaustiva']).map((v) => el('option', { value: v, selected: rf.profile === v, text: 'perfil: ' + v }))),
+        el('input', {
+          placeholder: 'URLs candidatas (uma por linha)', value: rf.urls, style: 'flex:1;min-width:260px',
+          oninput: (e) => { rf.urls = e.target.value; }
+        })
+      ]),
+      el('button', {
+        class: 'btn sm primary', type: 'button', text: 'Iniciar pesquisa', style: 'margin-top:4px',
+        onclick: async () => {
+          const urls = String(rf.urls || '').split('\n').map((x) => x.trim()).filter(Boolean);
+          const r = await api('/api/projects/' + p.id + '/runs', { method: 'POST', body: { profile: rf.profile, urls } });
+          if (!r.ok) return note('Falhou: ' + (r.error && r.error.message), 'bad');
+          const run = r.json.run;
+          note('Execução ' + run.status + (run.stopReason ? ' — parou: ' + run.stopReason : '') +
+            ' · passos registados: ' + (run.steps || []).length +
+            ' · fontes consultadas: ' + (run.sourcesConsulted || []).length, run.stopReason ? 'warn' : 'ok');
+          await reloadDetail();
+        }
+      })
+    ]));
+    (d.runs || []).forEach((run) => {
+      const done = (run.steps || []).filter((x) => x.status === 'concluido').length;
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin:6px 0' }, [
+        el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+          el('span', { class: 'tag ' + (run.status === 'aguarda-revisao-humana' ? 'ok' : run.status === 'stopped' ? 'warn' : 'muted'), text: run.status }),
+          el('b', { style: 'font-size:11px', text: 'perfil ' + run.profile }),
+          el('span', { style: 'font-size:10px;color:var(--muted)', text: done + '/20 passos concluídos · ' + (run.sourcesConsulted || []).length + ' fontes consultadas' }),
+          run.stopReason ? el('span', { style: 'font-size:10px;color:var(--bad,#c33)', text: 'parou: ' + run.stopReason }) : null,
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Relatório', style: 'margin-left:auto',
+            onclick: () => openReport(p.id)
+          }),
+          ['pending', 'running'].includes(run.status) ? el('button', {
+            class: 'btn sm', type: 'button', text: 'Cancelar',
+            onclick: async () => {
+              const r = await api('/api/runs/' + run.id + '/cancel', { method: 'POST', body: {} });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              await reloadDetail();
+            }
+          }) : null,
+          run.status === 'stopped' ? el('button', {
+            class: 'btn sm', type: 'button', text: 'Retomar',
+            onclick: async () => {
+              const r = await api('/api/runs/' + run.id + '/resume', { method: 'POST', body: {} });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              note('Retomada: ' + r.json.run.status + (r.json.run.stopReason ? ' — parou de novo: ' + r.json.run.stopReason : ''), 'warn');
+              await reloadDetail();
+            }
+          }) : null
+        ].filter(Boolean)),
+        run.stopDetail ? el('div', { style: 'font-size:10px;color:var(--muted)', text: run.stopDetail }) : null,
+        el('div', { style: 'font-size:10px;color:var(--muted);margin-top:2px', text:
+          (run.steps || []).map((x) => x.n + '.' + x.id + (x.status === 'concluido' ? '✓' : x.status === 'ignorado-pelo-perfil' ? '·' : x.status === 'nao-executado' ? '∅' : '✗')).join(' ') })
+      ].filter(Boolean)));
+    });
 
     /* provas */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Registo de provas (' + d.evidence.length + ')' }));
@@ -693,5 +795,5 @@
     return host;
   }
 
-  VN.accountUI = { mount, refresh, paint, getState: () => S, api, openProject };
+  VN.accountUI = { mount, refresh, paint, getState: () => S, api, openProject, openReport };
 })(typeof window !== 'undefined' ? window : globalThis);

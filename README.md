@@ -140,6 +140,8 @@ docs/                      aceitação, esquema, benchmarks, capturas
   limites.
 - `docs/EVIDENCIA.md` — registo de provas, os nove estados das conclusões e as regras que impedem
   tratar dez cópias de um comunicado como dez confirmações.
+- `docs/MOTOR-PESQUISA.md` — os 20 passos do motor, perfis de esforço, motivos de paragem, defesas
+  contra injecção de instruções e o relatório de 18 secções.
 - `docs/AUDITORIA-CODIGO.md` — matriz de auditoria (componente, estado real, evidência, risco,
   acção) e diagnóstico da disponibilidade.
 - `docs/TEST-RESULTS.txt` — saída integral dos testes.
@@ -162,6 +164,12 @@ navegador; com sessão, projectos e chaves ficam associados ao utilizador e isol
   a facto), critérios de conclusão, orçamento, checkpoints, duplicação, arquivo e cancelamento.
 - **Registo de provas** por projecto: excerto obrigatório, hash SHA-256, URL canónico, tipo de fonte,
   posição, estado de validação e limitações. Cópias do mesmo comunicado contam como **uma** origem.
+- **Motor de pesquisa de 20 passos** com perfis de esforço (rápida/normal/profunda/exaustiva),
+  orçamento de chamadas/documentos/tempo, execuções persistentes, **retomáveis e canceláveis**. Se
+  não houver chave de IA validada ou não houver URLs, a execução **pára e diz porquê** — não inventa
+  interpretações nem excertos.
+- **Relatório de 18 secções** em JSON e Markdown, com «Não disponível» explícito no que não está
+  instrumentado e com as provas contrárias sempre à vista.
 - **Conclusões com nove estados** validados no servidor: «confirmada» exige duas origens
   independentes e uma prova primária, sem prova contrária activa; uma prova contrária obriga a
   «contraditória»; retirar uma prova exige motivo e não apaga o histórico.

@@ -294,13 +294,41 @@ await t('projecto aberto mostra provas, origens independentes e estado sugerido'
   return 'prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»';
 });
 
+await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta', async () => {
+  await p.evaluate(() => {
+    const inp = [...document.querySelectorAll('#accroot input')].find((i) => /URLs candidatas/.test(i.placeholder || ''));
+    if (!inp) throw new Error('campo de URLs ausente');
+    inp.value = 'https://exemplo.pt/relatorio';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('#accroot .btn', 'Iniciar pesquisa');
+  await waitText(/parou: sem-fornecedor-de-ia-validado/, 'execução não declarou o motivo de paragem');
+  await clickText('#accroot .btn', 'Relatório');
+  await waitText(/secções com dados/, 'relatório não abriu');
+  await p.waitForTimeout(300);
+  await p.screenshot({ path: '/home/user/docs/shot-20-relatorio.png' });
+  const txt = await p.textContent('#accroot');
+  if (!/1\. Pergunta/.test(txt) || !/18\. Conclusões proporcionais/.test(txt)) throw new Error('secções do relatório em falta');
+  if (!/Não disponível/.test(txt)) throw new Error('relatório não declara o que falta');
+  if (!/Relações/.test(txt)) throw new Error('secção de relações ausente');
+  return 'execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas';
+});
+
 /* captura final: conclusão com factores de corroboração visíveis */
+await clickText('#accroot .btn', '← Voltar ao projecto');
+await waitText(/Conclusões e alegações/, 'não voltou ao projecto');
 await p.evaluate(() => {
   const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Conclusões e alegações/.test(x.textContent));
   if (h) h.scrollIntoView({ block: 'start' });
 });
 await p.waitForTimeout(300);
 await p.screenshot({ path: '/home/user/docs/shot-18-provas.png' });
+await p.evaluate(() => {
+  const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Pesquisa profunda/.test(x.textContent));
+  if (h) h.scrollIntoView({ block: 'start' });
+});
+await p.waitForTimeout(300);
+await p.screenshot({ path: '/home/user/docs/shot-19-pesquisa.png' });
 await p.screenshot({ path: '/home/user/docs/shot-17-conta.png' });
 await B.close();
 srv.kill('SIGTERM');

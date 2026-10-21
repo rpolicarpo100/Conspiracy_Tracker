@@ -8,13 +8,15 @@ import crypto from 'node:crypto';
 import { createStore } from './store.mjs';
 import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser, parseCookies } from './auth.mjs';
 import { keyVault } from './crypto-keys.mjs';
-import { PROVIDERS, registryPublic, validateProvider, complete, breakerState } from './providers.mjs';
+import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, isPrivateHost } from './providers.mjs';
+import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
+import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
 import {
   STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase2';
+const APP_VERSION = '2.0.0-fase2b';
 
 function json(res, code, obj, extraHeaders) {
   const headers = Object.assign({
@@ -107,6 +109,59 @@ export async function createApi(opts) {
     return out;
   }
 
+  /* Recolha de documentos para o motor: mesma disciplina do agente local
+     (sem hosts privados, limite de tamanho e de tempo, hash do conteúdo). */
+  async function fetchDoc(url) {
+    let u = null;
+    try { u = new URL(String(url)); } catch { return { ok: false, error: 'URL inválida' }; }
+    if (!/^https?:$/.test(u.protocol)) return { ok: false, error: 'só http(s)' };
+    if (isPrivateHost(u.hostname)) return { ok: false, error: 'endereço privado/local proibido (SSRF)' };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(u.toString(), { signal: ctrl.signal, redirect: 'follow', headers: { 'user-agent': 'Meridiano/2 (+investigacao; contacto no site)' } });
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > 2 * 1024 * 1024) return { ok: false, status: res.status, error: 'documento maior do que 2 MB' };
+      const raw = Buffer.from(buf).toString('utf8');
+      const text = raw.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40000);
+      return { ok: res.ok, status: res.status, text, bytes: buf.byteLength, hash: crypto.createHash('sha256').update(buf).digest('hex'), error: res.ok ? null : 'HTTP ' + res.status };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e).slice(0, 160) };
+    } finally { clearTimeout(timer); }
+  }
+
+  /* Executor de IA do utilizador: só com credencial VALIDADA e cofre activo.
+     Sem isso devolve erro explícito — o motor pára e diz porquê. */
+  function aiRunner(user) {
+    const cred = store.credentialsOf(user.id).find((c) => c.status === 'operational') || null;
+    if (!cred) return null;
+    if (!vault.enabled) return null;
+    let apiKey = null;
+    try { apiKey = vault.open(cred.keyCipher); } catch { return null; }
+    return async function ai({ step, project, candidates }) {
+      const messages = promptFor(step.id, project, candidates);
+      const r = await complete({
+        provider: cred.provider, base: (cred.meta && cred.meta.base) || undefined, apiKey,
+        model: cred.model, accountId: (cred.meta && cred.meta.accountId) || undefined,
+        messages, timeoutMs: 30000
+      });
+      await store.addUsage({
+        userId: user.id, provider: cred.provider, model: cred.model, kind: 'research:' + step.id,
+        ok: !!r.ok, promptTokens: r.usage ? r.usage.promptTokens : null,
+        completionTokens: r.usage ? r.usage.completionTokens : null, cost: null,
+        latencyMs: r.latencyMs != null ? r.latencyMs : null
+      });
+      if (!r.ok) return { ok: false, error: 'fornecedor recusou: ' + String(r.error).slice(0, 160) };
+      const parsed = parseAiJson(r.text);
+      return {
+        ok: true, provider: cred.provider, model: cred.model, latencyMs: r.latencyMs,
+        usage: r.usage, expectsJson: true, parsed: parsed.ok ? parsed.parsed : null,
+        note: parsed.ok ? null : parsed.reason
+      };
+    };
+  }
+
   /* projecto do utilizador (ou null): nunca confiar num id vindo do cliente */
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
@@ -160,6 +215,7 @@ export async function createApi(opts) {
           ok: true, version: APP_VERSION, schemaVersion: store.schemaVersion(),
           migrations: store.migrations().map((m) => ({ to: m.to, at: m.at, changes: m.changes })),
           states: STATES.map((id) => ({ id, label: STATE_LABEL[id] })),
+          research: { steps: STEPS.length, profiles: Object.keys(PROFILES), promptVersion: PROMPT_VERSION, reportSections: SECTION_TITLES.length },
           providers: registryPublic(),
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           registration: {
@@ -515,6 +571,84 @@ export async function createApi(opts) {
         await store.audit({ type: 'claim_updated', actorId: a.user.id, subjectId: c.id, action: 'update_claim',
           detail: { from: c.history[c.history.length - 1].from, to: updated.state, fields: Object.keys(patch) } });
         return json(res, 200, { ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs) });
+      }
+
+      /* ---------- motor de pesquisa: execuções ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/runs$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        if (!projectFor(a, pid)) return err(res, 404, 'projecto não encontrado');
+        return json(res, 200, { ok: true, runs: store.runsOf(pid), profiles: Object.keys(PROFILES), steps: STEPS.map((s) => ({ n: s.n, id: s.id, title: s.title, kind: s.kind })) });
+      }
+      if (p.match(/^\/api\/projects\/[^/]+\/runs$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const body = await readBody(req);
+        const profile = PROFILES[body.profile] ? body.profile : 'normal';
+        const urls = (Array.isArray(body.urls) ? body.urls : []).slice(0, 25)
+          .map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u));
+        const run = await store.createRun(pid, {
+          profile, userId: a.user.id, status: 'running',
+          candidates: { urls }, budget: profileOf(profile),
+          aiAvailable: !!aiRunner(a.user), vaultReady: vault.enabled
+        });
+        const ai = aiRunner(a.user);
+        const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
+        await store.audit({
+          type: 'research_run', actorId: a.user.id, subjectId: run.id, action: 'run',
+          detail: { projectId: pid, profile, status: out.run && out.run.status, stopReason: out.run && out.run.stopReason, urls: urls.length }
+        });
+        await store.count('research_runs');
+        return json(res, 201, { ok: true, run: out.run, aiUsed: !!ai, vaultReady: vault.enabled });
+      }
+      if (p.match(/^\/api\/runs\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const rid = p.split('/')[3];
+        const run = store.runById(rid);
+        if (!run || !projectFor(a, run.projectId)) return err(res, 404, 'execução não encontrada');
+        return json(res, 200, { ok: true, run });
+      }
+      if (p.match(/^\/api\/runs\/[^/]+\/(resume|cancel)$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const parts = p.split('/');
+        const rid = parts[3], action = parts[4];
+        const run = store.runById(rid);
+        if (!run || !projectFor(a, run.projectId)) return err(res, 404, 'execução não encontrada');
+        if (action === 'cancel') {
+          if (!['pending', 'running'].includes(run.status)) return err(res, 409, 'execução já terminada (' + run.status + '): não há nada para cancelar');
+          const updated = await store.updateRun(rid, { status: 'cancelled', stopReason: 'cancelado-pelo-utilizador', finishedAt: new Date().toISOString() });
+          await store.audit({ type: 'research_run', actorId: a.user.id, subjectId: rid, action: 'cancel', detail: { status: updated.status } });
+          return json(res, 200, { ok: true, run: updated });
+        }
+        if (run.status === 'aguarda-revisao-humana') return err(res, 409, 'execução já concluída: nada para retomar');
+        if (run.status === 'cancelled') return err(res, 409, 'execução cancelada: crie uma nova');
+        await store.updateRun(rid, { status: 'running' });
+        const ai = aiRunner(a.user);
+        const out = await runResearch({ store, ai, fetchDoc }, rid, { ai });
+        await store.audit({ type: 'research_run', actorId: a.user.id, subjectId: rid, action: 'resume', detail: { status: out.run && out.run.status } });
+        return json(res, 200, { ok: true, run: out.run });
+      }
+
+      /* ---------- relatório de 18 secções ---------- */
+      if (p.match(/^\/api\/projects\/[^/]+\/report$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const rep = buildReport({
+          project: prj, evidence: store.evidenceOf(pid), claims: store.claimsOf(pid),
+          runs: store.runsOf(pid), usage: store.data.usage.filter((u) => u.userId === a.user.id)
+        });
+        if (String(url.searchParams.get('format') || 'json') === 'md') {
+          const md = reportToMarkdown(rep);
+          res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' });
+          return res.end(md);
+        }
+        return json(res, 200, Object.assign({ ok: true }, rep, { sectionTitles: SECTION_TITLES }));
       }
 
       /* ---------- fornecedores de IA ---------- */

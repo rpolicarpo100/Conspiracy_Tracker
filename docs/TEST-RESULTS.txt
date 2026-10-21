@@ -256,3 +256,46 @@ PASS retirada sem motivo → 400 · com motivo → 200 · prova conservada na li
 PASS duplicar projecto → 201 «Verificação P2 em produção (cópia)»
 PASS chave de IA com cofre inactivo → 503 (APP_SECRET por definir no Render) — não finge guardar
 PASS eliminar conta → 200 · tests/deployed.mjs 6/6 (grafo, pesquisa, /api/fetch, VIES, 403 cross-origin, SSRF)
+
+== 18. FASE 2: MOTOR DE PESQUISA E RELATÓRIO (tests/research.mjs)
+
+== P2 · MOTOR DE PESQUISA E RELATÓRIO (tests/research.mjs)
+
+PASS sem fornecedor de IA o motor pára no primeiro passo e diz porquê → parou no passo 1 · sem fornecedor de IA validado: configure e valide uma chave em «Chaves de IA» para este passo poder correr · nada inventado
+PASS com IA simulada corre os 20 passos, recolhe documentos reais e entrega para revisão humana → 20 passos · 3 URLs consultados (2 obtidos, 1 com 404 registado) · aguarda revisão humana
+PASS conteúdo que dá ordens ao agente é assinalado, não obedecido → sinal de injecção assinalado (2 padrões) e registado na fonte
+PASS orçamento de documentos corta a recolha e a paragem fica escrita → 1 documento apesar de 2 URLs · orcamento-esgotado
+PASS perfil declarado ignora passos que não inclui (e diz quais) → executados: interpretar, variantes · ignorados pelo perfil: entidades, multilingue, excertos, alegacoes, contraprovas, expandir
+PASS resposta de IA que não é JSON não é guardada como resultado → parou com «resposta-invalida-de-ia» · saída não guardada
+PASS execução cancelada não continua ao retomar → não executou nenhum passo
+PASS retoma só os passos em falta → passo 1 preservado, restantes executados (20 registos)
+PASS prompts são versionados e não misturam documentos como instruções → system com regra anti-injecção + versão p1 · 1 documento anexado
+PASS relatório tem as 18 secções e declara o que não tem dados → 18 secções · 15 com dados · 3 declaradas como indisponíveis
+PASS relatório mostra provas favoráveis, contrárias e a ausência de contra-prova → favoráveis 2 · contrárias 0 com aviso · conclusão confirmada com 2 origens
+PASS relatório inclui lacunas e conclusões proporcionais sem adjectivos de certeza → lacunas listadas · redacção proporcional · markdown com 18 secções
+PASS prova retirada aparece como limitação e como fonte inacessível → inacessíveis 1 · limitação registada · corroboração recalculada (1 origem)
+PASS POST /runs sem chave de IA valida e pára com motivo declarado (HTTP) → run criada · parou em «sem-fornecedor-de-ia-validado» (nada inventado)
+PASS GET /api/projects/{id}/runs lista a execução com os 20 passos descritos → 1 execução · 20 passos descritos · perfis rapida/normal/profunda/exaustiva
+PASS cancelar execução terminada é recusado; outra conta não vê a execução → 409 ao cancelar o que já terminou · 404 para outra conta (execução e relatório)
+PASS relatório por HTTP traz 18 secções e versão markdown → JSON 18 secções · Markdown 18 secções com ausências declaradas
+PASS CSRF é exigido para criar execução → 403 sem cabeçalho CSRF
+PASS /api/meta publica 20 passos, 4 perfis e 18 secções → passos 20 · perfis rapida/normal/profunda/exaustiva · prompt p1 · secções 18
+
+19/19 passaram
+
+== 19. INTERFACE DE PESQUISA E RELATÓRIO (tests/account-ui.mjs, 11 testes)
+CONTA E ADMINISTRAÇÃO — INTERFACE
+PASS botão Conta abre a área de autenticação → formulário de entrada visível (Entrar. Sem conta, os dados de investigação continuam a vive…)
+PASS registo pela interface cria sessão e mostra o email → sessão criada para uimvifocta@ex.pt
+PASS política de palavra-passe é aplicada pelo servidor, não pela interface → registo com «123» → 400 (palavra-passe fraca: pelo menos 10 caracteres, uma minúscula)
+PASS projecto criado na interface aparece na lista → projecto visível na tabela
+PASS separador de chaves mostra o estado do cofre e recusa guardar sem APP_SECRET? (cofre activo) → 8 fornecedores listados · cofre activo
+PASS chave de IA: guardada com máscara e validada contra o fornecedor real → máscara «chav…123» · Groq falhou em «auth»: credencial recusada (HTTP 401)uimvifocta@ex
+PASS sessão terminada esconde os dados privados → formulário de autenticação reposto, sem dados privados e sessão inválida no servidor
+PASS administrador vê métricas reais e auditoria → utilizadores: 2 · auditoria com eventos reais · indisponíveis declarados
+PASS utilizador comum não vê a área de administração → sem separador · métricas/utilizadores/auditoria → 403 no servidor
+PASS projecto aberto mostra provas, origens independentes e estado sugerido → prova primária registada · origem host:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»
+PASS pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta → execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas
+erros de runtime: 0 []
+
+11/11 passaram
