@@ -244,3 +244,15 @@ PASS projecto aberto mostra provas, origens independentes e estado sugerido → 
 erros de runtime: 0 []
 
 10/10 passaram
+
+== 17. FASE 2 NO SERVIÇO PUBLICADO (commit ec10683, 2026-10-21)
+PASS /health → {"status":"alive","version":"2.0.0-fase2","commit":"ec10683…"} · /api/meta → schemaVersion 2 · 9 estados listados
+PASS projecto criado com hipótese forçada a «confirmada» no corpo → servidor guardou «hipotese»
+PASS prova primária: URL canónico https://exemplo.pt/relatorio (UTM removido) · origem host:exemplo.pt
+PASS «confirmada» com 1 origem → 409 «exige pelo menos 2 origens independentes (tem 1)»
+PASS «confirmada» com 2 origens e 1 primária → 200 · estado confirmada
+PASS prova contrária primária → «confirmada» recusada (409) · «contraditória» aceite (200)
+PASS retirada sem motivo → 400 · com motivo → 200 · prova conservada na lista com retractedAt
+PASS duplicar projecto → 201 «Verificação P2 em produção (cópia)»
+PASS chave de IA com cofre inactivo → 503 (APP_SECRET por definir no Render) — não finge guardar
+PASS eliminar conta → 200 · tests/deployed.mjs 6/6 (grafo, pesquisa, /api/fetch, VIES, 403 cross-origin, SSRF)
