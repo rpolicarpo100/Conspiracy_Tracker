@@ -16,3 +16,15 @@ services:
         value: "20"
       - key: AGENT_BUDGET
         value: "60"          # pedidos ao agente local por IP em 10 minutos
+      # Cofre das chaves de IA: sem APP_SECRET a aplicação RECUSA guardar chaves
+      # (mostra «cofre inactivo» em vez de fingir que guardou). O Render gera o valor.
+      - key: APP_SECRET
+        generateValue: true
+      # Promove a ADMIN o primeiro registo feito com este email. Definir no painel
+      # do Render (sync: false) — nunca no repositório.
+      - key: ADMIN_EMAIL
+        sync: false
+      # Pasta de dados. No plano gratuito não há disco: os dados não sobrevivem a
+      # um deploy e /api/meta declara-o (durableBetweenDeploys: false).
+      - key: DATA_DIR
+        value: /opt/render/project/src/.data
