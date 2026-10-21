@@ -127,3 +127,20 @@ Eventos de auditoria efectivamente emitidos pelo servidor: `user_registered`, `l
 Pedidos de titular: através da conta (exportar/eliminar) ou por contacto directo com o operador da
 instância publicada. Este documento será actualizado quando a retenção automática e os backups
 forem implementados.
+
+
+## Memória da investigação e cópias de segurança (v5)
+
+- **Memória da investigação**: notas, decisões, glossário, lacunas e correcções escritas pelo
+  utilizador dentro de um projecto. É dado pessoal do titular: faz parte da exportação
+  (`/api/auth/export` e `/api/auth/backup`) e é eliminada com a conta.
+- **Cópia de segurança** (`GET /api/auth/backup`): inclui projectos, provas, conclusões, relações,
+  memória e ligações de entidades. **Não inclui** chaves de IA, palavras-passe, hashes, sessões nem
+  auditoria de terceiros — o ficheiro diz isso no campo `notIncluded`. Fica registada a operação
+  (`backup_exported`) e a reposição (`backup_restored`), ambas com data e autoria.
+- **Reposição** (`POST /api/auth/restore`): cria sempre projectos novos do próprio titular, com
+  identificadores remapeados; não permite adoptar dados de outra conta (o projecto original
+  continua a responder `404` a quem não é dono).
+- **Base legal**: execução do contrato e interesse legítimo na conservação do trabalho do titular.
+  A cópia é uma medida de segurança contra a perda de dados no plano gratuito (disco efémero), não
+  uma transferência para terceiros.

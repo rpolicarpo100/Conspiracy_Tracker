@@ -134,12 +134,42 @@ nós, arestas e filtro). O SVG escapa conteúdo hostil (testado com `<script>` n
 Exemplo real gerado pelo servidor: `docs/exemplo-exportacao-grafo.svg` (dados fictícios,
 filtro 2021–2023, 1 relação fora do período).
 
-## 12. O que ainda não está feito
+## 12. Caminhos com restrições (implementado)
 
-- **Pesquisa de caminhos com restrições** (por intervalo de datas, por tipo de relação, por excluir
-  inferências): hoje é o caminho mais curto sem filtros.
-- **Fusão assistida de homónimos**: o servidor recusa fundir sem identificador; falta a operação
-  explícita de fusão quando o utilizador *tem* o identificador.
+`GET /api/projects/{id}/graph?from=<chave>&to=<chave>` aceita ainda:
+
+| parâmetro | efeito |
+| --- | --- |
+| `pathTypes=financed,subsidiary_of` | só atravessa relações destes tipos |
+| `pathExcludeInferred=1` | não atravessa relações inferidas |
+| `pathNotBefore` / `pathNotAfter` | janela temporal (AAAA / AAAA-MM / AAAA-MM-DD) |
+
+A resposta traz `caminho.restricoes` com `arestasNoGrafo`, `arestasUsadas` e `arestasExcluidas`, e
+`semPeriodo` quando algum passo não tem período declarado — esse passo é incluído e o aviso di-lo.
+Quando não há caminho sob restrições, a razão distingue «não existe» de «não existe com estas
+restrições». O aviso de sempre: um caminho não é prova de coordenação, intenção ou controlo comum.
+
+## 13. Homónimos com identificador (implementado)
+
+`POST /api/projects/{id}/entities/link` declara que duas entradas são a mesma entidade:
+
+```json
+{ "from": {"name": "A. Silva"}, "to": {"name": "Ana Silva"},
+  "identifier": "NIPC 500000000", "identifierType": "NIPC",
+  "reason": "mesmo registo comercial consultado em 2026-10" }
+```
+
+- **sem identificador (mínimo 4 caracteres) a operação é recusada** — é a diferença entre fundir e
+  adivinhar;
+- o identificador declarado passa a ser o desambiguador canónico do nó; o outro nome fica como alias;
+- a ligação é **reversível** (`DELETE /api/entity-links/{id}` com motivo) e fica na auditoria
+  (`entity_link_created`, `entity_link_retracted`);
+- o grafo devolve `entityLinks` activos e `stats.mergedByLink`.
+
+## 14. O que ainda não está feito
+
 - **Extracção automática de entidades**: as entidades são declaradas por quem regista a prova (ou
   devolvidas como candidatos pelo passo 9/10 do motor, que ainda não as escreve).
 - **Filtro por tipo de entidade/relação no servidor**: hoje é feito na interface, escondendo nós.
+- **Sugestão automática de fusões**: o servidor não propõe candidatos a homónimos; só aceita ligações
+  declaradas com identificador.
