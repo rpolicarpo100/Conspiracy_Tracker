@@ -12,12 +12,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase11**
+- versão da aplicação: **2.0.0-fase12**
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 105
-- ficheiros de teste: 50 · blocos de teste declarados (`await t`): 578 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 107
+- ficheiros de teste: 51 · blocos de teste declarados (`await t`): 597 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -54,6 +54,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
 | `tests/perf.mjs` | 0 | interface (Playwright) |
 | `tests/persistencia-pg.mjs` | 8 | servidor/módulo |
+| `tests/pesquisa-servidor.mjs` | 18 | servidor/módulo |
 | `tests/provedores-ui.mjs` | 16 | interface (Playwright) |
 | `tests/provider-os.mjs` | 25 | servidor/módulo |
 | `tests/provider-tests.mjs` | 18 | servidor/módulo |
@@ -70,13 +71,13 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/shot-search.mjs` | 0 | interface (Playwright) |
 | `tests/shots.mjs` | 0 | interface (Playwright) |
 | `tests/shots2.mjs` | 0 | interface (Playwright) |
-| `tests/simples-ui.mjs` | 14 | interface (Playwright) |
+| `tests/simples-ui.mjs` | 15 | interface (Playwright) |
 | `tests/smoke.mjs` | 0 | interface (Playwright) |
 | `tests/ssrn.mjs` | 18 | servidor/módulo |
 
 ### Registo
 
-- último commit: ef3dfdd docs: fase 10 publicada e capturas do modo simples
+- último commit: 86de625 fase 12: pesquisa por termos com ordem explicável, persistência com saúde de escrita, /api/sources recuperadas
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 32 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)
