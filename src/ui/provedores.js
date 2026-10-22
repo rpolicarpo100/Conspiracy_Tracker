@@ -17,7 +17,8 @@
 
   const S = {
     meta: null, entries: null, ranking: null, decisions: null,
-    decision: null, plan: null, task: 'conversa', busy: '', msg: null, open: null
+    decision: null, plan: null, schedule: null, health: null,
+    task: 'conversa', busy: '', msg: null, open: null
   };
 
   let ctxDeps = null;
@@ -33,16 +34,20 @@
     const wrap = el('div', { id: 'provedoresroot' });
 
     async function load() {
-      const [meta, cat, rank, dec] = await Promise.all([
+      const [meta, cat, rank, dec, sch, hea] = await Promise.all([
         api('/api/provider-os/meta'),
         api('/api/provider-os/catalog'),
         api('/api/provider-os/ranking?task=' + encodeURIComponent(S.task)),
-        api('/api/provider-os/decisions')
+        api('/api/provider-os/decisions'),
+        api('/api/provider-os/schedule'),
+        api('/api/provider-os/health')
       ]);
       if (meta.ok) S.meta = meta.json;
       if (cat.ok) S.entries = cat.json.entries;
       if (rank.ok) S.ranking = rank.json;
       if (dec.ok) S.decisions = dec.json;
+      if (sch.ok) S.schedule = sch.json;
+      if (hea.ok) S.health = hea.json;
     }
 
     function chip(res) {
@@ -117,6 +122,23 @@
         S.msg = { text: 'Testados ' + feitos + ' fornecedores (só níveis 1–2, sem custo): ' + pass + ' com documentação a responder. Nenhuma chave foi usada.' };
         await load(); paint();
       } }));
+      acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnReevalRun', text: 'Reavaliar agora (níveis 1–2)', onclick: async () => {
+        const r = await api('/api/provider-os/schedule/run', { method: 'POST', body: { limit: 4 } });
+        if (!r.ok) { S.msg = { text: 'Reavaliação recusada: ' + reasonOf(r) }; paint(); return; }
+        S.msg = { text: r.json.executed
+          ? 'Reavaliados ' + r.json.executed + ' fornecedor(es) com níveis 1–2 (sem chave, sem custo)' +
+            (r.json.skipped ? ' · ' + r.json.skipped + ' fora do orçamento do lote' : '')
+          : 'Nada em atraso: ' + (r.json.note || 'nenhuma reavaliação devida') };
+        await load(); paint();
+      } }));
+      acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnHealthCheck', text: 'Sonda de saúde (sem chave)', onclick: async () => {
+        const r = await api('/api/provider-os/health/check', { method: 'POST', body: {} });
+        if (!r.ok) { S.msg = { text: 'Sonda recusada: ' + reasonOf(r) }; paint(); return; }
+        const responderam = (r.json.probes || []).filter((x) => x.status === 'respondeu').length;
+        S.msg = { text: 'Sonda: ' + responderam + ' de ' + r.json.checked + ' responderam · ' + r.json.invariants.novosTestes +
+          ' testes criados · estados alterados: ' + (r.json.invariants.estadosAlterados ? 'SIM' : 'não') };
+        await load(); paint();
+      } }));
       wrap.appendChild(acoes);
 
       /* ---- catálogo ---- */
@@ -168,6 +190,40 @@
           } })
         ]));
         wrap.appendChild(box);
+      }
+
+      /* ---- reavaliação e saúde (fase 5) ---- */
+      if (S.schedule) {
+        const c = S.schedule.counts;
+        wrap.appendChild(el('h4', { style: 'font-size:12px;margin:12px 0 4px', text:
+          'Próximas reavaliações — ' + c.due + ' em atraso de ' + c.total + ' (' + c.manual + ' exigem decisão humana)' }));
+        const fila = (S.schedule.queue || []).slice(0, 6);
+        if (!fila.length) {
+          wrap.appendChild(el('div', { class: 'empty', id: 'reevalEmpty', text: 'Nada em atraso: o calendário é derivado do histórico de testes e da idade da evidência.' }));
+        } else {
+          wrap.appendChild(el('table', { class: 'listtable', id: 'reevalTable' }, [
+            el('thead', {}, [el('tr', {}, ['Fornecedor', 'Ação', 'Prioridade', 'Motivo'].map((h) => el('th', { text: h })))]),
+            el('tbody', {}, fila.map((x) => el('tr', {}, [
+              el('td', {}, [el('b', { text: x.name || x.key }), el('div', { class: 'muted', style: 'font-size:10px', text: x.key })]),
+              el('td', { style: 'font-size:10.5px', text: x.action }),
+              el('td', { class: 'mono', text: String(x.priority) }),
+              el('td', { style: 'font-size:10.5px', text: x.reason })
+            ])))
+          ]));
+        }
+        const futuras = (S.schedule.all || []).filter((x) => x.nextDueAt && !x.due);
+        if (futuras.length) {
+          wrap.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted);margin-top:4px', text:
+            'Agendadas: ' + futuras.slice(0, 5).map((x) => (x.name || x.key) + ' → ' + String(x.nextDueAt).slice(0, 10) +
+              (x.intervalDays != null ? ' (' + x.intervalDays + ' d)' : '')).join(' · ') }));
+        }
+      }
+      if (S.health && S.health.providers) {
+        const st = {};
+        S.health.providers.forEach((p) => { st[p.status] = (st[p.status] || 0) + 1; });
+        wrap.appendChild(el('div', { class: 'infobox', id: 'healthBox', style: 'margin-top:8px;font-size:11px', html:
+          '<b>Sonda de saúde:</b> ' + Object.entries(st).map(([k, v]) => v + ' ' + k.toLowerCase().replace('sem-dados', 'sem dados')).join(' · ') +
+          '. <i>Health check não é teste de qualidade:</i> só diz se o serviço responde — não cria testes, não promove estados e não entra na nota.' }));
       }
 
       /* ---- ranking ---- */

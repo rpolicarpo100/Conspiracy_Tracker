@@ -1052,3 +1052,63 @@ G. O que continua por fazer
      escolher hoje, que é o comportamento correcto;
    · `runWithFallback` não está ligado a nenhum fluxo de produção (decisão consciente);
    · scheduler de reavaliação e painel de descoberta contínua (fase 5/7).
+
+== 40. FASE 5 DO «PROVIDER OS» — REAVALIAÇÃO ADAPTATIVA E HEALTH CHECK (2026-10-22, 2.0.0-fase5)
+Código novo: `server/scheduler.mjs` · testes: `tests/scheduler.mjs` · rotas novas:
+`/api/provider-os/schedule`, `/schedule/run`, `/health/check`, `/health` (94 rotas no total).
+
+A. Calendário — resultado real
+   PASS nunca testado → primeiro teste imediato (e chamado pelo que é, não «reavaliação»)
+   PASS intervalo adaptativo: 1 PASS → 7 d · 3 PASS → 28 d · 8 PASS → 90 d (tecto)
+   PASS falha transitória (429) volta em 1 dia; falha permanente (401, 404 de caminho) NUNCA é repetida
+   PASS 4 falhas transitórias seguidas → pára e passa a exigir decisão humana
+   PASS BLOCKED por falta de chave não entra na fila (não é falha do fornecedor)
+   PASS evidência de 174 dias → reavaliar agora (o intervalo de 7 d foi substituído)
+   PASS testes sintéticos não contam para o calendário
+   PASS prioridades: evidência velha (90) > nunca testado (50) > falha transitória (40)
+   PASS a fila é derivada, não memorizada: a mesma história dá a mesma fila em qualquer ordem do array
+
+B. Saúde ≠ qualidade — resultado real
+   PASS sem sondas → «SEM-DADOS» («ausência de notícia não é boa notícia»)
+   PASS 3 falhas seguidas → INDISPONIVEL · 1 falha isolada → DEGRADADO · tudo bem → OPERACIONAL
+   PASS o veredicto diz sempre que não é nota de qualidade; a função nem recebe testes
+
+C. Execução (injectada) — resultado real
+   PASS orçamento do lote corta a fila (2 executados, 2 cortados, com motivo e valor)
+   PASS erro interno num fornecedor não aborta o lote (ERRO-INTERNO registado, restantes correm)
+
+D. Rotas — resultado real
+   PASS plano com 8 de 8 em atraso · política base 7 d / tecto 90 d
+   PASS simulação (`dryRun`) não grava nem pede (histórico intacto)
+   PASS execução real: 3 reavaliados, níveis 1–2 apenas (nenhum nível pago), auditoria
+        `provider_reevaluated` criada
+   PASS depois de reavaliado o prazo recua: 2 com data futura, 1 parada com motivo (bloqueado)
+   PASS sonda de saúde: 8 de 8 responderam · 0 testes criados · 0 estados alterados (invariante lido
+        da própria resposta e verificado no armazenamento)
+   PASS leitura de saúde distingue «sem dados» de «operacional»
+   PASS sem CSRF, execução e sonda recusadas (403)
+
+E. Interface (Playwright) — resultado real
+   PASS a fila de reavaliação mostra o atraso, a política e o motivo de cada linha
+   PASS a sonda de saúde declara no ecrã que não é teste de qualidade (0 testes, 0 estados)
+
+F. Decisões e defeitos desta fase
+   1. prioridade corrigida durante os testes: «nunca testado» passou a valer mais que uma falha
+      transitória conhecida (antes, quem falhava era testado primeiro do que quem nunca o foi);
+   2. `executarTestes`/`promoverEstado` extraídos para uma só implementação partilhada por `/test`
+      e `/schedule/run` — duas cópias divergiriam;
+   3. a sonda de saúde foi desenhada para NÃO poder ler notas (recebe só sondas), e a rota devolve os
+      invariantes que o teste verifica no armazenamento;
+   4. `tests/fase3c.mjs` e `fase3d.mjs`: a verificação de versão passou a aceitar `fase5`
+      (estava presa a `fase(3|4)` e teria falhado por motivo cosmético).
+
+G. Suite completa
+   Servidor: 14 · 17 · 18 · 13 · 26 · 17 · 19 · 13 · 16 · 28 · 18 · 19 · 21 · 15 · 25 · 7 · 25 · 23 ·
+   18 · 24 · 21 → 397 verificações, 0 falhas
+   Interface: 5 · 7 · 15 · 6 · 10 · 10 · 11 → 64 verificações, 0 falhas
+
+H. O que continua por fazer
+   · temporizador a correr sozinho: no plano gratuito o serviço dorme, e um cron que não corre daria
+     falsa sensação de vigilância — a execução é accionada (utilizador ou cron externo);
+   · níveis 4–6 contra fornecedores reais (falta chave do utilizador);
+   · painel de descoberta contínua e benchmarks comparativos (fase 7).

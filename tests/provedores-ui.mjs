@@ -131,6 +131,31 @@ await t('testar níveis 1–2 é grátis, não usa chave, e o resultado fica no 
   return testadas + ' fornecedores com teste registado · ' + hist.total + ' registos no histórico · sem chave usada';
 });
 
+await t('a fila de reavaliação mostra o que está em atraso e porquê', async () => {
+  const s = await p.evaluate(() => VN.provedoresUI.getState());
+  if (!s.schedule) throw new Error('calendário não carregou');
+  const txt = await body();
+  if (!/Próximas reavaliações/.test(txt)) throw new Error('sem secção de reavaliação');
+  const linhas = await p.evaluate(() => document.querySelectorAll('#reevalTable tbody tr').length);
+  if (s.schedule.counts.due && !linhas) throw new Error('em atraso mas sem linhas na fila');
+  const comMotivo = (s.schedule.queue || []).every((x) => x.reason && x.priority != null);
+  if (!comMotivo) throw new Error('linha da fila sem motivo/prioridade');
+  return s.schedule.counts.due + ' em atraso de ' + s.schedule.counts.total + ' · política base ' + s.schedule.policy.baseDays + ' d';
+});
+
+await t('a sonda de saúde declara que não é um teste de qualidade', async () => {
+  const r = await p.evaluate(() => fetch('api/provider-os/health/check', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', 'x-csrf-token': decodeURIComponent(document.cookie.split('; ').find((c) => c.startsWith('vn_csrf=')).split('=')[1]) },
+    body: '{}'
+  }).then((x) => x.json()));
+  if (!r.ok) throw new Error('sonda falhou: ' + JSON.stringify(r).slice(0, 120));
+  if (r.invariants.novosTestes !== 0) throw new Error('a sonda criou testes: ' + r.invariants.novosTestes);
+  if (r.invariants.estadosAlterados) throw new Error('a sonda mudou estados');
+  await p.evaluate(() => document.querySelector('.chips .btn.primary') || null);
+  return r.checked + ' sondados · 0 testes criados · 0 estados alterados';
+});
+
 await t('a decisão fica no histórico do servidor (não só no ecrã)', async () => {
   const hist = await p.evaluate(async () => (await fetch('api/provider-os/decisions').then((r) => r.json())));
   if (!hist.total) throw new Error('sem decisões registadas');

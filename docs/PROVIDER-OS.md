@@ -1,7 +1,7 @@
-# PROVIDER OS — catálogo com evidência, ranking, testes, selector e fallback (fases 1–4)
+# PROVIDER OS — catálogo com evidência, ranking, testes, selector, fallback e reavaliação (fases 1–5)
 
 Versão `2.0.0-fase4a` · esquema **v7** · código: `server/provider-catalog.mjs`, `server/store.mjs`,
-rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`, `tests/selector.mjs`, `tests/provedores-ui.mjs`
+rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`, `tests/selector.mjs`, `tests/scheduler.mjs`, `tests/provedores-ui.mjs`
 
 Este documento descreve **o que está implementado e medido** e, com o mesmo cuidado, o que ainda não
 existe. A regra que governa tudo: uma afirmação no catálogo tem de trazer a evidência que a sustenta
@@ -109,6 +109,10 @@ corrente — dois agentes não se sobrepõem em silêncio (testado em módulo e 
 | `/api/provider-os/select` | POST | decisão do selector, gravada e auditada (fase 4) |
 | `/api/provider-os/decisions` | GET | histórico de decisões (fase 4) |
 | `/api/provider-os/fallback/plan` | POST | plano de fallback simulado, custo zero (fase 4) |
+| `/api/provider-os/schedule` | GET | fila de reavaliação derivada do histórico (fase 5) |
+| `/api/provider-os/schedule/run` | POST | reavaliação real **níveis 1–2** (`dryRun` disponível) (fase 5) |
+| `/api/provider-os/health/check` | POST | sonda de saúde (prova de vida, não de qualidade) (fase 5) |
+| `/api/provider-os/health` | GET | veredicto de saúde por fornecedor (fase 5) |
 | `/api/projects/:id/work[/:versão]` | GET/POST | arquivo versionado com concorrência optimista |
 
 Todas exigem sessão; as mutações exigem CSRF; descoberta e semente ficam em auditoria
@@ -172,8 +176,12 @@ conflito, cobertura, orçamento/latência, capacidades, desempate determinístic
 determinístico, tecto de tentativas, 429 vs 401, efeito externo, orçamento do fallback, PRNG, e 6
 rotas HTTP).
 
-Suite completa: **20 suites · 376 asserções · 0 falhas** no servidor e **7 suites · 61 · 0** na
-interface (`docs/TEST-RESULTS.txt` §37–§39).
+`node tests/scheduler.mjs` → **21 asserções · 0 falhas** (intervalos adaptativos, o que nunca se
+repete, prioridades, derivação determinística, saúde ≠ qualidade, orçamento do lote, e 7 verificações
+por HTTP incluindo os invariantes da sonda).
+
+Suite completa: **21 suites · 397 asserções · 0 falhas** no servidor e **7 suites · 64 · 0** na
+interface (`docs/TEST-RESULTS.txt` §37–§40).
 
 ## 10. Selector automático com fallback (fase 4)
 
@@ -241,7 +249,52 @@ alternativa, eliminações e os 13 passos, e o plano de fallback com a política
 testes **1–2 é grátis** (não usa chave); os níveis 3–4 pedem confirmação explícita porque gastam a
 chave do utilizador. Captura: `docs/shot-30-provedores.png`.
 
-## 11. O que **não** está feito (declarado)
+## 11. Reavaliação adaptativa e saúde (fase 5)
+
+`server/scheduler.mjs`. Duas coisas que **não** se confundem, e a separação está no código:
+
+### 11.1 Reavaliação — quando cada entrada volta a ser testada
+
+O calendário é **derivado do histórico imutável** (`providerTests`) e da idade da evidência: a mesma
+história dá sempre a mesma fila. Não há temporizador escondido a decidir o que ninguém audita.
+
+| situação | intervalo | porquê |
+| --- | --- | --- |
+| nunca testado | agora (prioridade 50) | é o primeiro teste, não uma reavaliação |
+| 1 PASS | 7 dias | base |
+| n PASS seguidos | 7 × 2^(n−1), tecto **90 dias** | quem acerta sempre não precisa de vigilância semanal |
+| falha **transitória** (429, 5xx, timeout, rede) | 1 → 3 → 7 dias | volta cedo, mas com recuo |
+| 4.ª falha transitória seguida | **pára** (`manual`) | insistir sozinho é ruído, não é rigor |
+| falha **permanente** (401, 403, 404 de caminho, modelo inexistente, 400, quota) | **nunca automático** | a causa só muda com acção humana |
+| `BLOCKED` (falta chave) | nunca automático | não é falha do fornecedor: é falta de pré-requisito |
+| evidência com > 90 dias | **agora** (prioridade 90) | é o prazo que o próprio sistema prometeu |
+
+A reavaliação automática corre **só níveis 1–2**: não usa chave, não gasta dinheiro e não pode ser
+confundida com um teste de qualidade. Geração continua a exigir `confirmCost` na rota `/test`.
+
+### 11.2 Health check — prova de vida, não nota
+
+`sondarSaude` faz um único GET (8 s de limite, sem credenciais) ao endpoint ou à documentação.
+**Qualquer HTTP abaixo de 500 conta como «respondeu»**: um 401 prova que o serviço está vivo, não que
+autoriza. Veredicto por janela de 7 dias: `OPERACIONAL` · `DEGRADADO` (falha isolada ou última falha)
+· `INDISPONIVEL` (3 falhas seguidas) · `SEM-DADOS` («ausência de notícia não é boa notícia»).
+
+Invariantes verificados por teste em cada execução da rota:
+- **não cria registos em `providerTests`**;
+- **não altera estados do catálogo**;
+- **não entra no ranking** (a função `healthVerdict` nem recebe notas: se recebesse, alguém a ligaria).
+
+O `runWithFallback` da fase 4 e o scheduler da fase 5 partilham o mesmo princípio: distinguir o que é
+transitório do que é permanente, e nunca repetir automaticamente aquilo que já falhou por causa que
+não muda sozinha.
+
+### 11.3 Interface
+
+No separador **Fornecedores de IA**: tabela «Próximas reavaliações» (fornecedor, ação, prioridade,
+motivo), lista de agendadas com a data e o intervalo, botão **Reavaliar agora** (níveis 1–2) e botão
+**Sonda de saúde** que mostra quantos responderam e quantos testes/estados mudaram (0 e 0).
+
+## 12. O que **não** está feito (declarado)
 
 1. **Testes de geração (níveis 4–6) contra fornecedores reais** — exigem uma chave do utilizador. Sem
    ela, `BLOCKED`, não `PASS`. O caminho está provado com servidor sintético (marcado como tal), o que
@@ -252,7 +305,10 @@ chave do utilizador. Captura: `docs/shot-30-provedores.png`.
    ligá-la antes disso seria um caminho pago sem prova. Quando houver chave, é uma chamada.
 3. **Interface**: o separador «Fornecedores de IA» existe (catálogo, ranking, selector, plano); falta o
    painel de descoberta contínua e os benchmarks comparativos (fase 7).
-4. **Scheduler**: reavaliação periódica continua a não existir (nenhum timer no servidor).
+4. **Scheduler automático por temporizador**: o *calendário* e a *execução* existem (`/schedule`,
+   `/schedule/run`) e são testados, mas nada corre sozinho num relógio — no plano gratuito do Render o
+   serviço dorme, e um timer que não corre daria falsa sensação de vigilância. A execução é accionada
+   pelo utilizador (ou por um cron externo, quando existir).
 5. **Ferramentas externas**: `opencode` está catalogado como ferramenta, **não integrado**; nada é
    instalado automaticamente.
 6. **Terceiro olho por IA**: só existe o auditor determinístico.

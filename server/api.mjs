@@ -31,6 +31,9 @@ import {
   selectProvider, planFallback, runWithFallback, classifyOutcome, SELECTION_STEPS, FALLBACK_DEFAULTS
 } from './selector.mjs';
 import {
+  REEVAL_POLICY, reevaluationState, planReevaluation, runReevaluation, healthVerdict
+} from './scheduler.mjs';
+import {
   SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
   parseUrl, canonicalUrl, dedupeKey as sourceDedupeKey, domainOf, stateFromCheck,
   rateSource, coverageFrom, ADAPTERS
@@ -40,7 +43,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase4b';
+const APP_VERSION = '2.0.0-fase5';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -459,6 +462,63 @@ export async function createApi(opts) {
   const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
   const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
   const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
+  const providerScheduleLimiter = makeLimiter(20);   // lotes de reavaliação: 20/h por utilizador
+
+  /* Executa níveis e grava um registo POR NÍVEL. Uma só implementação para o
+     teste manual (`/test`) e para a reavaliação automática (`/schedule/run`):
+     duas cópias divergiriam e a segunda passaria a mentir em silêncio. */
+  async function executarTestes(entry, { userId, levels, apiKey, model, samples, maxRequests, allowInsecure }) {
+    const out = await runProviderTests(entry, { apiKey, model, levels, samples, maxRequests, allowInsecure });
+    const gravados = [];
+    for (const nivel of Object.keys(out.results)) {
+      const r = out.results[nivel];
+      const rec = await store.addProviderTest({
+        key: entry.key, level: Number(nivel), levelId: r.levelId, result: r.result,
+        reason: r.reason || null, detail: r.detail || null, diagnosis: r.diagnosis || null,
+        httpStatus: r.httpStatus == null ? null : r.httpStatus, latencyMs: r.latencyMs == null ? null : r.latencyMs,
+        method: r.method || null, samples: r.samples || null, successRate: r.successRate == null ? null : r.successRate,
+        tokens: r.tokens || null, capabilities: r.capabilities || null,
+        testedBy: userId, synthetic: !!out.synthetic
+      });
+      gravados.push({ id: rec.id, level: rec.level, result: rec.result });
+    }
+    return { out, gravados };
+  }
+
+  /* Progressão de estado conservadora: só sobe com prova; nunca desce por omissão. */
+  async function promoverEstado(entry, out, motivo, userId) {
+    const pass = (n) => out.results[n] && out.results[n].result === 'PASS';
+    let novo = null;
+    if (pass(4)) novo = 'GENERATION_TESTED';
+    else if (pass(3)) novo = 'LINK_TESTED';
+    else if (pass(1) || pass(2)) novo = 'DOCUMENTED';
+    if (novo && novo !== entry.state) await store.setCatalogState(entry.key, novo, motivo, userId);
+    return novo;
+  }
+
+  /* Sonda de saúde: uma prova de vida. Não usa chave, não grava em providerTests,
+     não muda estado e não entra na nota — ver `healthVerdict`. */
+  async function sondarSaude(entry) {
+    const alvo = (entry.endpoints && entry.endpoints[0] && entry.endpoints[0].base)
+      || (entry.docs && entry.docs[0]) || null;
+    if (!alvo) return { key: entry.key, ok: null, reason: 'sem endpoint nem documentação: nada a sondar' };
+    const url = String(alvo);
+    if (isPrivateHost && isPrivateHost(url) && !localFetchAllowed()) {
+      return { key: entry.key, ok: null, reason: 'endereço privado/local: sonda recusada (SSRF)' };
+    }
+    const t0 = Date.now();
+    try {
+      const r = await fetch(url, { method: 'GET', redirect: 'follow',
+        headers: { 'user-agent': 'ConspiracyTracker/2 (sonda de saúde; ver docs/PROVIDER-OS.md)', accept: '*/*' },
+        signal: AbortSignal.timeout(8000) });
+      const ms = Date.now() - t0;
+      return { key: entry.key, url, ok: r.status < 500, httpStatus: r.status, latencyMs: ms,
+        acceptable: 'qualquer HTTP abaixo de 500 conta como «respondeu»: 401/403 provam que o serviço está vivo, não que autoriza' };
+    } catch (e) {
+      return { key: entry.key, url, ok: false, httpStatus: 0, latencyMs: Date.now() - t0,
+        reason: e.name === 'TimeoutError' ? 'timeout de 8 s' : String(e.message || e).slice(0, 160) };
+    }
+  }
 
   /* Candidata para ranking/selecção: uma só função, para que a nota e a escolha
      nunca leiam fontes diferentes. Só entram métricas MEDIDAS (testes reais,
@@ -2333,34 +2393,13 @@ export async function createApi(opts) {
           return err(res, 400, 'os níveis 4–6 fazem pedidos pagos com a sua chave: confirme com confirmCost=true', { levels, model });
         }
         const t0 = Date.now();
-        const out = await runProviderTests(entry, {
-          apiKey, model, levels,
-          samples: body.samples,
+        const { out, gravados } = await executarTestes(entry, {
+          userId: a.user.id, apiKey, model, levels, samples: body.samples,
           maxRequests: Math.min(20, Math.max(1, Number(body.maxRequests) || (pedeGeracao ? 10 : 4))),
           allowInsecure: process.env.VN_TEST_PROVIDERS === '1'
         });
-        const gravados = [];
-        for (const nivel of Object.keys(out.results)) {
-          const r = out.results[nivel];
-          const rec = await store.addProviderTest({
-            key: entry.key, level: Number(nivel), levelId: r.levelId, result: r.result,
-            reason: r.reason || null, detail: r.detail || null, diagnosis: r.diagnosis || null,
-            httpStatus: r.httpStatus == null ? null : r.httpStatus, latencyMs: r.latencyMs == null ? null : r.latencyMs,
-            method: r.method || null, samples: r.samples || null, successRate: r.successRate == null ? null : r.successRate,
-            tokens: r.tokens || null, capabilities: r.capabilities || null,
-            testedBy: a.user.id, synthetic: !!out.synthetic
-          });
-          gravados.push({ id: rec.id, level: rec.level, result: rec.result });
-        }
-        /* mudança de estado conservadora: só sobe com prova, só desce com motivo */
-        let novoEstado = null;
         const pass = (n) => out.results[n] && out.results[n].result === 'PASS';
-        if (pass(4)) novoEstado = 'GENERATION_TESTED';
-        else if (pass(3)) novoEstado = 'LINK_TESTED';
-        else if (pass(1) || pass(2)) novoEstado = 'DOCUMENTED';
-        if (novoEstado && novoEstado !== entry.state) {
-          await store.setCatalogState(entry.key, novoEstado, 'teste nível ' + Object.keys(out.results).join(','), a.user.id);
-        }
+        await promoverEstado(entry, out, 'teste nível ' + Object.keys(out.results).join(','), a.user.id);
         await store.audit({ type: 'provider_tested', actorId: a.user.id, subjectId: entry.key, action: 'provider_test',
           detail: { levels, results: gravados.map((g) => g.level + ':' + g.result), requests: out.requestsUsed, ms: Date.now() - t0, hadKey: !!apiKey } });
         await store.addUsage({ userId: a.user.id, provider: providerId || entry.vendor || 'desconhecido', model, kind: 'provider_test',
@@ -2480,6 +2519,100 @@ export async function createApi(opts) {
           simulated: body.seed != null,
           note: 'planeamento puro: nenhum pedido foi feito e nenhum valor foi gasto; a execução real usa a mesma política em runWithFallback'
         }));
+      }
+
+      /* ---------- reavaliação adaptativa e saúde (fase 5) ---------- */
+      const planoReavaliacao = (limit) => planReevaluation({
+        entries: store.catalogEntries(),
+        testsOf: (key) => store.providerTestsOf(key),
+        limit: limit == null ? undefined : limit,
+        now: new Date().toISOString()
+      });
+
+      if (p === '/api/provider-os/schedule' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const url = new URL(req.url, 'http://x');
+        const plano = planoReavaliacao(url.searchParams.get('limit'));
+        return json(res, 200, Object.assign({}, plano, {
+          health: store.catalogEntries().slice(0, 40).map((e) => Object.assign({ key: e.key, name: e.name },
+            healthVerdict(store.auditList({ type: 'provider_health', subjectId: e.key, limit: 50 }).map((x) => x.detail || {})))),
+          note: 'o calendário é derivado do histórico imutável de testes e da idade da evidência: a mesma história dá sempre a mesma fila. Nenhum pedido foi feito.'
+        }));
+      }
+
+      if (p === '/api/provider-os/schedule/run' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!providerScheduleLimiter.allowed(a.user.id)) return err(res, 429, 'reavaliações demasiado frequentes (20/hora)');
+        const body = await readBody(req);
+        const plano = planoReavaliacao(body.limit);
+        if (!plano.counts.due) {
+          return json(res, 200, { ok: true, at: plano.at, executed: 0, skipped: 0, results: [],
+            counts: plano.counts, dryRun: body.dryRun === true,
+            note: 'nada em atraso: não se testa só para produzir números' });
+        }
+        if (body.dryRun === true) {
+          return json(res, 200, { ok: true, at: plano.at, dryRun: true, executed: 0,
+            queue: plano.queue, counts: plano.counts,
+            note: 'simulação: nada foi pedido, nada foi gravado' });
+        }
+        /* níveis 1–2 e mais nada: a reavaliação automática NUNCA gasta a chave
+           do utilizador (geração exige confirmação explícita na rota /test) */
+        const run = await runReevaluation(plano, {
+          maxRequests: Math.min(12, Math.max(2, plano.queue.length * 2)),
+          runTest: async (key) => {
+            const e = store.catalogEntry(key);
+            if (!e) return { requestsUsed: 0, results: {} };
+            const { out } = await executarTestes(e, { userId: a.user.id, levels: [1, 2], apiKey: null, model: null,
+              maxRequests: 2, allowInsecure: false });
+            await promoverEstado(e, out, 'reavaliação automática (níveis 1–2)', a.user.id);
+            return out;
+          }
+        });
+        providerScheduleLimiter.hit(a.user.id);
+        await store.audit({ type: 'provider_reevaluated', actorId: a.user.id, action: 'schedule_run',
+          detail: { executed: run.executed, skipped: run.skipped, keys: run.results.map((r) => r.key), requests: run.requestsUsed } });
+        return json(res, 200, Object.assign({}, run, {
+          at: plano.at, counts: plano.counts, dryRun: false,
+          note: 'níveis 1–2 apenas (sem chave, sem custo). Cada resultado entra no histórico imutável e o próximo intervalo é recalculado a partir dele.'
+        }));
+      }
+
+      if (p === '/api/provider-os/health/check' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!providerScheduleLimiter.allowed(a.user.id)) return err(res, 429, 'sondas demasiado frequentes (20/hora)');
+        const body = await readBody(req);
+        const alvo = body.key ? store.catalogEntries().filter((e) => e.key === String(body.key)) : store.catalogEntries().slice(0, 12);
+        if (!alvo.length) return err(res, 404, 'nenhuma entrada para sondar');
+        const antes = { testes: store.data.providerTests.length,
+          estados: store.catalogEntries().map((e) => e.key + ':' + e.state).sort().join('|') };
+        const sondas = [];
+        for (const e of alvo) {
+          const r = await sondarSaude(e);
+          await store.audit({ type: 'provider_health', actorId: a.user.id, subjectId: e.key, action: 'health_check',
+            detail: { at: new Date().toISOString(), ok: r.ok === true, httpStatus: r.httpStatus == null ? null : r.httpStatus,
+              latencyMs: r.latencyMs == null ? null : r.latencyMs, url: r.url || null, reason: r.reason || null } });
+          sondas.push(Object.assign({ name: e.name }, r));
+        }
+        providerScheduleLimiter.hit(a.user.id);
+        /* prova de que a sonda é só sonda: nada em providerTests, nada em estados */
+        const depois = { testes: store.data.providerTests.length,
+          estados: store.catalogEntries().map((x) => x.key + ':' + x.state).sort().join('|') };
+        return json(res, 200, { ok: true, checked: sondas.length, probes: sondas.map((x) => ({ key: x.key, name: x.name,
+            status: x.ok === true ? 'respondeu' : (x.ok === null ? 'não sondado' : 'não respondeu'),
+            httpStatus: x.httpStatus == null ? null : x.httpStatus, latencyMs: x.latencyMs == null ? null : x.latencyMs, reason: x.reason || null })),
+          invariants: { novosTestes: depois.testes - antes.testes, estadosAlterados: depois.estados !== antes.estados },
+          note: 'HEALTH CHECK NÃO É TESTE DE QUALIDADE: esta rota não grava testes, não promove estados e não entra no ranking'
+        });
+      }
+
+      if (p === '/api/provider-os/health' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, { ok: true,
+          providers: store.catalogEntries().slice(0, 40).map((e) => Object.assign({ key: e.key, name: e.name },
+            healthVerdict(store.auditList({ type: 'provider_health', subjectId: e.key, limit: 50 }).map((x) => x.detail || {})))),
+          note: 'prova de vida apenas; a classificação de qualidade continua a exigir testes de níveis 4–6' });
       }
 
       if (p === '/api/provider-os/cost' && method === 'POST') {
