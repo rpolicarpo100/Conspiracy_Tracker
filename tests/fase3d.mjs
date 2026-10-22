@@ -363,7 +363,9 @@ await t('esquema actual registado e coerente com o código', async () => {
   const v = st.schemaVersion();
   await st.close();
   ok(meta.json.schemaVersion === v, 'schemaVersion ' + meta.json.schemaVersion + ' ≠ ' + v);
-  ok(/^2\.0\.0-fase(3|4|5|6|7|8)/.test(meta.json.version), 'versão ' + meta.json.version);
+  /* formato da versão, não a fase concreta: o número da fase muda sem que
+     nada neste teste deixe de ser verdade */
+  ok(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/i.test(meta.json.version), 'versão ' + meta.json.version);
   ok(meta.json.schemaVersion >= 5, 'esquema antigo: ' + meta.json.schemaVersion);
 });
 

@@ -375,7 +375,9 @@ await t('meta publica a política de verificação de acesso', async () => {
   const r = await A.call('GET', '/api/meta');
   ok(r.json.accessChecks && r.json.accessChecks.states.acessivel === 'acessível', 'estados');
   ok(/sem contornar/.test(r.json.accessChecks.policy), 'política');
-  ok(/^2\.0\.0-fase(3|4|5|6|7|8)/.test(r.json.version), 'versão: ' + r.json.version);
+  /* a versão é declarada, não adivinhada: exige-se o formato, não a fase
+     concreta — assim o número da fase não parte um teste que nada tem a ver. */
+  ok(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/i.test(r.json.version), 'versão: ' + r.json.version);
 });
 
 srv.kill('SIGKILL');
