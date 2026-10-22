@@ -252,9 +252,28 @@ serviço no Render. Sem isso, `/ready` reporta `keyVault.ok:false` e a aplicaç�
 `503 needsEnv=APP_SECRET` em vez de guardar chaves — é o comportamento correcto, mas as chaves de IA
 ficam indisponíveis.
 
-O administrador cria-se **no servidor**, não por registo público: `node tools/create-admin.mjs`
-(no Render, pela consola do serviço, com o mesmo `DATA_DIR` do serviço). Nada de credenciais no
-repositório nem em variáveis de ambiente do painel. Ver `docs/AUDITORIA-2026-10-22.md` §4.
+O administrador cria-se **sem registo público**, por dois caminhos — nenhum deles com credenciais no
+repositório:
+
+1. **Instância nova sem consola (Render, plano gratuito)** — arranque por HTTPS com um segredo do
+   operador:
+
+   ```bash
+   # 1) definir ADMIN_BOOTSTRAP_TOKEN no painel do Render (valor longo e aleatório)
+   # 2) criar o administrador (a palavra-passe é escolhida por si, neste pedido)
+   curl -X POST https://conspiracy-aitracker.onrender.com/api/auth/bootstrap \
+     -H 'content-type: application/json' -H "x-bootstrap-token: $TOKEN" \
+     -d '{"email":"o-seu@email.pt","password":"A-Sua-Palavra-Passe-Forte1"}'
+   ```
+
+   A rota responde `503` sem a variável, `401` com segredo errado, `429` acima de 3 tentativas por
+   hora e `403` logo que exista um administrador activo — é uma porta que se fecha sozinha.
+
+2. **Com acesso ao disco** — `node tools/create-admin.mjs` (pede a palavra-passe sem eco).
+
+Depois de criar o administrador, **retire `ADMIN_BOOTSTRAP_TOKEN`** do ambiente. Excepção: enquanto o
+disco for efémero (plano gratuito), um redeploy apaga as contas e o token é o único caminho de volta —
+mantenha-o até a persistência ser durável e depois remova-o. Ver `docs/AUDITORIA-2026-10-22.md` §4.
 
 ## Limitações
 

@@ -189,9 +189,15 @@
               const r = await api('/api/provider-os/discover', { method: 'POST', body: { adapter: ad.key, limit: 60 } });
               if (!r.ok) { S.msg = { text: 'Descoberta recusada (' + ad.key + '): ' + reasonOf(r) }; paint(); return; }
               S.discResult = Object.assign({ adapter: ad.key }, r.json);
-              S.msg = { text: 'Descoberta ' + ad.key + ': ' + r.json.created + ' criadas, ' + r.json.updated + ' actualizadas, ' +
-                r.json.rejected + ' recusadas, ' + r.json.truncated + ' fora do lote · categorias ' +
-                Object.entries(r.json.categories || {}).map(([k, v]) => k + '=' + v).join(' ') };
+              /* uma fonte que responde com zero registos não é «0 criadas»: é
+                 uma resposta vazia e tem de ser lida como tal, senão parece que
+                 o catálogo foi consultado com sucesso e nada existe lá */
+              S.msg = r.json.sourcesEmpty
+                ? { text: 'Descoberta ' + ad.key + ': a fonte respondeu com zero registos (índice ou limite externo) — ' +
+                    'nada foi gravado e isto não é prova de que o catálogo esteja vazio. Repita mais tarde.' }
+                : { text: 'Descoberta ' + ad.key + ': ' + r.json.created + ' criadas, ' + r.json.updated + ' actualizadas, ' +
+                    r.json.rejected + ' recusadas, ' + r.json.truncated + ' fora do lote · categorias ' +
+                    Object.entries(r.json.categories || {}).map(([k, v]) => k + '=' + v).join(' ') };
               await load(); paint();
             } }));
         });

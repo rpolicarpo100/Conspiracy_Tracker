@@ -186,6 +186,12 @@ await t('descoberta: correr o GitHub traz ferramentas reais e o catálogo cresce
   await p.evaluate(() => document.getElementById('btnDisc_github_coding_agents').click());
   await waitFor(() => { const n = document.getElementById('providerStatus'); return !!n && /^Descoberta github_coding_agents/.test(n.textContent); }, 90000);
   const depois = await p.evaluate(() => VN.provedoresUI.getState().disc.totals.entries);
+  const estado = await p.evaluate(() => VN.provedoresUI.getState());
+  if (estado.discResult && estado.discResult.sourcesEmpty) {
+    /* fonte externa devolveu zero registos: condição do GitHub, não do nosso
+       código — declara-se SKIP em vez de falha (ver tests/discovery.mjs) */
+    return 'SKIP declarado: a fonte externa respondeu com zero registos (' + antes + ' → ' + depois + '); a mensagem da interface diz isso';
+  }
   if (depois <= antes) throw new Error('catálogo não cresceu: ' + antes + ' → ' + depois);
   const txt = await body();
   if (!/criadas/.test(txt)) throw new Error('sem relato da descoberta');

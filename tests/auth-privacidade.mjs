@@ -21,7 +21,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DATA = '/tmp/vn-authpriv-' + crypto.randomBytes(4).toString('hex');
 const DATA2 = '/tmp/vn-authpriv-open-' + crypto.randomBytes(4).toString('hex');
-fs.mkdirSync(DATA, { recursive: true }); fs.mkdirSync(DATA2, { recursive: true });
+const DATA3 = '/tmp/vn-authpriv-boot-' + crypto.randomBytes(4).toString('hex');
+fs.mkdirSync(DATA, { recursive: true }); fs.mkdirSync(DATA2, { recursive: true }); fs.mkdirSync(DATA3, { recursive: true });
 
 const ADMIN_EMAIL = 'chefe.' + Date.now().toString(36) + '@meridiano.test';
 const ADMIN_PW = 'ChefeForte-' + crypto.randomBytes(4).toString('hex');
@@ -56,10 +57,16 @@ function startServer(dir, port, extraEnv) {
 }
 const PORT = 8300 + Math.floor(Math.random() * 100);
 const PORT2 = PORT + 200;
+const PORT3 = PORT + 400;
+const BOOT_TOKEN = 'arranque-' + crypto.randomBytes(12).toString('hex');
 const BASE = 'http://127.0.0.1:' + PORT;
 const BASE2 = 'http://127.0.0.1:' + PORT2;
+const BASE3 = 'http://127.0.0.1:' + PORT3;
 const srv = startServer(DATA, PORT, { REGISTER_OPEN: '' });          // fechado (como produção)
 const srvAberto = startServer(DATA2, PORT2, { REGISTER_OPEN: 'true' }); // aberto por decisão explícita
+/* instância nova, sem administrador, com o segredo de arranque definido:
+   é o caso real do Render (registo fechado, sem consola, sem contas) */
+const srvBoot = startServer(DATA3, PORT3, { ADMIN_BOOTSTRAP_TOKEN: BOOT_TOKEN });
 await sleep(1800);
 
 function client(base) {
@@ -136,6 +143,40 @@ await t('com REGISTER_OPEN=true o registo abre — e é a única via', async () 
   const r = await c.call('/api/auth/register', { method: 'POST', body: { email: 'convidado@ex.pt', password: 'PalavraForte123', acceptTerms: true } });
   if (r.status !== 201) throw new Error('registo aberto devolveu HTTP ' + r.status);
   return 'servidor com a variável: 201 · servidor sem ela: 403 (provado acima)';
+});
+
+await t('o arranque do primeiro administrador por HTTPS exige o segredo e fecha-se depois de usado', async () => {
+  /* a) sem ADMIN_BOOTSTRAP_TOKEN no ambiente a rota recusa e não anuncia nada */
+  const semSegredo = await anon.call('/api/auth/bootstrap', { method: 'POST', body: { email: 'x@ex.pt', password: 'PalavraForte123' } });
+  if (semSegredo.status !== 503) throw new Error('sem segredo configurado: HTTP ' + semSegredo.status);
+  if (!/ADMIN_BOOTSTRAP_TOKEN/.test(semSegredo.json.reason || '')) throw new Error('não diz qual a variável em falta');
+
+  /* b) segredo errado → 401 (e nada criado) */
+  const errado = await fetch(BASE3 + '/api/auth/bootstrap', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bootstrap-token': 'errado' },
+    body: JSON.stringify({ email: 'chefe@boot.test', password: 'PalavraForte123' })
+  });
+  if (errado.status !== 401) throw new Error('segredo errado: HTTP ' + errado.status);
+
+  /* c) segredo certo → 201, papel ADMIN e sessão utilizável */
+  const b = client(BASE3);
+  const r = await b.call('/api/auth/bootstrap', {
+    method: 'POST', headers: { 'x-bootstrap-token': BOOT_TOKEN },
+    body: { email: 'chefe@boot.test', password: 'PalavraForte123' }
+  });
+  if (r.status !== 201) throw new Error('arranque: HTTP ' + r.status + ' ' + r.text.slice(0, 140));
+  if (!r.json.user || r.json.user.role !== 'ADMIN') throw new Error('não criou administrador: ' + JSON.stringify(r.json.user));
+  b.state.csrf = r.json.csrf;
+  const depois = await b.call('/api/admin/users');
+  if (depois.status !== 200) throw new Error('sessão de arranque não serve a administração: HTTP ' + depois.status);
+
+  /* d) segunda tentativa → 403 (a porta fecha-se sozinha) */
+  const segunda = await b.call('/api/auth/bootstrap', {
+    method: 'POST', headers: { 'x-bootstrap-token': BOOT_TOKEN },
+    body: { email: 'outro@boot.test', password: 'PalavraForte123' }
+  });
+  if (segunda.status !== 403) throw new Error('segunda tentativa: HTTP ' + segunda.status);
+  return 'sem segredo 503 · segredo errado 401 · primeiro 201 ADMIN · segundo 403';
 });
 
 await t('a recusa de registo fica registada na auditoria', async () => {
@@ -278,7 +319,7 @@ await t('a auditoria registou os acontecimentos de segurança desta sessão de t
 });
 
 /* ===================================================================== */
-srv.child.kill(); srvAberto.child.kill();
+srv.child.kill(); srvAberto.child.kill(); srvBoot.child.kill();
 await sleep(200);
 
 const ok = R.filter((r) => r.ok).length;

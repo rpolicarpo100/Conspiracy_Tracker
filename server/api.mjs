@@ -483,6 +483,7 @@ export async function createApi(opts) {
   const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
   const providerScheduleLimiter = makeLimiter(20);   // lotes de reavaliação: 20/h por utilizador
   const cronLimiter = makeLimiter(2);                // cron de serviço: 2/h (uma execução por hora, no máximo)
+  const bootstrapLimiter = makeLimiter(3);           // arranque do primeiro administrador: 3/h por IP
 
   /* Executa níveis e grava um registo POR NÍVEL. Uma só implementação para o
      teste manual (`/test`) e para a reavaliação automática (`/schedule/run`):
@@ -774,6 +775,12 @@ export async function createApi(opts) {
               ? 'aberto por configuração explícita da operação'
               : 'fechado por omissão: as contas são criadas por um administrador ou por tools/create-admin.mjs no servidor',
             firstAdminEmailConfigured: !!auth.adminEmail,
+            bootstrap: {
+              httpRoute: 'POST /api/auth/bootstrap',
+              configured: !!process.env.ADMIN_BOOTSTRAP_TOKEN,
+              appliesOnly: 'enquanto não existir um administrador activo; depois responde 403',
+              localTool: 'tools/create-admin.mjs (acesso ao disco)'
+            },
             firstAdminNote: (() => {
               if (!auth.adminEmail) return 'ADMIN_EMAIL não definido: nenhuma conta se torna administradora automaticamente';
               if (!store.data.users.some((u) => u.role === 'ADMIN')) return 'ADMIN_EMAIL definido e ainda sem administrador: use tools/create-admin.mjs no servidor (com o registo fechado, o papel não é atribuído por registo)';
@@ -795,6 +802,59 @@ export async function createApi(opts) {
       }
 
       /* ---------- registo ---------- */
+      /* ---------- arranque do primeiro administrador (fase 8) ----------
+         Com o registo público fechado, uma instância nova fica sem ninguém
+         que entre. No plano gratuito do Render não há consola para correr
+         tools/create-admin.mjs, por isso o arranque faz-se por HTTPS com um
+         segredo que só o operador tem. Três condições, todas obrigatórias:
+           · ADMIN_BOOTSTRAP_TOKEN definido no ambiente (sem ele: 503 e nada acontece);
+           · nenhum administrador activo (senão: 403 — não é uma porta de serviço);
+           · comparação em tempo constante e limite de 3 tentativas por hora.
+         A rota deixa de ter efeito depois de existir um administrador. */
+      if (p === '/api/auth/bootstrap' && method === 'POST') {
+        const ip = ipOf(req);
+        const esperado = String(process.env.ADMIN_BOOTSTRAP_TOKEN || '');
+        if (!esperado) {
+          return json(res, 503, { ok: false, configured: false,
+            reason: 'ADMIN_BOOTSTRAP_TOKEN não está definido: o arranque por HTTPS está desligado',
+            how: 'definir ADMIN_BOOTSTRAP_TOKEN no painel do Render (valor longo e aleatório) e repetir; ou correr tools/create-admin.mjs com acesso ao disco' });
+        }
+        const recebido = String(req.headers['x-bootstrap-token'] || '');
+        const a1 = Buffer.from(esperado);
+        const b1 = Buffer.from(recebido.padEnd(esperado.length, '\0').slice(0, esperado.length));
+        const igual = recebido.length === esperado.length && crypto.timingSafeEqual(a1, b1);
+        if (!igual) {
+          await store.audit({ type: 'bootstrap_refused', ip, action: 'bootstrap', detail: { reason: 'token inválido' } });
+          return err(res, 401, 'token de arranque inválido');
+        }
+        if (!bootstrapLimiter.allowed(ip)) {
+          await store.audit({ type: 'bootstrap_refused', ip, action: 'bootstrap', detail: { reason: 'limite' } });
+          return err(res, 429, 'demasiadas tentativas de arranque a partir deste endereço');
+        }
+        bootstrapLimiter.hit(ip);
+        if (store.data.users.some((u) => u.role === 'ADMIN' && u.status === 'active')) {
+          await store.audit({ type: 'bootstrap_refused', ip, action: 'bootstrap', detail: { reason: 'já existe administrador' } });
+          return err(res, 403, 'já existe um administrador activo: o arranque está encerrado (use /api/admin/users)');
+        }
+        const body = await readBody(req);
+        const email = String(body.email || '').trim().toLowerCase();
+        if (!emailRe.test(email)) return err(res, 400, 'email inválido');
+        const problems = passwordProblems(body.password);
+        if (problems.length) return err(res, 400, 'palavra-passe fraca: ' + problems.join(', '));
+        if (store.userByEmail(email)) return err(res, 409, 'não foi possível criar a conta com estes dados');
+        const { salt, hash } = hashPassword(body.password);
+        const user = await store.createUser({ email, passwordHash: hash, salt, role: 'ADMIN', termsAcceptedAt: now() });
+        await store.updateUser(user.id, { createdBy: 'bootstrap-https' });
+        await store.audit({ type: 'admin_user_created', actorId: user.id, subjectId: user.id, ip,
+          action: 'bootstrap_admin', detail: { via: 'POST /api/auth/bootstrap', passwordChosenByOperator: true } });
+        const s = await auth.issueSession(user, { ip, ua: req.headers['user-agent'] });
+        await store.audit({ type: 'session_created', actorId: user.id, ip, action: 'login_after_bootstrap' });
+        return json(res, 201, {
+          ok: true, user: publicUser(user), csrf: s.csrf,
+          note: 'administrador criado; retire ADMIN_BOOTSTRAP_TOKEN do ambiente agora — a rota fica sem efeito assim que existir um administrador, mas o segredo não deve ficar guardado sem uso'
+        }, { 'set-cookie': auth.cookiesFor(s.token, s.csrf) });
+      }
+
       if (p === '/api/auth/register' && method === 'POST') {
         const ip = ipOf(req);
         if (auth.registerLimiter.blocked(ip)) return err(res, 429, 'demasiados registos a partir deste endereço');

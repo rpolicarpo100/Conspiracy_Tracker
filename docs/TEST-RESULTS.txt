@@ -1265,7 +1265,10 @@ D. Registo fechado sem perder a capacidade de dar acesso
    PASS após a troca → 200; /api/admin/users com papel USER → 403
    PASS conta do administrador (criada por create-admin) entra normalmente (mustChangePassword:false)
 
-E. Autenticação e privacidade medidas (tests/auth-privacidade.mjs · 13/13)
+E. Autenticação e privacidade medidas (tests/auth-privacidade.mjs · 14/14)
+   PASS arranque do 1.º administrador por HTTPS: sem ADMIN_BOOTSTRAP_TOKEN → 503 (diz qual a variável),
+        segredo errado → 401, segredo certo → 201 com papel ADMIN e sessão utilizável,
+        segunda tentativa → 403 (a rota fecha-se sozinha quando existe administrador)
    PASS cookies vn_sid HttpOnly + Secure + SameSite=Lax (vn_csrf sem HttpOnly, por desenho)
    PASS sem sessão: /api/projects, /api/auth/sessions, /api/admin/users, /api/admin/audit,
         /api/admin/metrics, /api/provider-os/*, /api/auth/export, /api/provider-os/benchmark/suite → 401
@@ -1286,7 +1289,7 @@ G. P1 corrigido — decisão do selector
         pelas duas idas ao servidor (era a causa da falha intermitente em tests/provedores-ui.mjs)
 
 H. Suite completa (medida nesta máquina, 22-10-2026)
-   Servidor: 24 suites · 437 verificações · 0 falhas · 4 SKIP de rede externa declarados
+   Servidor: 24 suites · 442 verificações · 0 falhas · SKIP de rede externa declarados
    Interface: 7 suites · 69 verificações · 0 falhas
    tools/status.mjs --check: 2.0.0-fase8 · esquema v7 · 13 agentes · 100 rotas
 
@@ -1296,4 +1299,6 @@ I. O que NÃO está feito (e porquê)
    · cron activo: BLOQUEADO — falta CRON_TOKEN no Render e no GitHub;
    · recuperação de palavra-passe por email: não implementada (exige serviço de envio);
    · página de login minimalista a substituir a aplicação sem sessão: por fazer;
-   · deployment: NÃO executado — falta autorização; produção continua em f1536bd.
+   · deployment: EXECUTADO em 22-10-2026 (autorizado pelo utilizador) — `main` f1536bd → 1c440a2,
+     /health confirma 2.0.0-fase8 e o registo responde 403 em produção. O arranque do administrador
+     por HTTPS foi publicado a seguir; produção fica à espera de que o operador corra o passo.
