@@ -308,10 +308,10 @@ O que continua por fazer, dito sem rodeios:
 
 - **Recuperação de palavra-passe por email** — não existe. Quem perde a palavra-passe depende de um
   administrador, que a repõe (operação registada na auditoria).
-- **Retenção automática** — a purga está implementada e testada
-  (`POST /api/service/maintenance`, `tests/retencao.mjs`), mas só corre quando `CRON_TOKEN` existir:
-  em produção `/api/meta` → `retention.automated` mostra `false` enquanto isso não for feito.
-- **Rotação das cópias de segurança** — idem: depende do mesmo segredo.
+- **Rotação das cópias de segurança** — a purga de retenção já corre em produção
+  (`/api/meta` → `retention.automated: true`), mas a **rotação periódica das cópias de segurança**
+  ainda não está agendada: hoje o servidor guarda as últimas 3 cópias e o titular pode pedir a sua
+  em `GET /api/auth/backup`.
 - **Assinatura digital do livro de provas** — o encadeamento de hashes detecta alteração, mas não há
   assinatura externa.
 - **Escala do grafo** — acima de ~500 nós visíveis é preciso trocar o adaptador por WebGL.

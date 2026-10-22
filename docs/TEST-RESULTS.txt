@@ -1491,3 +1491,62 @@ E. O que continua por fazer
    Continua pendente e NÃO foi feito: CRON_TOKEN no Render (a chave da API do
    Render não está disponível nesta sessão), pelo que a purga automática ainda
    não corre em produção — /api/meta diz `automated:false`.
+
+================================================================================
+§49  MANUTENÇÃO AGENDADA LIGADA EM PRODUÇÃO (22 de outubro de 2026, 20:1x UTC)
+================================================================================
+   Configuração feita pela API do Render, no serviço srv-dbcefpmktt5c73f55h50
+   (conspiracy-aitracker). O valor do token NÃO está neste ficheiro, nem no
+   repositório: existe apenas na variável de ambiente do Render e no segredo
+   CRON_TOKEN do GitHub Actions.
+
+   PASS PUT /v1/services/…/env-vars/CRON_TOKEN → 200 (64 caracteres hexadecimais)
+   PASS deploy de aplicação do novo ambiente: dep-dbd6qjtg1s2s73dvlv60 → live
+   PASS /api/meta → retention.automated:true · prazos 180/30/90
+   PASS POST /api/service/maintenance sem token → 401 (antes da variável: 503)
+   PASS POST com token errado → 401 e evento cron_refused na auditoria
+   PASS GET com token → simulação: audit 13 · sessions 5 · usage 0 ·
+        «removeria: 0/0/0» e nada alterado
+   PASS POST com token → purga aplicada: audit 13 → 14 (o próprio evento
+        retention_purged), sessions 5 (as válidas ficaram), 0 removidos.
+        Zero removidos é o resultado correcto: não há registos fora de prazo
+        numa base com um dia de vida. A rota não inventa trabalho para parecer
+        útil.
+   PASS /ready continua ready · postgres+ficheiro · durableBetweenDeploys:true
+
+   O QUE FALTA PARA O AGENDAMENTO CORRER SOZINHO
+   O workflow .github/workflows/manutencao.yml lê o segredo CRON_TOKEN do
+   GitHub. Sem esse segredo o passo de simulação falha com mensagem explícita
+   («O segredo CRON_TOKEN não está definido neste repositório») — não falha em
+   silêncio nem purga nada. Configurar em:
+     GitHub → Settings → Secrets and variables → Actions → New secret
+     Name: CRON_TOKEN   Value: o mesmo valor que está no Render
+   O mesmo segredo serve o reevaluate.yml (fase 7).
+
+================================================================================
+§50  INCIDENTE PRÓPRIO: .data-dev PUBLICADO POR ENGANO (mesma data)
+================================================================================
+   O que aconteceu: o commit da fase 9 foi feito com `git add -A` e levou
+   consigo o directório `.data-dev/` — a base local do servidor de testes
+   (db.json, o sha256, a cópia «última» e três cópias datadas). Ficou visível
+   no GitHub durante cerca de uma hora.
+
+   O que continha, verificado ficheiro a ficheiro: uma única conta de teste
+   (suite@local.test) com hash scrypt, hashes SHA-256 de sessões de teste,
+   projectos criados por testes e zero credenciais de fornecedores. Nenhuma
+   palavra-passe, chave de API ou DATABASE_URL — não havia nada em claro.
+
+   O que foi feito:
+   1. `.data-dev/` e `.data-*/` passam a estar no .gitignore;
+   2. o directório saiu do índice;
+   3. o histórico foi reescrito (`git filter-branch`, refs/original apagadas,
+      reflog expirado, `gc --prune=now`) e verificado: nenhum objecto
+      alcançável contém `.data-dev`;
+   4. `main` foi publicado com força (`--force-with-lease`).
+
+   O que fica por fazer, e depende do GitHub: um commit reescrito continua
+   recuperável por SHA conhecido até o GitHub recolher os objectos órfãos (não
+   há API pública para forçar essa recolha). Como o conteúdo não tinha
+   segredos, o risco é de arrumação, não de segurança. Se o repositório for
+   público e isso incomodar, a via é apagar e recriar o repositório, ou pedir
+   ao suporte do GitHub a limpeza de objectos.

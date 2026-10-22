@@ -125,9 +125,12 @@ Eventos de auditoria efectivamente emitidos pelo servidor: `user_registered`, `l
   remove auditoria antiga (excepto `account_deleted` e o próprio `retention_purged`), sessões
   expiradas ou revogadas e registos de uso de IA. **Nunca** remove contas, projectos, provas,
   conclusões ou memória. O agendamento diário está em `.github/workflows/manutencao.yml` e corre
-  primeiro em simulação (`GET`, `dryRun`) antes de aplicar. Enquanto `CRON_TOKEN` não estiver
-  definido no servidor, a rota responde `503` e declara-se desligada — `/api/meta` → `retention`
-  mostra o estado real (`automated: false`). Coberto por `tests/retencao.mjs` (10 testes).
+  primeiro em simulação (`GET`, `dryRun`) antes de aplicar. Desde 22 de outubro de 2026 a
+  variável `CRON_TOKEN` está definida no Render e `/api/meta` → `retention.automated` diz `true`;
+  a purga foi executada sobre a base real e ficou registada (`retention_purged`), com zero
+  registos removidos por não haver nada fora de prazo. Sem `CRON_TOKEN` a rota responde `503` e
+  declara-se desligada — o estado é sempre verificável publicamente em `/api/meta`. Coberto por
+  `tests/retencao.mjs` (10 testes).
 - **Backups**: a base de dados está num PostgreSQL gerido (Neon, Frankfurt) e **sobrevive aos
   deploys** — verificado em produção: `/ready` devolve `storage.mode: postgres`, e o administrador
   manteve o mesmo identificador depois de três deploys seguidos (`docs/TEST-RESULTS.txt` §45).
