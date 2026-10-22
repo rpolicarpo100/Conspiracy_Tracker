@@ -1,0 +1,61 @@
+# Manutenção agendada: retenção de registos operacionais (RGPD, art. 5.º, 1.º e).
+#
+# Chama POST /api/service/maintenance com o token de serviço. A rota só existe
+# para este uso se CRON_TOKEN estiver definido no servidor; sem ele responde 503
+# e não apaga nada — uma purga aberta seria pior do que não purgar.
+#
+# Configuração (a mesma do reevaluate.yml, um só segredo serve os dois):
+#   1. Render → Environment → CRON_TOKEN = <valor aleatório longo>
+#   2. GitHub → Settings → Secrets and variables → Actions → New secret
+#      Name: CRON_TOKEN   Value: o mesmo valor
+#
+# O que a purga faz (e o que nunca faz) está em /api/meta → retention:
+#   · remove auditoria com mais de RETENTION_AUDIT_DAYS dias (180 por omissão),
+#     excepto account_deleted e retention_purged;
+#   · remove sessões expiradas ou revogadas há mais de RETENTION_SESSION_DAYS (30);
+#   · remove registos de uso de IA com mais de RETENTION_USAGE_DAYS (90);
+#   · NUNCA remove contas, projectos, provas, conclusões ou memória.
+# A operação fica registada na auditoria como retention_purged, com as contagens.
+name: Manutenção — retenção de registos
+
+on:
+  schedule:
+    - cron: '43 3 * * *'      # todos os dias, 03:43 UTC (fora da reavaliação)
+  workflow_dispatch:           # e a pedido; o GET simula sem apagar nada
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Simular primeiro (dryRun) e mostrar o que seria removido
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          BASE: https://conspiracy-aitracker.onrender.com
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::O segredo CRON_TOKEN não está definido neste repositório."
+            exit 1
+          fi
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$BASE/health" || true)
+            echo "health: $code (tentativa $i)"
+            [ "$code" = "200" ] && break
+            sleep 20
+          done
+          echo "--- simulação ---"
+          curl -sS -f --max-time 60 -H "x-cron-token: $CRON_TOKEN" "$BASE/api/service/maintenance" | tee /tmp/dry.json
+          echo
+          # o passo seguinte só corre se o servidor confirmar que está configurado
+          grep -q '"configured":false' /tmp/dry.json && { echo "::error::o servidor respondeu que a manutenção está desligada"; exit 1; }
+          exit 0
+
+      - name: Aplicar a purga
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          BASE: https://conspiracy-aitracker.onrender.com
+        run: |
+          echo "--- purga ---"
+          curl -sS -f --max-time 60 -X POST -H "x-cron-token: $CRON_TOKEN" "$BASE/api/service/maintenance" | tee /tmp/run.json
+          echo
+          grep -q '"removed"' /tmp/run.json

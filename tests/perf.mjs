@@ -1,10 +1,23 @@
 /* Medições de desempenho no browser (Chromium headless), com resultados reais. */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
+
+/* Desde a fase 9 a aplicação não arranca sem sessão: estes scripts entram pela
+   porta, como qualquer pessoa, no servidor de desenvolvimento. Nunca produção. */
+const BASE = process.env.VN_BASE || 'http://127.0.0.1:8080';
+let contaSemeada = false;
+async function abrir(pg) {
+  if (!contaSemeada) { await semearConta(BASE, CONTA_TESTE.email, CONTA_TESTE.password); contaSemeada = true; }
+  await pg.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(900);
+  await entrarNaAplicacao(pg, BASE, CONTA_TESTE.email, CONTA_TESTE.password);
+}
+
 import { writeFileSync } from 'node:fs';
 const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await B.newPage({ viewport: { width: 1600, height: 950 } });
 const out = { ranAt: new Date().toISOString(), browser: 'Chromium (headless)', viewport: '1600x950', results: {} };
-await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
+await abrir(page);
 await page.waitForTimeout(1500);
 
 out.results.redeReal = await page.evaluate(async () => {

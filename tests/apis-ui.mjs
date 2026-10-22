@@ -1,5 +1,6 @@
 /* Interface de APIs: catálogo, auditoria real através do agente local, descoberta e API personalizada. */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
 const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 1000 } });
 const errs = [];
@@ -21,8 +22,10 @@ async function waitFor(page, fn, timeout) {
 const R = [];
 const t = async (name, fn) => { try { R.push({ name, ok: true, detail: await fn() }); } catch (e) { R.push({ name, ok: false, detail: e.message }); } };
 
+await semearConta('http://127.0.0.1:8080', CONTA_TESTE.email, CONTA_TESTE.password);
 await p.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1300);
+await entrarNaAplicacao(p, 'http://127.0.0.1:8080', CONTA_TESTE.email, CONTA_TESTE.password);
 await p.click('#btnConsole');
 await p.waitForTimeout(400);
 await p.evaluate(() => [...document.querySelectorAll('.chips .btn')].find((b) => b.textContent.trim() === 'APIs').click());

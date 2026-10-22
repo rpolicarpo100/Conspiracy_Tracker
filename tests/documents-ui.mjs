@@ -12,6 +12,7 @@
    5. e que a ficha do projecto continua com 0 provas enquanto ninguém as criar.
    ===================================================================== */
 import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
+import { entrarNaAplicacao, semearConta } from './_ui-entrada.mjs';
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -23,7 +24,7 @@ const srv = spawn(process.execPath, ['tools/serve.mjs'], {
   cwd: process.cwd(),
   env: Object.assign({}, process.env, {
     PORT: String(PORT), DATA_DIR: DATA, APP_SECRET: 'segredo-de-teste-docs-1234567890',
-    ADMIN_EMAIL: 'docs@meridiano.test', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100',
+    ADMIN_EMAIL: 'docs@meridiano.test', REGISTER_OPEN: 'true', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100',
     VN_ALLOW_LOCAL_FETCH: '1'
   }),
   stdio: 'ignore'
@@ -58,24 +59,23 @@ async function clickText(sel, text) {
   throw new Error('botão «' + text + '» não encontrado');
 }
 
+/* a aplicação exige sessão: cria-se uma conta de serviço e entra-se
+   pela porta, como qualquer pessoa. As contas que a suite cria a seguir
+   são as que ela quer testar. */
+const CONTA_SEMENTE = { email: 'semente.' + Date.now().toString(36) + '@ex.pt', password: 'SementeForte-2026' };
+await semearConta(BASE, CONTA_SEMENTE.email, CONTA_SEMENTE.password);
 await p.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1000);
+await entrarNaAplicacao(p, BASE, CONTA_SEMENTE.email, CONTA_SEMENTE.password);
 const email = 'docui' + Date.now().toString(36) + '@ex.pt';
 
-await t('registo e projecto criados pela interface', async () => {
+await t('projecto criado com a própria conta (o painel já não cria contas)', async () => {
+  /* O registo público está fechado em produção e a porta exige sessão: uma
+     conta nova não nasce de um botão dentro do painel. Aqui usa-se a conta de
+     serviço, já autenticada, e cria-se o projecto pela interface — que é o que
+     esta suite quer medir. */
   await p.click('#btnAccount');
   await waitFor(() => !!document.getElementById('accroot'));
-  await clickText('#accroot .btn', 'Criar conta');
-  await p.waitForTimeout(300);
-  await p.evaluate((mail) => {
-    const inputs = [...document.querySelectorAll('#accroot input')];
-    inputs[0].value = mail; inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-    inputs[1].value = 'SenhaForte123'; inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-    const cb = document.querySelector('#accroot input[type=checkbox]');
-    cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }));
-  }, email);
-  await clickText('#accroot .btn', 'Criar conta');
-  await waitFor(() => /Terminar sessão/.test(document.getElementById('accroot').textContent), 20000);
   await clickText('#accroot .btn', 'Projectos');
   await p.waitForTimeout(500);
   await p.evaluate(() => {

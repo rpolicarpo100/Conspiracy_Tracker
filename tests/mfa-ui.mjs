@@ -6,6 +6,7 @@
    atalhos no servidor: se a interface e o servidor discordarem, o teste falha.
    ===================================================================== */
 import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
+import { entrarNaAplicacao, semearConta } from './_ui-entrada.mjs';
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -18,7 +19,7 @@ const srv = spawn(process.execPath, ['tools/serve.mjs'], {
   cwd: process.cwd(),
   env: Object.assign({}, process.env, {
     PORT: String(PORT), DATA_DIR: DATA, APP_SECRET: 'segredo-de-teste-mfa-ui-1234567890',
-    ADMIN_EMAIL: 'admin@meridiano.test', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100'
+    ADMIN_EMAIL: 'admin@meridiano.test', REGISTER_OPEN: 'true', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100'
   }),
   stdio: 'ignore'
 });
@@ -77,24 +78,26 @@ const EMAIL = 'mfa' + Date.now().toString(36) + '@ex.pt';
 const PASS = 'SenhaForte123';
 let secret = null;
 
+/* A conta desta suite é criada pela API (o registo público está fechado e a
+   porta de entrada exige sessão: o painel já não tem formulário de registo).
+   Depois entra-se pela porta com essa conta, como qualquer pessoa. */
+await semearConta(BASE, EMAIL, PASS);
 await p.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
 await p.waitForTimeout(900);
+await entrarNaAplicacao(p, BASE, EMAIL, PASS);
 
-await t('registo pela interface', async () => {
+await t('conta criada e sessão aberta pela porta de entrada', async () => {
   await p.click('#btnAccount');
   await waitFor(() => !!document.getElementById('accroot'));
-  await clickText('#accroot .btn', 'Criar conta');
-  await p.waitForTimeout(300);
-  await p.evaluate((mail) => {
-    const inputs = [...document.querySelectorAll('#accroot input')];
-    inputs[0].value = mail; inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-    inputs[1].value = 'SenhaForte123'; inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-    const cb = document.querySelector('#accroot input[type=checkbox]');
-    cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }));
-  }, EMAIL);
-  await clickText('#accroot .btn', 'Criar conta');
-  await waitFor(() => /Terminar sessão/.test(document.getElementById('accroot').textContent), 20000);
-  return 'sessão criada';
+  /* o painel pinta depois do /api/auth/me responder: esperar pelo conteúdo */
+  let txt = '';
+  for (let i = 0; i < 60; i++) {
+    txt = await p.evaluate(() => (document.getElementById('accroot') || {}).textContent || '');
+    if (txt.indexOf(EMAIL) >= 0) break;
+    await p.waitForTimeout(250);
+  }
+  if (txt.indexOf(EMAIL) < 0) throw new Error('perfil não mostra a conta certa: ' + txt.slice(0, 120));
+  return 'sessão de ' + EMAIL;
 });
 
 await t('painel do segundo factor presente e desactivado', async () => {
@@ -144,35 +147,67 @@ await t('o segredo desaparece do ecrã; os códigos ficam até serem dispensados
   return 'segredo fora do ecrã; códigos dispensados pelo utilizador';
 });
 
-await t('sair e entrar: a interface pede o segundo passo antes de abrir a conta', async () => {
+/* O segundo passo acontece na PORTA DE ENTRADA, não no painel da conta:
+   `#btnLogout` repõe a porta e é lá que o código é pedido. */
+async function noGate(dados) {
+  await p.evaluate((d) => {
+    for (const [sel, v] of Object.entries(d)) {
+      const inp = document.getElementById(sel);
+      if (!inp) throw new Error('campo ' + sel + ' ausente na porta');
+      inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }, dados);
+  await p.waitForTimeout(150);
+}
+const gateTxt = () => p.evaluate(() => (document.getElementById('vnGate') || {}).textContent || '');
+const sessao = async () => p.evaluate(async () => (await (await fetch('api/auth/me')).json()).user);
+
+await t('sair e entrar: a porta pede o segundo passo antes de abrir a conta', async () => {
   await p.evaluate(() => { const b = document.getElementById('btnLogout'); if (b) b.click(); });
-  await waitFor(() => /Entrar/.test(document.getElementById('accroot').textContent), 15000);
-  await fillLabel('Email', EMAIL);
-  await fillLabel('Palavra-passe', PASS);
-  await clickText('#accroot .btn', 'Entrar');
-  await waitFor(() => !!document.getElementById('mfaCode'), 20000);
-  const txt = await p.textContent('#accroot');
+  await waitFor(() => document.documentElement.getAttribute('data-vn-auth') === 'por-autenticar', 15000);
+  if (await sessao()) throw new Error('a sessão sobreviveu ao fim de sessão');
+  await noGate({ gateEmail: EMAIL, gatePassword: PASS });
+  await p.evaluate(() => document.getElementById('gateSubmit').click());
+  await waitFor(() => !!document.getElementById('gateCode'), 20000);
+  const txt = await gateTxt();
   if (!/Segundo passo/.test(txt)) throw new Error('sem indicação do segundo passo');
-  if (/Terminar sessão/.test(txt)) throw new Error('entrou sem o código');
-  const me = await p.evaluate(async () => (await (await fetch('api/auth/me')).json()).user);
-  if (me) throw new Error('o servidor já considera a sessão aberta');
-  return 'pedido de código antes da sessão';
+  if (await sessao()) throw new Error('o servidor já considera a sessão aberta');
+  return 'pedido de código antes de haver sessão';
 });
 
 await t('código errado: mensagem honesta, sessão continua fechada', async () => {
-  await fill('código de 6 dígitos', '000000');
-  await clickText('#accroot .btn', 'Confirmar código');
-  await waitFor(() => /Código recusado/.test(document.getElementById('accroot').textContent), 15000);
-  const me = await p.evaluate(async () => (await (await fetch('api/auth/me')).json()).user);
-  if (me) throw new Error('a sessão abriu com código errado');
-  return '401 mostrado, sem sessão';
+  await noGate({ gateCode: '000000' });
+  await p.evaluate(() => document.getElementById('gateSubmit').click());
+  await waitFor(async () => true);
+  await p.waitForTimeout(1500);
+  const txt = await gateTxt();
+  if (!/recusad|Código/i.test(txt)) throw new Error('sem mensagem de recusa: ' + txt.slice(0, 120));
+  if (await sessao()) throw new Error('a sessão abriu com código errado');
+  if (await p.evaluate(() => document.documentElement.getAttribute('data-vn-auth')) === 'autenticado') {
+    throw new Error('a porta deixou entrar com código errado');
+  }
+  return 'recusa declarada · sessão fechada · ' + txt.replace(/\s+/g, ' ').slice(0, 70);
 });
 
 await t('código certo: entra e a conta mostra o segundo factor activo', async () => {
-  await fill('código de 6 dígitos', totpAt(secret, counterNow()));
-  await clickText('#accroot .btn', 'Confirmar código');
-  await waitFor(() => /Terminar sessão/.test(document.getElementById('accroot').textContent), 20000);
-  const txt = await p.textContent('#accroot');
+  await noGate({ gateCode: totpAt(secret, counterNow()) });
+  await p.evaluate(() => document.getElementById('gateSubmit').click());
+  await waitFor(() => document.documentElement.getAttribute('data-vn-auth') === 'autenticado', 20000);
+  /* a aplicação volta a desenhar-se por baixo da porta: esperar pelo botão */
+  await waitFor(() => {
+    const b = document.getElementById('btnAccount');
+    if (!b) return false;
+    const r = b.getBoundingClientRect();
+    return r.width > 2 && r.height > 2;
+  }, 20000);
+  await p.evaluate(() => document.getElementById('btnAccount').click());
+  await waitFor(() => !!document.getElementById('accroot'));
+  let txt = '';
+  for (let i = 0; i < 60; i++) {
+    txt = await p.evaluate(() => (document.getElementById('accroot') || {}).textContent || '');
+    if (/activo/.test(txt)) break;
+    await p.waitForTimeout(250);
+  }
   if (!/activo/.test(txt)) throw new Error('painel não mostra activo');
   await p.evaluate(() => {
     const h = [...document.querySelectorAll('#accroot h4')].find((x) => /Verificação em dois passos/.test(x.textContent));

@@ -1363,3 +1363,98 @@ E. O que continua por fazer
 
    PENDENTE DO UTILIZADOR: trocar a palavra-passe temporária no primeiro acesso
    (Conta → Alterar palavra-passe) e revogar a API key do Render e a do Neon.
+
+================================================================================
+§46  FASE 9 — PORTA DE ENTRADA (22 de outubro de 2026)
+================================================================================
+   O que mudou
+   · A aplicação deixou de arrancar sem sessão. `/index.html` mostra a porta
+     (#vnGate) e só depois de `/api/auth/me` devolver um utilizador é que
+     src/app.js é iniciado. O atributo `data-vn-auth` no <html> acompanha o
+     estado (por-autenticar | autenticado) e o CSS esconde o resto do corpo
+     enquanto não houver sessão — nenhum widget privado fica clicável por
+     engano, e o browser não guarda no histórico uma vista privada sem sessão.
+   · Estados da porta: entrar · segundo passo (TOTP ou código de recuperação) ·
+     troca obrigatória de palavra-passe temporária · dentro. As mensagens de
+     recusa são as do servidor, sem inventar causas.
+   · Fim de sessão (botão do painel, expiração, revogação noutro dispositivo)
+     passa a ser tratado num só ponto: o painel avisa a porta
+     (`VN.gate.sessaoTerminou()`) e existe um vigia de `fetch` que, ao ver um
+     401 da API com sessão aberta, confirma em `/api/auth/me` e — só se essa
+     resposta também não tiver utilizador — devolve a pessoa à entrada com o
+     motivo escrito. Não se decide pelo código 401 isolado: `/api/auth/me`
+     responde 200 com `user:null` quando não há sessão, e há 401 legítimos
+     (rotas com token próprio, palavra-passe errada, código de segundo factor
+     recusado) que não significam sessão morta.
+
+   Testes de interface (`npm run test:ui`), servidor local próprio
+   (tools/dev-server.sh: registo aberto, DATA_DIR .data-dev, APP_SECRET por
+   sessão; nunca produção). 81 testes, 0 falhas:
+
+     entrada-ui        10/10   porta: arranque bloqueado, credenciais erradas,
+                               entrada correcta, recarregar, sair, sessão
+                               revogada noutro dispositivo, palavra-passe
+                               temporária, segundo factor, sem erros de runtime
+     agents-ui          5/5    agentes de recolha e guardas
+     apis-ui            7/7    adaptadores e estados de falha
+     account-ui        17/17   conta, projectos, cofre de chaves, administração,
+                               separação entre contas, provas, grafo, cronologia
+     documents-ui       6/6    recolha e extracção de PDF, revisão, OCR
+     mfa-ui            10/10   activação, códigos de recuperação, segundo passo
+                               na porta, recusa de código errado, desactivação
+     fontes-ui         10/10   registo de fontes, independência, proveniência
+     provedores-ui     16/16   fornecedores de IA (catálogo real, cofre, falhas)
+
+   Nota de honestidade: as suites foram reescritas porque o registo pela
+   interface deixou de existir (a conta nasce de um administrador ou, nos
+   testes, de uma chamada à API contra um servidor com REGISTER_OPEN=true).
+   Os testes antigos que criavam conta dentro do painel mediam um fluxo que
+   já não é o produto; foram substituídos por testes do fluxo actual, não
+   desactivados.
+
+   Capturas: docs/shot-34-login.png (porta vazia) e
+   docs/shot-35-login-erro.png (credenciais recusadas pelo servidor).
+
+   O que NÃO está feito (e não se afirma o contrário)
+   · recuperação de palavra-passe por email: continua a ser um administrador
+     que repõe (a operação fica na auditoria);
+   · CRON_TOKEN para rotação automática das cópias;
+   · a política de privacidade publicada ainda tem de nomear o Neon.
+
+================================================================================
+§47  RETENÇÃO E MANUTENÇÃO DE SERVIÇO (22 de outubro de 2026)
+================================================================================
+   O que faltava e passou a existir
+   · `POST /api/service/maintenance` (e `GET` = simulação) purga registos
+     operacionais fora de prazo: auditoria > 180 dias, sessões expiradas ou
+     revogadas > 30 dias, uso de IA > 90 dias. Prazos configuráveis por
+     RETENTION_*_DAYS.
+   · Nunca apaga contas, projectos, provas, conclusões, memória, nem os
+     eventos `account_deleted` (prova de eliminação) e `retention_purged`
+     (prova de que a purga correu).
+   · Autenticação de serviço: CRON_TOKEN por cabeçalho `x-cron-token`, em
+     comparação de tempo constante. Sem a variável no servidor a rota
+     responde 503 e diz porquê; com token errado responde 401 e grava
+     `cron_refused` na auditoria.
+   · Estado publicado em /api/meta → retention (prazos, automated, o que é e
+     o que nunca é purgado) — a declaração de privacidade passa a ser
+     verificável por qualquer pessoa, não uma promessa.
+   · Agendamento: .github/workflows/manutencao.yml, diário às 03:43 UTC,
+     com passo de simulação antes da purga.
+
+   PASS tests/retencao.mjs 10/10
+        dryRun conta e não altera · purga real remove só o que passou do prazo ·
+        sessão válida intacta · prazos configuráveis (com prazos longos nada sai) ·
+        idempotência · estado purgado sobrevive a recarregar do disco ·
+        503 sem CRON_TOKEN · 401 com token errado · GET = simulação ·
+        POST = purga com evento registado
+
+   Estado em produção: `automated:false` — a rota responde 503 enquanto
+   CRON_TOKEN não for definido no Render. **Não foi configurado nesta sessão:
+   a chave da API do Render não está disponível.** Para ligar:
+     Render → Environment → CRON_TOKEN = <valor aleatório ≥ 32 caracteres>
+     GitHub → Settings → Secrets → CRON_TOKEN = o mesmo valor
+   O mesmo segredo serve o reevaluate.yml da fase 7.
+
+   Suites completas nesta data: `npm test` 23 conjuntos, 0 falhas (inclui os
+   10 novos); `npm run test:ui` 81 testes, 0 falhas.

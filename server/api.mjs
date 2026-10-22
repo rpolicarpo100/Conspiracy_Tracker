@@ -783,6 +783,14 @@ export async function createApi(opts) {
               };
             })()
           },
+          retention: Object.assign(store.retentionPolicy(), {
+            automated: !!process.env.CRON_TOKEN,
+            how: process.env.CRON_TOKEN
+              ? 'POST /api/service/maintenance com x-cron-token (agendado por cron externo)'
+              : 'definir CRON_TOKEN no servidor para ligar a purga agendada; sem ele a rota responde 503',
+            whatIsPurged: 'auditoria antiga (excepto account_deleted e retention_purged), sessões expiradas ou revogadas, uso de IA',
+            whatIsNeverPurged: 'contas, projectos, provas, conclusões e memória — esses só saem com a conta'
+          }),
           registration: {
             open: auth.registrationOpen,
             source: 'variável de ambiente REGISTER_OPEN (fechado quando ausente)',
@@ -2861,6 +2869,31 @@ export async function createApi(opts) {
           detail: { executed: run.executed, skipped: run.skipped, keys: run.results.map((r) => r.key), requests: run.requestsUsed, via: 'cron' } });
         return json(res, 200, Object.assign({}, run, { cron: true, at: new Date().toISOString(), counts: plano.counts,
           note: 'execução agendada: níveis 1–2 apenas, sem chave e sem custo' }));
+      }
+
+      /* ---------- manutenção de serviço (retenção RGPD) ----------
+         Mesma regra do cron: só com CRON_TOKEN no ambiente. Sem ele a rota
+         existe e declara-se desligada — não há endpoint aberto. */
+      if (p === '/api/service/maintenance' && (method === 'POST' || method === 'GET')) {
+        const esperado = process.env.CRON_TOKEN || '';
+        if (!esperado) {
+          return json(res, 503, { ok: false, configured: false,
+            reason: 'CRON_TOKEN não está definido no servidor: a manutenção agendada está desligada',
+            how: 'definir CRON_TOKEN no ambiente e enviar o mesmo valor em x-cron-token' });
+        }
+        const recebido = String(req.headers['x-cron-token'] || '');
+        const a2 = Buffer.from(esperado);
+        const b2 = Buffer.from(recebido.padEnd(esperado.length, '\0').slice(0, esperado.length));
+        const igual2 = recebido.length === esperado.length && a2.length === b2.length && crypto.timingSafeEqual(a2, b2);
+        if (!igual2) {
+          await store.audit({ type: 'cron_refused', actorId: null, action: 'maintenance', detail: { reason: 'token inválido' } });
+          return err(res, 401, 'token de serviço inválido');
+        }
+        const seco = method === 'GET' || new URL(req.url, 'http://x').searchParams.get('dryRun') === '1';
+        const r = await store.purgeRetention({ dryRun: seco });
+        return json(res, 200, Object.assign({ ok: true, at: new Date().toISOString() }, r, {
+          note: seco ? 'simulação: nada foi removido (dryRun)' : 'purga aplicada e registada na auditoria como retention_purged'
+        }));
       }
 
       if (p === '/api/provider-os/health' && method === 'GET') {

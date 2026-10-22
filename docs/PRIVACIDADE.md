@@ -1,6 +1,6 @@
 # Política de privacidade e tratamento de dados (RGPD)
 
-Versão: 2026-10-21 · Aplica-se à aplicação publicada em https://conspiracy-aitracker.onrender.com
+Versão: 2026-10-22 · Aplica-se à aplicação publicada em https://conspiracy-aitracker.onrender.com
 
 Este documento descreve **o que a aplicação guarda na realidade**, onde, durante quanto tempo e
 quem lhe pode aceder. Não é uma declaração de intenções: cada afirmação abaixo corresponde a
@@ -91,6 +91,22 @@ Eventos de auditoria efectivamente emitidos pelo servidor: `user_registered`, `l
 - Não são enviadas chaves de um utilizador em pedidos de outro: as credenciais vivem por
   utilizador e o servidor resolve-as pelo id da sessão, nunca por parâmetro do pedido.
 
+## 6-A. Subcontratantes de infraestrutura
+
+| Subcontratante | Papel | Onde | Que dados vê |
+| --- | --- | --- | --- |
+| Render Services, Inc. | alojamento da aplicação (plano gratuito, região Frankfurt) | `onrender.com` | recebe os pedidos HTTP; não tem acesso lógico à base de dados |
+| Neon, Inc. | alojamento da base de dados PostgreSQL | região AWS `eu-central-1` (Frankfurt, UE) | guarda a base de dados da aplicação (contas, projectos, provas, auditoria) cifrada em repouso |
+
+- O `DATABASE_URL` do Neon só existe nas variáveis de ambiente do serviço no Render. Não está no
+  repositório, nem na documentação, nem é devolvido por nenhuma rota pública (`/api/meta` diz apenas
+  `storage.mode`: `postgres`, nunca o endereço).
+- **Transferências para fora da UE**: os fornecedores de IA da secção 6 podem estar nos EUA; só são
+  contactados quando o utilizador configura uma chave e pede uma operação que os use, e o fornecedor
+  efectivamente usado é declarado em cada chamada. O Neon e o Render estão na UE (Frankfurt).
+- Não existe subcontratante de análise, publicidade, nem de correio electrónico: a aplicação não
+  envia emails (a recuperação de palavra-passe é feita por um administrador).
+
 ## 7. Direitos do titular (artigo 15.º–20.º)
 
 | Direito | Como é exercido hoje | Estado |
@@ -103,13 +119,22 @@ Eventos de auditoria efectivamente emitidos pelo servidor: `user_registered`, `l
 
 ## 8. Retenção e limitações actuais (honestidade sobre o que falta)
 
-- **Retenção automática**: não está implementada. Não existe purga programada de eventos de
-  auditoria nem de sessões expiradas (as sessões expiradas deixam de ser aceites, mas o registo
-  permanece). Está previsto: auditoria 180 dias, sessões expiradas 30 dias, uso de IA 90 dias.
-- **Backups**: o plano gratuito do Render não oferece disco persistente. Sem `DATA_DIR` apontado
-  para um volume, os dados **perdem-se em cada deploy**: a interface mostra essa limitação em
-  `/api/meta` (`durableBetweenDeploys: false`). Não há, por isso, rotina de backup testada em
-  produção; localmente o backup é copiar `DATA_DIR/store.json` com a aplicação parada.
+- **Retenção automática**: implementada como purga selectiva em
+  `POST /api/service/maintenance` (token de serviço obrigatório), com prazos configuráveis
+  `RETENTION_AUDIT_DAYS` (180), `RETENTION_SESSION_DAYS` (30) e `RETENTION_USAGE_DAYS` (90):
+  remove auditoria antiga (excepto `account_deleted` e o próprio `retention_purged`), sessões
+  expiradas ou revogadas e registos de uso de IA. **Nunca** remove contas, projectos, provas,
+  conclusões ou memória. O agendamento diário está em `.github/workflows/manutencao.yml` e corre
+  primeiro em simulação (`GET`, `dryRun`) antes de aplicar. Enquanto `CRON_TOKEN` não estiver
+  definido no servidor, a rota responde `503` e declara-se desligada — `/api/meta` → `retention`
+  mostra o estado real (`automated: false`). Coberto por `tests/retencao.mjs` (10 testes).
+- **Backups**: a base de dados está num PostgreSQL gerido (Neon, Frankfurt) e **sobrevive aos
+  deploys** — verificado em produção: `/ready` devolve `storage.mode: postgres`, e o administrador
+  manteve o mesmo identificador depois de três deploys seguidos (`docs/TEST-RESULTS.txt` §45).
+  Existem instantâneos do Neon do lado do fornecedor e uma cópia lógica por dia gerada pela própria
+  aplicação (`db-backup-*.json`, com soma de verificação). **Não está implementada** rotação
+  automática dessas cópias: depende de `CRON_TOKEN`, que ainda não foi definido em produção. O
+  utilizador pode sempre descarregar a sua própria cópia em `GET /api/auth/backup`.
 - **Registo de incidentes**: existe evento de auditoria, mas não existe procedimento formal de
   notificação em 72 h documentado fora deste repositório.
 - **Cifra de chaves**: se `APP_SECRET` for perdido, as chaves guardadas tornam-se irrecuperáveis

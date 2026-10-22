@@ -38,6 +38,21 @@ primeiro acesso.
 `store.json` fora do código. `ADMIN_EMAIL` já não cria administradores por si: com o registo fechado
 não há «primeiro registo» a promover — serve apenas para diagnóstico em `/api/meta`.
 
+### Porta de entrada e servidor local de testes
+
+A aplicação **não arranca sem sessão**: `index.html` mostra a porta (email, palavra-passe, segundo
+passo e troca obrigatória de palavra-passe temporária) e só depois de `/api/auth/me` devolver um
+utilizador é que o resto é iniciado. Um fim de sessão — botão, expiração ou revogação noutro
+dispositivo — devolve a pessoa à porta com o motivo escrito.
+
+Para desenvolvimento e testes de interface há um servidor local que **nunca** deve ser usado em
+produção (`REGISTER_OPEN=true` só aqui, dados em `.data-dev`, `APP_SECRET` gerado por sessão):
+
+```bash
+bash tools/dev-server.sh                     # http://localhost:8080
+bash tools/ui-env.sh npm run test:ui         # 8 suites, 81 testes de interface
+```
+
 Ou, numa sessão Arena, abrir o `index.html` com o servidor de pré-visualização.
 Dependências visuais: Cytoscape.js + fcose (MIT), servidas localmente em `node_modules` — nada de CDN.
 
@@ -289,10 +304,23 @@ Cópias pontuais e restauro: `node tools/pg-snapshot.mjs`. Detalhes e provas em
 
 ## Limitações
 
-Persistência garantida em produção exige `DATABASE_URL` configurada. Sem ela, um deploy apaga
-contas, projectos e chaves guardadas no servidor. Não há MFA, recuperação de
-palavra-passe por email, retenção automática nem backups de dados. Não há OCR nem assinatura digital
-do livro de provas, e acima de ~500 nós visíveis é necessário trocar o adaptador por WebGL.
+O que continua por fazer, dito sem rodeios:
+
+- **Recuperação de palavra-passe por email** — não existe. Quem perde a palavra-passe depende de um
+  administrador, que a repõe (operação registada na auditoria).
+- **Retenção automática** — a purga está implementada e testada
+  (`POST /api/service/maintenance`, `tests/retencao.mjs`), mas só corre quando `CRON_TOKEN` existir:
+  em produção `/api/meta` → `retention.automated` mostra `false` enquanto isso não for feito.
+- **Rotação das cópias de segurança** — idem: depende do mesmo segredo.
+- **Assinatura digital do livro de provas** — o encadeamento de hashes detecta alteração, mas não há
+  assinatura externa.
+- **Escala do grafo** — acima de ~500 nós visíveis é preciso trocar o adaptador por WebGL.
+- **Política de privacidade publicada** — já nomeia os subcontratantes (Render e Neon, ambos na UE);
+  falta a revisão jurídica por quem opera a instância.
+
+Persistência: em produção a base é PostgreSQL gerido (Neon, Frankfurt) e sobrevive a deploy —
+`/ready` devolve `storage.mode: postgres` e `durableBetweenDeploys: true`. Sem `DATABASE_URL` o
+servidor cai para ficheiro local e declara-o (`durableBetweenDeploys: false`), em vez de fingir.
 
 Nada disto é substituído por confiança: está listado, com classificação por item, em
 `docs/AUDITORIA-CODIGO.md` e em `docs/ACEITACAO.md` §«O que não está feito».

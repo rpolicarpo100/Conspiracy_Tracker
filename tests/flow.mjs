@@ -1,5 +1,6 @@
 /* Teste funcional end-to-end em Chromium: critérios de aceitação 1–10. */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
 const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await B.newPage({ viewport: { width: 1680, height: 1000 } });
 const errors = [];
@@ -11,8 +12,12 @@ const step = async (name, fn) => {
   try { const r = await fn(); results.push({ name, ok: true, ms: Date.now() - t0, detail: r }); }
   catch (e) { results.push({ name, ok: false, ms: Date.now() - t0, detail: e.message }); }
 };
-await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
-await page.waitForTimeout(1200);
+/* A aplicação exige sessão desde a fase 9: entra-se pela porta, como qualquer
+   pessoa. O servidor é o de desenvolvimento (tools/dev-server.sh), não produção. */
+const BASE = process.env.VN_BASE || 'http://127.0.0.1:8080';
+await semearConta(BASE, CONTA_TESTE.email, CONTA_TESTE.password);
+await page.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+await entrarNaAplicacao(page, BASE, CONTA_TESTE.email, CONTA_TESTE.password);
 
 // 1. pesquisar entidade
 await step('1. Pesquisar entidade', async () => {

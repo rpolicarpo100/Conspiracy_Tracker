@@ -126,7 +126,14 @@
       el('span', { class: 'tag ' + (S.me.role === 'ADMIN' ? 'warn' : 'muted'), style: 'margin-left:8px', text: S.me.role }),
       el('button', {
         id: 'btnLogout', class: 'btn sm', style: 'margin-left:auto', type: 'button', text: 'Terminar sessão',
-        onclick: async () => { await api('/api/auth/logout', { method: 'POST', body: {} }); S.me = null; S.tab = 'account'; S.msg = null; S.authMode = 'login'; refresh(); }
+        /* o fim de sessão é da porta de entrada: o painel não tem formulário
+           próprio. Avisa-se a porta e é ela que repõe o ecrã. */
+        onclick: async () => {
+          await api('/api/auth/logout', { method: 'POST', body: {} });
+          S.me = null; S.tab = 'account'; S.msg = null;
+          if (g.VN && g.VN.gate && typeof g.VN.gate.sessaoTerminou === 'function') { g.VN.gate.sessaoTerminou(); return; }
+          S.authMode = 'login'; refresh();
+        }
       })
     ]));
     root.appendChild(chips);
@@ -162,7 +169,7 @@
     }
     if (S.authMode === 'register') {
       const f = DRAFT.auth;
-      root.appendChild(el('p', { text: 'Criar conta. Os dados ficam no servidor da aplicação; a política de privacidade explica o que é guardado e quem pode consultar.' }));
+      root.appendChild(el('p', { text: 'Criar conta. Os dados ficam na base de dados da aplicação (PostgreSQL gerido na UE); a política de privacidade (docs/PRIVACIDADE.md) diz o que é guardado, onde e quem pode consultar.' }));
       root.appendChild(field('Email', { type: 'email', oninput: (e) => { f.email = e.target.value; } }));
       root.appendChild(field('Palavra-passe (10+, maiúscula, minúscula, dígito)', { type: 'password', value: f.password || '', oninput: (e) => { f.password = e.target.value; } }));
       root.appendChild(el('label', { style: 'display:flex;gap:6px;font-size:11px;margin:6px 0' }, [

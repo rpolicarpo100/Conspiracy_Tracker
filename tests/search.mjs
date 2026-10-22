@@ -1,12 +1,17 @@
 /* Testes da pesquisa profunda: exactidão, tolerância, sintaxe, segurança. */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
 const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await B.newPage({ viewport: { width: 1680, height: 1000 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
-await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
-await page.waitForTimeout(1200);
+/* A aplicação exige sessão desde a fase 9: entra-se pela porta, como qualquer
+   pessoa. Servidor de desenvolvimento (tools/dev-server.sh), nunca produção. */
+const BASE = process.env.VN_BASE || 'http://127.0.0.1:8080';
+await semearConta(BASE, CONTA_TESTE.email, CONTA_TESTE.password);
+await page.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+await entrarNaAplicacao(page, BASE, CONTA_TESTE.email, CONTA_TESTE.password);
 
 const results = [];
 const t = async (name, fn) => {

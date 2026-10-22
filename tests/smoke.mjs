@@ -1,10 +1,23 @@
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
+
+/* Desde a fase 9 a aplicação não arranca sem sessão: estes scripts entram pela
+   porta, como qualquer pessoa, no servidor de desenvolvimento. Nunca produção. */
+const BASE = process.env.VN_BASE || 'http://127.0.0.1:8080';
+let contaSemeada = false;
+async function abrir(pg) {
+  if (!contaSemeada) { await semearConta(BASE, CONTA_TESTE.email, CONTA_TESTE.password); contaSemeada = true; }
+  await pg.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(900);
+  await entrarNaAplicacao(pg, BASE, CONTA_TESTE.email, CONTA_TESTE.password);
+}
+
 const browser = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox','--disable-dev-shm-usage'], headless: true });
 const page = await browser.newPage({ viewport: { width: 1680, height: 1000 } });
 const errors = [], logs = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); else logs.push(m.type()+': '+m.text()); });
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
-await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
+await abrir(page);
 await page.waitForTimeout(2500);
 const info = await page.evaluate(() => ({
   nodes: document.querySelectorAll('#detailsbody .empty').length,

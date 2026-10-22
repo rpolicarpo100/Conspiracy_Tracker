@@ -1,6 +1,14 @@
 /* Verificação do site publicado (Render). Uso: node tests/deployed.mjs https://conspiracy-aitracker.onrender.com */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao } from './_ui-entrada.mjs';
+
+/* A aplicação publicada exige sessão desde a fase 9. As credenciais vêm do
+   ambiente, nunca do repositório: VN_DEPLOY_EMAIL / VN_DEPLOY_PASSWORD.
+   Sem elas, este script declara que não pode verificar em vez de falhar por
+   motivos errados. */
 const URL_APP = process.argv[2] || 'https://conspiracy-aitracker.onrender.com';
+const DEPLOY_EMAIL = process.env.VN_DEPLOY_EMAIL || '';
+const DEPLOY_PASS = process.env.VN_DEPLOY_PASSWORD || '';
 const B = await chromium.launch({ executablePath: (process.env.CHROMIUM_PATH || undefined), args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
 const p = await B.newPage({ viewport: { width: 1560, height: 980 } });
 const errs = [];
@@ -15,6 +23,26 @@ async function waitFor(fn, timeout) {
 
 await p.goto(URL_APP, { waitUntil: 'networkidle', timeout: 90000 });
 await p.waitForTimeout(1500);
+
+/* a porta de entrada tem de estar lá, e o resto do corpo escondido */
+await t('porta de entrada presente e corpo privado escondido', async () => {
+  const st = await p.evaluate(() => ({
+    auth: document.documentElement.getAttribute('data-vn-auth'),
+    gate: !!document.getElementById('vnGate'),
+    campos: !!document.getElementById('gateEmail') && !!document.getElementById('gatePassword')
+  }));
+  if (!st.gate || !st.campos) throw new Error('porta ausente na versão publicada');
+  if (st.auth !== 'por-autenticar') throw new Error('estado da porta: ' + st.auth);
+  return 'porta visível · data-vn-auth=por-autenticar';
+});
+
+if (!DEPLOY_EMAIL || !DEPLOY_PASS) {
+  console.log('SKIP restantes verificações: sem VN_DEPLOY_EMAIL/VN_DEPLOY_PASSWORD no ambiente');
+  for (const r of R) console.log((r.ok ? 'PASS ' : 'FAIL ') + r.name + ' → ' + r.detail);
+  await B.close();
+  process.exit(R.some((r) => !r.ok) ? 1 : 0);
+}
+await entrarNaAplicacao(p, URL_APP, DEPLOY_EMAIL, DEPLOY_PASS);
 
 await t('mapa carrega com semente e legenda', async () => {
   const st = await p.evaluate(() => ({
