@@ -910,3 +910,71 @@ F. Continua por fazer (não implementado)
    · interface de dashboard/descoberta/benchmarks (fase 7);
    · scheduler de reavaliação e terceiro olho por IA;
    · integração real de ferramentas externas (opencode está catalogado, não integrado).
+
+== 38. FASE 3 DO «PROVIDER OS» — MOTOR DE TESTES EM 6 CAMADAS (2026-10-22, 2.0.0-fase4a)
+Módulo `server/provider-tests.mjs` · rotas `POST /api/provider-os/test` e `GET /api/provider-os/tests`
+Suite nova `tests/provider-tests.mjs` (18 verificações) dentro de `npm test`.
+
+A. Os seis níveis e o que cada um prova
+   1 existencia  — a página de documentação responde (HTTP observado, latência, data);
+   2 acesso      — o endpoint responde sem chave? com 401? que classe de acesso é;
+   3 ligacao     — com chave: autentica, lista modelos e confirma o modelo pedido;
+   4 geracao     — uma geração real mínima (max_tokens 8): conteúdo não vazio + tokens;
+   5 capacidades — testa SÓ as capacidades declaradas (JSON estruturado, ferramentas);
+   6 fiabilidade — N amostras (≤5), taxa de sucesso e latências p50/p95 medidas.
+   Resultados possíveis: PASS | FAIL | BLOCKED | NOT_TESTED | STALE. Nunca «PASS» sem resposta.
+
+B. Diagnóstico de falhas (12 categorias, testadas uma a uma)
+   credencial-recusada (401) · sem-credencial (403 «unregistered callers») ·
+   conta-sem-quota (403 de facturação) · caminho-errado (404 «Unknown request URL») ·
+   modelo-inexistente (404 de modelo) · pedido-invalido (400) · limite-utilizacao (429) ·
+   erro-do-fornecedor (5xx) · timeout · rede.
+   Regra testada: `retryable` só em 429/5xx/timeout/rede. 401 e 403 nunca se repetem, e um
+   404 de caminho não é lido como «modelo não existe» (falso negativo clássico dos auditores).
+
+C. Resultados obtidos (execução real, 2026-10-22)
+   PASS  módulo · 6 níveis nomeados e 5 resultados possíveis
+   PASS  módulo · diagnóstico distingue 401, 403, 404-caminho, 404-modelo, 429, 5xx e timeout
+   PASS  módulo · 404 de caminho não é lido como modelo inexistente
+   PASS  módulo · redacção remove chaves e cabeçalhos de qualquer texto guardado
+   PASS  módulo · sem chave, níveis 3–6 ficam BLOCKED com motivo (nunca PASS) · 0 geração tentada
+   PASS  módulo · orçamento de pedidos corta antes de gastar · 2 níveis cortados · 2/2 pedidos
+   PASS  sintético · nível 2 detecta que o serviço exige credencial (401)
+   PASS  sintético · nível 3: chave boa PASS · chave má FAIL/credencial-recusada · modelo ausente FAIL/modelo-inexistente
+   PASS  sintético · nível 4: geração válida PASS com tokens · resposta vazia FAIL · sem modelo NOT_TESTED
+   PASS  sintético · nível 5: json PASS · tools PASS · sem declaração → NOT_TESTED
+   PASS  sintético · nível 6: 3/3 válidas · p50 903 ms · p95 904 ms
+   PASS  sintético · 429 → BLOCKED «limite de pedidos (429)» — não se insiste
+   PASS  servidor · níveis 4–6 sem confirmCost → HTTP 400
+   PASS  servidor · sem chave guardada, geração BLOCKED e registada em providerTests
+   PASS  servidor · teste de ligação real: OpenRouter nível 1 PASS (200, 273 ms) · nível 2 PASS
+   PASS  servidor · ranking só dá nota com ≥40% dos pesos medidos · 8 linhas, 0 notas
+   PASS  servidor · teste sintético não entra no ranking de produção
+   PASS  servidor · ferramenta sem endpoint → nível 2 NOT_TESTED com razão escrita
+   18 passaram · 0 falharam · 0 sem execução
+
+D. Como o sintético é usado sem mentir
+   Os níveis 4–6 precisam de uma chave. Sem nenhuma (situação desta sessão), foram testados
+   contra um servidor local que imita a API OpenAI (401/200/429/lento). Esses registos levam
+   `synthetic: true`, o ranking de produção ignora-os (verificado por teste) e o servidor só
+   aceita endereços 127.0.0.1 com `VN_TEST_PROVIDERS=1`. Serve para provar o NOSSO código,
+   não para atribuir nota a um fornecedor real.
+
+E. Correcção encontrada por estes testes
+   1. `requestsUsed` somava pedidos previstos em vez de pedidos feitos — passou a contar no
+      ponto exacto em que o pedido sai para a rede (o orçamento deixou de poder mentir);
+   2. o teste sintético do 429 provava o caminho errado (404 antes de chegar ao limite) — o
+      servidor de teste passou a ter a rota `/v1/limite/models`;
+   3. `tests/fontes.mjs`: o SKIP por rede abortada não reconhecia «aborted» e transformava uma
+      falha do serviço externo em FAIL do nosso código.
+
+F. Suite completa (19 suites de servidor + 6 de interface)
+   14/14 · 17/17 · 18/18 · 13/13 · 26/26 · 17/17 · 19/19 · 13/13 · 16/16 · 28 · 18 · 19 · 21 · 15 ·
+   25 · 7 · 25 · 23 · 18  → 352 verificações, 0 falhas
+   Interface: 5/5 · 7/7 · 15/15 · 6/6 · 10/10 (restaram 0) · 10/10 → 53 verificações, 0 falhas
+   (a execução de rede mais lenta pode devolver SKIP em fontes; nenhum FAIL é aceite)
+
+G. Continua por fazer
+   · chave própria do utilizador para níveis 4–6 contra fornecedores reais (hoje BLOCKED);
+   · health check agendado e reavaliação adaptativa (fase 5);
+   · painel de testes na interface (fase 7).

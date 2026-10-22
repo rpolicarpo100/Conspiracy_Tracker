@@ -335,18 +335,21 @@ export function scoreCandidate(cand, task, opts) {
 
   const known = Object.keys(dims);
   const missingKeys = Object.keys(w).filter((k) => known.indexOf(k) < 0);
-  let score = null, coverage = 0;
-  if (known.length) {
-    const totalKnown = known.reduce((s, k) => s + w[k], 0);
-    const sum = known.reduce((s, k) => s + dims[k] * w[k], 0);
-    score = Math.round(sum / (totalKnown || 1));
-    coverage = Math.round((totalKnown / 100) * 100) / 100;
-  }
+  const totalKnown = known.reduce((s, k) => s + w[k], 0);
+  const coverage = Math.round((totalKnown / 100) * 100) / 100;
+  /* Uma nota calculada com 20% dos pesos não é uma nota: é um número que se
+     lê como ranking. Abaixo de `minCoverage` (40% do peso da tarefa), não há
+     número nenhum — há a lista do que falta. */
+  const minCoverage = 0.4;
+  const suficiente = known.length > 0 && coverage >= minCoverage;
+  let score = null;
+  if (suficiente) score = Math.round(known.reduce((s, k) => s + dims[k] * w[k], 0) / (totalKnown || 1));
   const provisional = missingKeys.length > 0;
   return {
-    task: t, score, provisional,
-    verdict: score == null ? 'Classificação provisória — evidência insuficiente' :
-      (provisional ? 'Classificação provisória — faltam ' + missingKeys.length + ' dimensão(ões): ' + missingKeys.join(', ') : 'classificação completa'),
+    task: t, score, provisional, coveragePct: Math.round(coverage * 100),
+    verdict: score == null
+      ? 'Classificação provisória — evidência insuficiente' + (known.length ? ' (só ' + Math.round(coverage * 100) + '% dos pesos medidos)' : '')
+      : (provisional ? 'Classificação provisória — faltam ' + missingKeys.length + ' dimensão(ões): ' + missingKeys.join(', ') : 'classificação completa'),
     band: score == null ? null : bandOf(score),
     dims, weights: w, coverage,
     missing: missingKeys,

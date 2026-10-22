@@ -1,7 +1,7 @@
-# PROVIDER OS — catálogo com evidência, ranking, arquivo e testes (fases 1–2)
+# PROVIDER OS — catálogo com evidência, ranking, arquivo e motor de testes (fases 1–3)
 
 Versão `2.0.0-fase4a` · esquema **v7** · código: `server/provider-catalog.mjs`, `server/store.mjs`,
-rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`
+rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`
 
 Este documento descreve **o que está implementado e medido** e, com o mesmo cuidado, o que ainda não
 existe. A regra que governa tudo: uma afirmação no catálogo tem de trazer a evidência que a sustenta
@@ -64,8 +64,11 @@ Pesos do pedido, configuráveis por tipo de tarefa (`conversa`, `codigo`, `racio
 `investigacao`, `documentos`, `ferramentas`). Dimensões: qualidade 25 · fiabilidade 20 · segurança 15
 · integração 10 · latência 10 · custo 10 · continuidade 5 · manutenção 5 (variam por tarefa).
 
-- **Sem métrica não há nota.** Sem testes de geração, `score: null` e «Classificação provisória —
-  evidência insuficiente» com a lista do que falta (hoje: 8 de 8 dimensões para todas as entradas).
+- **Sem métrica não há nota.** A nota exige **≥40 % dos pesos medidos**. Sem testes de geração,
+  `score: null` e «Classificação provisória — evidência insuficiente (só N% dos pesos medidos)»,
+  com a lista do que falta. Há uma razão medida para o limiar: com uma única dimensão medida entre
+  oito, o cálculo dava **20/100** e isso era lido como má nota; hoje devolve `null` e o motivo.
+  (Correcção vinda dos testes: `scoreCandidate` passou a devolver `coveragePct`.)
 - **Risco crítico exclui da produção** mesmo com nota 100 (testado).
 - **Evidência com mais de 90 dias exclui** da recomendação até ser reavaliada (testado com 294 dias).
 - **Não há vencedor universal**: a mesma candidata obtém 80 em `codigo` e 79 em `ferramentas`
@@ -100,23 +103,74 @@ corrente — dois agentes não se sobrepõem em silêncio (testado em módulo e 
 | `/api/provider-os/discover` | POST | descoberta real (10/hora por utilizador) |
 | `/api/provider-os/ranking` | GET | ranking por tarefa, com o que falta a cada linha |
 | `/api/provider-os/cost` | POST | custo por tarefa com base medida |
+| `/api/provider-os/test` | POST | motor de testes níveis 1–6 (níveis ≥4 exigem `confirmCost`) |
+| `/api/provider-os/tests?key=` | GET | histórico imutável de testes por fornecedor |
 | `/api/projects/:id/work[/:versão]` | GET/POST | arquivo versionado com concorrência optimista |
 
 Todas exigem sessão; as mutações exigem CSRF; descoberta e semente ficam em auditoria
 (`provider_discovered`, `catalog_seeded`, `checkpoint_saved`).
 
-## 8. Testes (resultado real de 2026-10-22)
+## 8. Motor de testes em 6 camadas (fase 3)
 
-`node tests/provider-os.mjs` → **25 asserções · 0 falhas · 0 sem execução**, em três camadas:
-módulo (13), base de dados com reinício real (4), servidor HTTP real (8, incluindo uma descoberta
-real de 468 modelos em ~100 ms).
-Suite completa: **18 suites · 334 asserções · 0 falhas** no servidor e **6 suites · 53 · 0** na
-interface.
+`server/provider-tests.mjs` mede, nível a nível, e **nunca transforma ausência de prova em sucesso**:
 
-## 9. O que **não** está feito (declarado)
+| nível | nome | o que faz | resultado sem chave |
+| --- | --- | --- | --- |
+| 1 | existencia | pede a documentação: HTTP, latência, data | mede (não precisa de chave) |
+| 2 | acesso | pede o endpoint sem chave: 200 / 401 / 403 classificado | mede |
+| 3 | ligacao | com chave: autentica, lista modelos, confirma o modelo pedido | `BLOCKED` «sem chave» |
+| 4 | geracao | uma geração real mínima (`max_tokens: 8`): conteúdo não vazio + tokens | `BLOCKED` (+ exige `confirmCost`) |
+| 5 | capacidades | testa **só** o que o fornecedor declara (JSON, ferramentas); o resto `NOT_TESTED` | `BLOCKED` |
+| 6 | fiabilidade | N amostras (≤5, pausa 350 ms): taxa de sucesso, p50/p95 medidos | `BLOCKED` |
 
-1. **Testes de geração (níveis 4–5)** — exigem uma chave. Sem ela, `BLOCKED`, não `PASS`. O sistema
-   já sabe dizer isto e não finge.
+Resultados: `PASS · FAIL · BLOCKED · NOT_TESTED · STALE`. Diagnósticos (12): `credencial-recusada`,
+`sem-credencial`, `conta-sem-quota`, `caminho-errado`, `modelo-inexistente`, `nao-encontrado`,
+`pedido-invalido`, `limite-utilizacao`, `erro-do-fornecedor`, `timeout`, `rede`, `proibido`.
+
+Regras que os testes fixam:
+- **404 de caminho ≠ 404 de modelo.** «Unknown request URL» é `caminho-errado` com a dica de corrigir o
+  endpoint; só «model … not found» é `modelo-inexistente`. Um auditor que confunde os dois condena
+  fornecedores bons.
+- **Só 429, 5xx, timeout e rede são repetíveis.** 401/403 nunca: insistir com credencial recusada é
+  ruído (e, em alguns serviços, risco de bloqueio).
+- **Orçamento medido, não previsto**: o contador incrementa no instante em que o pedido sai para a
+  rede. Padrão 4 pedidos (10 com geração), máximo 20; ao esgotar, os níveis seguintes ficam
+  `BLOCKED` com o número exacto.
+- **Redacção antes de guardar**: `Bearer`, `sk-`, `gsk_`, `hf_` e a chave usada desaparecem do registo.
+- **Sem chave não se testa geração.** Fica `BLOCKED`, com motivo; o motivo sobrevive ao reinício.
+- **SSRF**: o motor ignora `allowInsecure` das entradas; endereços privados só com
+  `VN_TEST_PROVIDERS=1` e `127.0.0.1` (servidor de teste). Um catálogo público não pode ser usado
+  para sondar a rede interna.
+- **Sintético não pontua**: registos com `synthetic: true` são gravados (para provar o código) mas o
+  ranking de produção ignora-os — verificado por teste.
+
+Rotas: `POST /api/provider-os/test` (sessão + CSRF; `confirmCost: true` obrigatório para níveis ≥4;
+resolve a chave em `providers/<id>` no cofre; grava por nível em `providerTests`; promove o estado
+apenas com `PASS` — 1/2→`DOCUMENTED`, 3→`LINK_TESTED`, 4→`GENERATION_TESTED`; audita
+`provider_tested`; regista consumo) e `GET /api/provider-os/tests?key=` (histórico imutável, últimas
+100 de 200). O ranking passou a usar estes registos: taxa de sucesso e p50 do nível 4/6 entram como
+métricas **medidas**.
+
+## 9. Testes (resultado real de 2026-10-22)
+
+`node tests/provider-os.mjs` → **25 asserções · 0 falhas**, em três camadas: módulo (13), base de
+dados com reinício real (4), servidor HTTP real (8, incluindo descoberta real de 468 modelos em
+~100 ms).
+
+`node tests/provider-tests.mjs` → **18 asserções · 0 falhas**: módulo (6: níveis, diagnósticos,
+404 duplo, redacção, sem chave, orçamento), servidor sintético em `127.0.0.1` (6: 401, chave boa/má,
+geração vazia, capacidades declaradas, percentis, 429) e servidor real (6: `confirmCost`, BLOCKED
+gravado, ligação real ao OpenRouter, limiar de 40 %, sintético fora do ranking, ferramenta sem
+endpoint).
+
+Suite completa: **19 suites · 352 asserções · 0 falhas** no servidor e **6 suites · 53 · 0** na
+interface (`docs/TEST-RESULTS.txt` §37–§38).
+
+## 10. O que **não** está feito (declarado)
+
+1. **Testes de geração (níveis 4–6) contra fornecedores reais** — exigem uma chave do utilizador. Sem
+   ela, `BLOCKED`, não `PASS`. O caminho está provado com servidor sintético (marcado como tal), o que
+   valida o nosso código mas **não** atribui nota a nenhum fornecedor.
 2. **Selector automático e fallback** (fase 4): o ranking existe, a escolha por tarefa com
    justificação ainda não.
 3. **Interface** (fase 7): dashboard de fornecedores, descoberta e benchmarks não têm ecrã próprio.

@@ -21,6 +21,7 @@ import { extractPdfText, PDF_LIMITS } from './pdftext.mjs';
 import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
 import { MFA, newSecret, otpauthUri, verifyTotp, newRecoveryCodes, consumeRecoveryCode, makeAttemptLimiter, maskSecret } from './mfa.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
+import { runProviderTests, TEST_LEVELS, RESULTS as TEST_RESULTS, classifyFailure } from './provider-tests.mjs';
 import {
   ACCESS_CLASSES, PROVIDER_STATES, EVIDENCE_STATUS, KINDS, CATEGORY, DISCOVERY_ADAPTERS,
   SEED, validateEntry, evidenceSummary, publicEntry, fromOpenRouter, fromHuggingFace,
@@ -2260,6 +2261,87 @@ export async function createApi(opts) {
         });
       }
 
+      if (p === '/api/provider-os/test' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const entry = store.catalogEntry(String(body.key || ''));
+        if (!entry) return err(res, 404, 'entrada de catálogo não encontrada: carregue a semente primeiro');
+
+        /* O fornecedor do adaptador (ex.: «providers/groq» → groq) é a chave da
+           credencial no cofre. Sem credencial, os níveis 3–6 ficam BLOCKED — não
+           se pede a chave ao cliente nem se inventa uma. */
+        const providerId = String(entry.key).startsWith('providers/') ? String(entry.key).slice('providers/'.length) : null;
+        const cred = providerId ? store.credentialFor(a.user.id, providerId) : null;
+        let apiKey = null;
+        if (cred && vault.enabled) { try { apiKey = vault.open(cred.keyCipher); } catch { apiKey = null; } }
+        const model = String(body.model || (cred && cred.model) || '').slice(0, 120) || null;
+
+        const levels = (Array.isArray(body.levels) ? body.levels : [1, 2, 3])
+          .map(Number).filter((n) => TEST_LEVELS[n]).slice(0, 6);
+        if (!levels.length) return err(res, 400, 'nenhum nível válido pedido', { valid: Object.keys(TEST_LEVELS) });
+
+        /* testes com geração gastam dinheiro do utilizador: exigem confirmação explícita */
+        const pedeGeracao = levels.some((n) => n >= 4);
+        if (pedeGeracao && body.confirmCost !== true) {
+          return err(res, 400, 'os níveis 4–6 fazem pedidos pagos com a sua chave: confirme com confirmCost=true', { levels, model });
+        }
+        const t0 = Date.now();
+        const out = await runProviderTests(entry, {
+          apiKey, model, levels,
+          samples: body.samples,
+          maxRequests: Math.min(20, Math.max(1, Number(body.maxRequests) || (pedeGeracao ? 10 : 4))),
+          allowInsecure: process.env.VN_TEST_PROVIDERS === '1'
+        });
+        const gravados = [];
+        for (const nivel of Object.keys(out.results)) {
+          const r = out.results[nivel];
+          const rec = await store.addProviderTest({
+            key: entry.key, level: Number(nivel), levelId: r.levelId, result: r.result,
+            reason: r.reason || null, detail: r.detail || null, diagnosis: r.diagnosis || null,
+            httpStatus: r.httpStatus == null ? null : r.httpStatus, latencyMs: r.latencyMs == null ? null : r.latencyMs,
+            method: r.method || null, samples: r.samples || null, successRate: r.successRate == null ? null : r.successRate,
+            tokens: r.tokens || null, testedBy: a.user.id, synthetic: !!out.synthetic
+          });
+          gravados.push({ id: rec.id, level: rec.level, result: rec.result });
+        }
+        /* mudança de estado conservadora: só sobe com prova, só desce com motivo */
+        let novoEstado = null;
+        const pass = (n) => out.results[n] && out.results[n].result === 'PASS';
+        if (pass(4)) novoEstado = 'GENERATION_TESTED';
+        else if (pass(3)) novoEstado = 'LINK_TESTED';
+        else if (pass(1) || pass(2)) novoEstado = 'DOCUMENTED';
+        if (novoEstado && novoEstado !== entry.state) {
+          await store.setCatalogState(entry.key, novoEstado, 'teste nível ' + Object.keys(out.results).join(','), a.user.id);
+        }
+        await store.audit({ type: 'provider_tested', actorId: a.user.id, subjectId: entry.key, action: 'provider_test',
+          detail: { levels, results: gravados.map((g) => g.level + ':' + g.result), requests: out.requestsUsed, ms: Date.now() - t0, hadKey: !!apiKey } });
+        await store.addUsage({ userId: a.user.id, provider: providerId || entry.vendor || 'desconhecido', model, kind: 'provider_test',
+          ok: pass(4) || pass(3) || pass(1), promptTokens: out.metrics.tokens ? out.metrics.tokens.prompt : null,
+          completionTokens: out.metrics.tokens ? out.metrics.tokens.completion : null, cost: null, latencyMs: out.metrics.latencyP50Ms });
+        return json(res, 200, {
+          ok: true, key: entry.key, state: (store.catalogEntry(entry.key) || {}).state,
+          hadKey: !!apiKey, model, levels, requestsUsed: out.requestsUsed, budget: out.budget, ms: Date.now() - t0,
+          results: out.results, metrics: out.metrics, stored: gravados,
+          note: pedeGeracao && !apiKey ? 'os níveis 4–6 ficaram BLOCKED por falta de chave: guarde uma chave própria em «Chaves de IA»' :
+            'resultados gravados em providerTests; a chave nunca é guardada no resultado'
+        });
+      }
+
+      if (p === '/api/provider-os/tests' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const url2 = new URL(req.url, 'http://x');
+        const key = url2.searchParams.get('key');
+        const list = key ? store.providerTestsOf(key) : store.data.providerTests.slice(-200);
+        return json(res, 200, {
+          ok: true, total: list.length,
+          results: list.slice(-100).map((t) => ({ id: t.id, key: t.key, level: t.level, levelId: t.levelId, result: t.result,
+            reason: t.reason, detail: t.detail, diagnosis: t.diagnosis, httpStatus: t.httpStatus,
+            latencyMs: t.latencyMs, at: t.at, samples: t.samples, successRate: t.successRate })),
+          note: 'histórico imutável: um teste antigo não é substituído por um novo'
+        });
+      }
+
       if (p === '/api/provider-os/ranking' && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
         const url = new URL(req.url, 'http://x');
@@ -2267,12 +2349,17 @@ export async function createApi(opts) {
         if (!TASK_TYPES[task]) return err(res, 400, 'tipo de tarefa desconhecido', { known: Object.keys(TASK_TYPES) });
         const entries = store.catalogEntries();
         const rows = entries.map((e) => {
-          const tests = store.providerTestsOf(e.key);
-          const gen = tests.filter((t) => t.level >= 4);
+          const tests = store.providerTestsOf(e.key).filter((t) => !t.synthetic);
+          const gen = tests.filter((t) => t.level === 4);
+          const rel = tests.filter((t) => t.level === 6);
           const okGen = gen.filter((t) => t.result === 'PASS');
+          const last = (arr) => (arr.length ? arr[arr.length - 1] : null);
           const lat = okGen.map((t) => t.latencyMs).filter((x) => x != null).sort((x, y) => x - y);
+          const relLast = last(rel);
           const metrics = {
-            successRate: tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null,
+            /* taxa de sucesso: a da fiabilidade quando medida; senão, proporção de PASS nos testes feitos */
+            successRate: relLast && relLast.successRate != null ? relLast.successRate
+              : (tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null),
             latencyP50Ms: lat.length ? lat[Math.floor(lat.length / 2)] : null,
             uptime: null, qualityScore: null, securityScore: null,
             integrationScore: null, maintenanceScore: null,
@@ -2553,6 +2640,11 @@ export async function createApi(opts) {
       usage: v.usage || null, sample: v.sample ? String(v.sample).slice(0, 120) : null
     };
   }
+
+  /* Acesso ao armazenamento apenas para testes que precisam de semear estado
+     (ex.: provar que um teste sintético não entra no ranking). Nunca é exposto
+     por omissão: `createApi()` em produção não recebe esta opção. */
+  if (opts.exposeStore === true) api.__test = { store };
 
   api.close = async () => {
     if (typeof store.readOnly === 'function' && store.readOnly()) return;   // nada a gravar

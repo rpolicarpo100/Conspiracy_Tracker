@@ -308,7 +308,7 @@ await t('a execução de descoberta fica no histórico com a consulta exacta', a
   /* Falha por causa do serviço externo (limite, timeout, DNS) não é falha do
      nosso código: SKIP com motivo. Uma falha nossa (400, erro de lógica) continua
      a ser FAIL — a distinção está no motivo, não na simpatia. */
-  if (run.status === 'failed' && /429|limite|timeout|rede|ECONN|EAI_AGAIN|fetch failed|sem resultados/i.test(run.error || '')) {
+  if (run.status === 'failed' && /429|limite|timeout|rede|ECONN|EAI_AGAIN|ENOTFOUND|fetch failed|aborted|abort|sem resultados/i.test(run.error || '')) {
     throw new Error('SKIP serviço externo indisponível/limitado: ' + run.error);
   }
   ok(run.query && run.status === 'completed', 'execução sem consulta ou não concluída: ' + JSON.stringify({ s: run.status, q: run.query }));
