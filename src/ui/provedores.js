@@ -1,0 +1,258 @@
+/* =====================================================================
+   VN · FORNECEDORES DE IA (interface do Provider OS — fases 2–4)
+
+   Mostra o que o servidor sabe de facto: catálogo com evidência datada,
+   ranking por tarefa, a decisão do selector com justificação e alternativa,
+   e o plano de fallback calculado (sem gastar nada).
+
+   Regras visíveis na própria interface:
+   · sem teste de geração não há nota — aparece «provisória» e o que falta;
+   · testar níveis 4–6 gasta a chave do utilizador: pede confirmação explícita;
+   · quando não há prova suficiente, o selector NÃO escolhe: diz porquê;
+   · testes sintéticos não contam para a nota (o servidor já os ignora).
+   ===================================================================== */
+(function (g) {
+  'use strict';
+  const VN = (g.VN = g.VN || {});
+
+  const S = {
+    meta: null, entries: null, ranking: null, decisions: null,
+    decision: null, plan: null, task: 'conversa', busy: '', msg: null, open: null
+  };
+
+  let ctxDeps = null;
+  const reasonOf = (r) => {
+    const e = r && r.json && r.json.error;
+    if (!e) return 'HTTP ' + (r && r.status);
+    return typeof e === 'string' ? e : (e.message || JSON.stringify(e));
+  };
+
+  function mount(deps) {
+    ctxDeps = deps;
+    const { el, clear, toast, api } = deps;
+    const wrap = el('div', { id: 'provedoresroot' });
+
+    async function load() {
+      const [meta, cat, rank, dec] = await Promise.all([
+        api('/api/provider-os/meta'),
+        api('/api/provider-os/catalog'),
+        api('/api/provider-os/ranking?task=' + encodeURIComponent(S.task)),
+        api('/api/provider-os/decisions')
+      ]);
+      if (meta.ok) S.meta = meta.json;
+      if (cat.ok) S.entries = cat.json.entries;
+      if (rank.ok) S.ranking = rank.json;
+      if (dec.ok) S.decisions = dec.json;
+    }
+
+    function chip(res) {
+      const cls = res === 'PASS' ? 'ok' : res === 'FAIL' ? 'bad' : res === 'BLOCKED' ? 'warn' : 'muted';
+      return el('span', { class: 'scorepill ' + cls, text: res || '—' });
+    }
+
+    function paint() {
+      clear(wrap);
+      if (S.msg) wrap.appendChild(el('div', { class: 'warnbox', text: S.msg.text, id: 'providerStatus' }));
+      wrap.appendChild(el('div', { class: 'infobox', html:
+        '<b>Uma nota só existe com medição.</b> O catálogo guarda a evidência de cada afirmação (URL, data, método). ' +
+        'Sem um teste de geração com <i>PASS</i>, a linha aparece como <i>provisória</i> e diz o que falta — ' +
+        'e o selector recusa escolher em vez de adivinhar.' }));
+
+      if (S.entries) {
+        const comGeracao = S.entries.filter((e) => (e.tests || []).some((t) => t.level === 4 && t.result === 'PASS')).length;
+        const testadas = S.entries.filter((e) => (e.tests || []).length > 0).length;
+        wrap.appendChild(el('div', { class: 'statline', style: 'margin:8px 0', id: 'providerStats' }, [
+          ['Entradas', S.entries.length], ['Com teste', testadas], ['Com geração', comGeracao],
+          ['Com nota', S.ranking ? S.ranking.computed : 0], ['Decisões', S.decisions ? S.decisions.total : 0]
+        ].map(([k, v]) => el('span', {}, [el('b', { text: String(v) }), el('span', { class: 'muted', text: ' ' + k })]))));
+      }
+
+      /* ---- acções ---- */
+      const acoes = el('div', { class: 'actions', style: 'margin:6px 0' });
+      acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnSeedProviders', text: 'Carregar semente', onclick: async () => {
+        const r = await api('/api/provider-os/seed', { method: 'POST', body: {} });
+        S.msg = r.ok ? { text: 'Semente: ' + r.json.created + ' criadas, ' + r.json.updated + ' actualizadas.' + (r.json.invalid.length ? ' Recusadas: ' + r.json.invalid.length : '') }
+          : { text: 'Semente falhou: ' + reasonOf(r) };
+        await load(); paint();
+      } }));
+      /* /api/provider-os/meta devolve `taskTypes` como LISTA de {id,label}:
+         iterar com Object.keys produzia as opções «0», «1»… (bug visível na
+         captura de ecrã — a lista de tarefas aparecia como «0») */
+      const tipos = (S.meta && Array.isArray(S.meta.taskTypes)) ? S.meta.taskTypes
+        : (S.meta && S.meta.taskTypes ? Object.keys(S.meta.taskTypes).map((id) => ({ id, label: id })) : [{ id: 'conversa', label: 'conversa' }]);
+      const sel = el('select', { id: 'providersTask', class: 'btn sm', style: 'margin:0 4px' },
+        tipos.map((t) => el('option', { value: t.id, text: t.id + ' — ' + t.label, selected: t.id === S.task })));
+      sel.value = S.task;
+      sel.addEventListener('change', async (ev) => { S.task = ev.target.value; S.decision = null; S.plan = null; await load(); paint(); });
+      acoes.appendChild(sel);
+      acoes.appendChild(el('button', { class: 'btn primary sm', type: 'button', id: 'btnSelectProvider', text: 'Escolher fornecedor', onclick: async () => {
+        S.msg = null;
+        const r = await api('/api/provider-os/select', { method: 'POST', body: { task: S.task } });
+        if (r.ok) {
+          S.decision = r.json;
+          S.msg = { text: r.json.chosen
+            ? 'Escolhido ' + r.json.chosen.key + ' · nota ' + r.json.chosen.score + '/' + r.json.chosen.band + ' · confiança ' + r.json.confidence
+            : 'Não foi escolhido nenhum fornecedor: ' + r.json.noChoiceReason };
+        } else S.msg = { text: 'Selecção recusada: ' + reasonOf(r) };
+        await load(); paint();
+      } }));
+      acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnFallbackPlan', text: 'Plano de fallback', onclick: async () => {
+        const r = await api('/api/provider-os/fallback/plan', { method: 'POST', body: { task: S.task, seed: 42 } });
+        if (r.ok) {
+          S.plan = r.json;
+          S.msg = { text: r.json.plan.length
+            ? 'Plano calculado: ' + r.json.plan.length + ' tentativa(s) — nenhum pedido foi feito, nada foi gasto.'
+            : 'Sem plano: ' + (r.json.reason || 'nenhuma candidata com prova suficiente') };
+        } else S.msg = { text: 'Plano recusado: ' + reasonOf(r) };
+        paint();
+      } }));
+      if (S.entries && S.entries.length) acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnTestFree', text: 'Testar documentação e acesso (níveis 1–2, sem chave)', onclick: async () => {
+        S.busy = 'test'; paint();
+        let feitos = 0, pass = 0;
+        for (const e of S.entries.filter((x) => x.kind !== 'tool')) {
+          const r = await api('/api/provider-os/test', { method: 'POST', body: { key: e.key, levels: [1, 2] } });
+          if (r.ok) { feitos++; if (r.json.results[1] && r.json.results[1].result === 'PASS') pass++; }
+        }
+        S.busy = '';
+        S.msg = { text: 'Testados ' + feitos + ' fornecedores (só níveis 1–2, sem custo): ' + pass + ' com documentação a responder. Nenhuma chave foi usada.' };
+        await load(); paint();
+      } }));
+      wrap.appendChild(acoes);
+
+      /* ---- catálogo ---- */
+      if (!S.entries || !S.entries.length) {
+        wrap.appendChild(el('div', { class: 'empty', id: 'providersEmpty', text: 'Catálogo vazio: carregue a semente para começar (nada é inventado localmente).' }));
+        return;
+      }
+      wrap.appendChild(el('h4', { style: 'font-size:12px;margin:10px 0 4px', text: 'Catálogo (' + S.entries.length + ')' }));
+      const rows = S.entries.map((e) => {
+        const tests = e.tests || [];
+        const ultimo = tests.length ? tests[tests.length - 1] : null;
+        return el('tr', {}, [
+          el('td', {}, [el('b', { text: e.name }), el('div', { class: 'muted', style: 'font-size:10px', text: e.key })]),
+          el('td', { text: (e.access && e.access.class) || '—' }),
+          el('td', { text: e.state || '—' }),
+          el('td', { style: 'font-size:10.5px', text: (e.evidenceSummary ? e.evidenceSummary.measured + ' medidas' : '—') +
+            (e.evidenceSummary && e.evidenceSummary.freshnessDays != null ? ' · ' + e.evidenceSummary.freshnessDays + ' d' : '') }),
+          el('td', {}, [ultimo ? chip(ultimo.result) : el('span', { class: 'muted', text: 'nunca testado' })]),
+          el('td', {}, [el('button', { class: 'btn sm', type: 'button', text: 'Ver', onclick: async () => {
+            S.open = S.open === e.key ? null : e.key; paint();
+          } })])
+        ]);
+      });
+      wrap.appendChild(el('table', { class: 'listtable', id: 'providersTable' }, [
+        el('thead', {}, [el('tr', {}, ['Fornecedor', 'Classe', 'Estado', 'Evidência', 'Último teste', ''].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, rows)
+      ]));
+
+      if (S.open) {
+        const e = S.entries.filter((x) => x.key === S.open)[0];
+        const box = el('div', { style: 'margin:8px 0;padding:8px;border:1px solid var(--line)', id: 'providerDetail' });
+        box.appendChild(el('h4', { style: 'font-size:11px;margin:0 0 4px', text: e.name + ' — ' + e.key }));
+        box.appendChild(el('div', { style: 'font-size:11px', text: 'Endpoints: ' + ((e.endpoints || []).map((x) => x.base).join(', ') || 'nenhum (é uma ferramenta, não um serviço)') }));
+        box.appendChild(el('table', { class: 'listtable' }, [
+          el('thead', {}, [el('tr', {}, ['Afirmação', 'Estado', 'Data', 'Fonte', 'Método'].map((h) => el('th', { text: h })))]),
+          el('tbody', {}, (e.evidence || []).map((x) => el('tr', {}, [
+            el('td', { text: x.a }), el('td', { text: x.status }), el('td', { class: 'mono', text: x.at || '—' }),
+            el('td', { style: 'font-size:10px', text: x.url || '—' }), el('td', { style: 'font-size:10px', text: x.method || '—' })
+          ])))
+        ]));
+        box.appendChild(el('div', { class: 'actions', style: 'margin-top:6px' }, [
+          el('button', { class: 'btn sm', type: 'button', id: 'btnTestGeneration', text: 'Testar geração (níveis 3–4 — gasta a sua chave)', onclick: async () => {
+            if (!confirm('Os níveis 3–4 fazem pedidos reais com a SUA chave guardada e podem custar dinheiro. Continuar?')) return;
+            const r = await api('/api/provider-os/test', { method: 'POST', body: { key: e.key, levels: [3, 4], confirmCost: true } });
+            if (!r.ok) { S.msg = { text: 'Teste recusado: ' + reasonOf(r) }; paint(); return; }
+            const partes = Object.keys(r.json.results).map((n) => n + ':' + r.json.results[n].result);
+            S.msg = { text: 'Resultado ' + partes.join(' · ') + (r.json.hadKey ? '' : ' — sem chave guardada, a geração fica BLOQUEADA') };
+            await load(); paint();
+          } })
+        ]));
+        wrap.appendChild(box);
+      }
+
+      /* ---- ranking ---- */
+      if (S.ranking) {
+        wrap.appendChild(el('h4', { style: 'font-size:12px;margin:12px 0 4px', text: 'Ranking — ' + S.ranking.taskLabel + ' (' + S.ranking.computed + ' com nota de ' + S.ranking.total + ')' }));
+        if (!S.ranking.computed) {
+          wrap.appendChild(el('div', { class: 'warnbox', id: 'rankingProvisional', text:
+            'Nenhuma linha tem nota: falta um teste de geração com PASS e ≥ 40 % dos pesos medidos. ' +
+            'Uma nota calculada com uma dimensão entre oito não seria um ranking, seria ruído.' }));
+        }
+        wrap.appendChild(el('table', { class: 'listtable', id: 'providersRanking' }, [
+          el('thead', {}, [el('tr', {}, ['Fornecedor', 'Nota', 'Cobertura', 'Classificação', 'Falta'].map((h) => el('th', { text: h })))]),
+          el('tbody', {}, S.ranking.rows.slice(0, 10).map((r) => el('tr', {}, [
+            el('td', { text: r.name }),
+            el('td', { class: 'mono', text: r.score == null ? '—' : String(r.score) + ' ' + (r.band || '') }),
+            el('td', { class: 'mono', text: r.coveragePct + ' %' }),
+            el('td', { style: 'font-size:10.5px', text: r.verdict }),
+            el('td', { style: 'font-size:10px;color:var(--muted)', text: (r.missing || []).join(', ') || '—' })
+          ])))
+        ]));
+      }
+
+      /* ---- decisão ---- */
+      if (S.decision) {
+        const d = S.decision;
+        const box = el('div', { style: 'margin:10px 0;padding:8px;border:1px solid var(--line)', id: 'providerDecision' });
+        box.appendChild(el('h4', { style: 'font-size:12px;margin:0 0 4px', text: d.chosen
+          ? 'Decisão: ' + d.chosen.name + ' · nota ' + d.chosen.score + '/' + d.chosen.band + ' · confiança ' + d.confidence
+          : 'Decisão: nenhum fornecedor escolhido' }));
+        if (!d.chosen) box.appendChild(el('div', { class: 'warnbox', text: d.noChoiceReason }));
+        box.appendChild(el('ul', { style: 'font-size:11px', id: 'decisionWhy' }, (d.justification || []).map((x) => el('li', { text: x }))));
+        if (d.alternatives && d.alternatives.length) {
+          box.appendChild(el('div', { style: 'font-size:11px;margin-top:4px', text: 'Por que não a alternativa:' }));
+          box.appendChild(el('ul', { style: 'font-size:11px' }, d.alternatives.map((a) => el('li', { text: a.name + ' (' + (a.score == null ? 'sem nota' : a.score) + '): ' + a.whyNot }))));
+        }
+        if (d.whatWouldChangeIt && d.whatWouldChangeIt.length) {
+          box.appendChild(el('div', { style: 'font-size:11px;margin-top:4px', text: 'O que mudaria esta decisão:' }));
+          box.appendChild(el('ul', { style: 'font-size:11px' }, d.whatWouldChangeIt.map((x) => el('li', { text: x }))));
+        }
+        if (d.rejected && d.rejected.length) {
+          box.appendChild(el('div', { style: 'font-size:11px;margin-top:4px', text: 'Eliminadas antes (' + d.rejected.length + '):' }));
+          box.appendChild(el('ul', { style: 'font-size:10.5px;color:var(--muted)' }, d.rejected.slice(0, 8).map((r) => el('li', { text: r.name + ' — ' + r.stage + ': ' + r.reason }))));
+        }
+        box.appendChild(el('details', { style: 'font-size:10.5px;margin-top:6px' }, [
+          el('summary', { text: 'Os 13 passos desta decisão' }),
+          el('table', { class: 'listtable' }, [
+            el('thead', {}, [el('tr', {}, ['#', 'Passo', 'O que aconteceu'].map((h) => el('th', { text: h })))]),
+            el('tbody', {}, (d.steps || []).map((s) => el('tr', {}, [
+              el('td', { class: 'mono', text: String(s.step) }),
+              el('td', { text: (s.name || s.key) }),
+              el('td', { style: 'font-size:10px', text: resumoPasso(s) })
+            ])))
+          ])
+        ]));
+        wrap.appendChild(box);
+      }
+
+      /* ---- plano de fallback ---- */
+      if (S.plan && S.plan.plan && S.plan.plan.length) {
+        const box = el('div', { style: 'margin:10px 0;padding:8px;border:1px solid var(--line)', id: 'providerPlan' });
+        box.appendChild(el('h4', { style: 'font-size:12px;margin:0 0 4px', text: 'Plano de fallback (simulado — 0 pedidos, 0 custo)' }));
+        box.appendChild(el('ol', { style: 'font-size:11px' }, S.plan.plan.map((x) => el('li', {
+          text: x.providerKey + ' · tentativa ' + x.attempt + ' · espera ' + x.delayMs + ' ms (máx ' + x.maxDelayMs + ' ms)'
+        }))));
+        if (S.plan.policy) box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted)', text:
+          'Política: base ' + S.plan.policy.baseMs + ' ms · tecto ' + S.plan.policy.capMs + ' ms · jitter ' + S.plan.policy.jitter +
+          ' · máx ' + S.plan.policy.maxAttemptsPerProvider + ' tentativas por fornecedor · orçamento ' + S.plan.policy.budgetUsd + ' USD' }));
+        wrap.appendChild(box);
+      }
+    }
+
+    function resumoPasso(s) {
+      if (s.kept != null && s.removed != null) return 'ficaram ' + s.kept + ', removidas ' + s.removed;
+      if (s.order) return s.order.map((x) => x.key.split('/').pop() + ' ' + (x.score == null ? '—' : x.score)).join(' · ');
+      if (s.task) return 'tarefa ' + s.task + ' (pesos ' + Object.values(s.weights || {}).join('/') + ')';
+      if (s.pinnedKey) return 'fixado: ' + s.pinnedKey + (s.note ? ' — ' + s.note : '');
+      if (s.alternatives != null) return s.alternatives + ' alternativa(s)';
+      if (s.validityDays != null) return s.validityDays + ' dias (reavaliar em ' + s.recheckAt + ')';
+      if (s.unknownCost) return 'custo desconhecido: ' + s.unknownCost.join(', ');
+      return s.note || '';
+    }
+
+    load().then(paint).catch((e) => { paint(); wrap.appendChild(el('div', { class: 'warnbox', text: 'Falha ao ler o catálogo: ' + e.message })); });
+    return wrap;
+  }
+
+  VN.provedoresUI = { mount, getState: () => S };
+})(typeof window !== 'undefined' ? window : globalThis);

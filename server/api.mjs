@@ -28,6 +28,9 @@ import {
   TASK_TYPES, EXCLUSION_RULES, scoreCandidate, bandOf, costOfTask
 } from './provider-catalog.mjs';
 import {
+  selectProvider, planFallback, runWithFallback, classifyOutcome, SELECTION_STEPS, FALLBACK_DEFAULTS
+} from './selector.mjs';
+import {
   SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
   parseUrl, canonicalUrl, dedupeKey as sourceDedupeKey, domainOf, stateFromCheck,
   rateSource, coverageFrom, ADAPTERS
@@ -37,7 +40,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase4a';
+const APP_VERSION = '2.0.0-fase4b';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -456,6 +459,49 @@ export async function createApi(opts) {
   const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
   const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
   const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
+
+  /* Candidata para ranking/selecção: uma só função, para que a nota e a escolha
+     nunca leiam fontes diferentes. Só entram métricas MEDIDAS (testes reais,
+     nunca sintéticos); o que não foi medido fica null e é dito como faltando. */
+  function candidateOf(entry, userId) {
+    const tests = store.providerTestsOf(entry.key).filter((t) => !t.synthetic);
+    const gen = tests.filter((t) => t.level === 4);
+    const rel = tests.filter((t) => t.level === 6);
+    const okGen = gen.filter((t) => t.result === 'PASS');
+    const last = (arr) => (arr.length ? arr[arr.length - 1] : null);
+    const lat = okGen.map((t) => t.latencyMs).filter((x) => x != null).sort((x, y) => x - y);
+    const relLast = last(rel);
+    /* capacidades: só as que tiveram PASS no nível 5 (declarado não é testado) */
+    const capabilities = {};
+    for (const t of tests.filter((x) => x.level === 5 && x.capabilities)) {
+      for (const [cap, res] of Object.entries(t.capabilities)) {
+        if (res === 'PASS') capabilities[cap] = 'PASS';
+        else if (!capabilities[cap]) capabilities[cap] = res;
+      }
+    }
+    const providerId = String(entry.key).startsWith('providers/') ? String(entry.key).slice('providers/'.length) : null;
+    const cred = providerId && userId ? store.credentialFor(userId, providerId) : null;
+    const meta = entry.metadata || {};
+    return {
+      key: entry.key, name: entry.name, kind: entry.kind, state: entry.state,
+      risk: (entry.security && entry.security.risk) || meta.risk || null,
+      tested: { link: tests.some((t) => t.level <= 3 && t.result === 'PASS'), generation: okGen.length > 0 },
+      capabilities: { declared: (entry.capabilities && entry.capabilities.claimed) || [], tested: capabilities },
+      credentials: { present: providerId ? !!cred : true },
+      region: meta.region || (entry.jurisdiction || null),
+      privacy: meta.privacy || null,
+      defaultModel: (cred && cred.model) || (meta.defaultModel || null),
+      freshnessDays: evidenceSummary(entry).freshnessDays,
+      metrics: {
+        successRate: relLast && relLast.successRate != null ? relLast.successRate
+          : (tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null),
+        latencyP50Ms: lat.length ? lat[Math.floor(lat.length / 2)] : null,
+        uptime: null, qualityScore: null, securityScore: null,
+        integrationScore: null, maintenanceScore: null, costPerTaskUsd: null
+      },
+      evidence: { tests: tests.length, generationPasses: okGen.length }
+    };
+  }
 
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
@@ -2301,7 +2347,8 @@ export async function createApi(opts) {
             reason: r.reason || null, detail: r.detail || null, diagnosis: r.diagnosis || null,
             httpStatus: r.httpStatus == null ? null : r.httpStatus, latencyMs: r.latencyMs == null ? null : r.latencyMs,
             method: r.method || null, samples: r.samples || null, successRate: r.successRate == null ? null : r.successRate,
-            tokens: r.tokens || null, testedBy: a.user.id, synthetic: !!out.synthetic
+            tokens: r.tokens || null, capabilities: r.capabilities || null,
+            testedBy: a.user.id, synthetic: !!out.synthetic
           });
           gravados.push({ id: rec.id, level: rec.level, result: rec.result });
         }
@@ -2337,7 +2384,8 @@ export async function createApi(opts) {
           ok: true, total: list.length,
           results: list.slice(-100).map((t) => ({ id: t.id, key: t.key, level: t.level, levelId: t.levelId, result: t.result,
             reason: t.reason, detail: t.detail, diagnosis: t.diagnosis, httpStatus: t.httpStatus,
-            latencyMs: t.latencyMs, at: t.at, samples: t.samples, successRate: t.successRate })),
+            latencyMs: t.latencyMs, at: t.at, samples: t.samples, successRate: t.successRate,
+            capabilities: t.capabilities || null, synthetic: !!t.synthetic })),
           note: 'histórico imutável: um teste antigo não é substituído por um novo'
         });
       }
@@ -2347,32 +2395,10 @@ export async function createApi(opts) {
         const url = new URL(req.url, 'http://x');
         const task = url.searchParams.get('task') || 'conversa';
         if (!TASK_TYPES[task]) return err(res, 400, 'tipo de tarefa desconhecido', { known: Object.keys(TASK_TYPES) });
-        const entries = store.catalogEntries();
-        const rows = entries.map((e) => {
-          const tests = store.providerTestsOf(e.key).filter((t) => !t.synthetic);
-          const gen = tests.filter((t) => t.level === 4);
-          const rel = tests.filter((t) => t.level === 6);
-          const okGen = gen.filter((t) => t.result === 'PASS');
-          const last = (arr) => (arr.length ? arr[arr.length - 1] : null);
-          const lat = okGen.map((t) => t.latencyMs).filter((x) => x != null).sort((x, y) => x - y);
-          const relLast = last(rel);
-          const metrics = {
-            /* taxa de sucesso: a da fiabilidade quando medida; senão, proporção de PASS nos testes feitos */
-            successRate: relLast && relLast.successRate != null ? relLast.successRate
-              : (tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null),
-            latencyP50Ms: lat.length ? lat[Math.floor(lat.length / 2)] : null,
-            uptime: null, qualityScore: null, securityScore: null,
-            integrationScore: null, maintenanceScore: null,
-            costPerTaskUsd: null
-          };
-          const cand = {
-            key: e.key, name: e.name, kind: e.kind, state: e.state,
-            risk: (e.security && e.security.risk) || null,
-            tested: { link: tests.some((t) => t.level <= 3 && t.result === 'PASS'), generation: okGen.length > 0 },
-            freshnessDays: evidenceSummary(e).freshnessDays,
-            metrics
-          };
-          return Object.assign({ key: e.key, name: e.name, kind: e.kind, state: e.state, tests: tests.length }, scoreCandidate(cand, task));
+        const rows = store.catalogEntries().map((e) => {
+          const cand = candidateOf(e, a.user.id);
+          return Object.assign({ key: cand.key, name: cand.name, kind: cand.kind, state: cand.state, tests: cand.evidence.tests },
+            scoreCandidate(cand, task));
         }).sort((x, y) => (y.score == null ? -1 : y.score) - (x.score == null ? -1 : x.score));
         const ranking = await store.addProviderRanking({ task, rows: rows.length, computed: rows.filter((r) => r.score != null).length });
         return json(res, 200, {
@@ -2381,6 +2407,79 @@ export async function createApi(opts) {
           rows,
           note: 'a nota usa apenas métricas medidas; sem testes de geração todos aparecem com «Classificação provisória — evidência insuficiente». Não há média que esconda falta de prova.'
         });
+      }
+
+      /* ---------- selector automático (fase 4) ---------- */
+      if (p === '/api/provider-os/selector/meta' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, {
+          ok: true, steps: SELECTION_STEPS, defaults: FALLBACK_DEFAULTS, taskTypes: Object.keys(TASK_TYPES),
+          constraints: ['dataSensitive', 'region', 'localOnly', 'pinnedKey', 'pinnedModel', 'maxCostUsd', 'maxLatencyMs', 'requireCapabilities'],
+          note: 'os 13 passos são a ordem em que a decisão é tomada: cada um pode eliminar, e a eliminação fica registada com motivo'
+        });
+      }
+
+      if (p === '/api/provider-os/select' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const cands = (Array.isArray(body.candidates) && body.candidates.length)
+          ? body.candidates                                     // candidatos explícitos (avaliação/simulação)
+          : store.catalogEntries().map((e) => candidateOf(e, a.user.id));
+        if (!cands.length) return err(res, 409, 'catálogo vazio: carregue a semente e teste pelo menos um fornecedor');
+        const out = selectProvider({ task: body.task, constraints: body.constraints || {}, candidates: cands });
+        const rec = await store.addSelectionDecision({
+          userId: a.user.id, task: out.task, chosenKey: out.chosen ? out.chosen.key : null,
+          chosenModel: out.chosen ? out.chosen.model : null, score: out.chosen ? out.chosen.score : null,
+          alternatives: out.alternatives.map((x) => ({ key: x.key, score: x.score, whyNot: x.whyNot })),
+          rejected: out.rejected, constraints: body.constraints || {},
+          why: out.justification, noChoiceReason: out.noChoiceReason || null,
+          whatWouldChangeIt: out.whatWouldChangeIt, confidence: out.confidence,
+          candidatesEvaluated: cands.length
+        });
+        await store.audit({ type: 'provider_selected', actorId: a.user.id, subjectId: out.chosen ? out.chosen.key : null,
+          action: 'select', detail: { task: out.task, chosen: out.chosen ? out.chosen.key : null, evaluated: cands.length,
+            rejected: out.rejected.length, decisionId: rec.id } });
+        return json(res, 200, Object.assign({}, out, { decisionId: rec.id, candidatesEvaluated: cands.length,
+          note: out.chosen ? 'a decisão fica registada com alternativa e prazo de reavaliação' : 'não se escolhe por falta de prova: ' + out.noChoiceReason }));
+      }
+
+      if (p === '/api/provider-os/decisions' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const list = store.selectionDecisionsOf(a.user.id);
+        return json(res, 200, {
+          ok: true, total: list.length,
+          decisions: list.slice(-50).reverse().map((d) => ({ id: d.id, at: d.at, task: d.task, chosenKey: d.chosenKey,
+            chosenModel: d.chosenModel, score: d.score, confidence: d.confidence, alternatives: d.alternatives,
+            rejected: (d.rejected || []).length, noChoiceReason: d.noChoiceReason, why: d.why })),
+          note: 'histórico imutável: uma decisão antiga não é reescrita quando o ranking muda'
+        });
+      }
+
+      /* Plano de fallback: calculado, nunca executado por esta rota. Não faz
+         pedidos e não gasta nada — é o que permite mostrar o custo da política
+         antes de a autorizar. */
+      if (p === '/api/provider-os/fallback/plan' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        let order = Array.isArray(body.order) ? body.order.map(String) : null;
+        if (!order) {
+          const sel = selectProvider({
+            task: body.task,
+            constraints: body.constraints || {},
+            candidates: store.catalogEntries().map((e) => candidateOf(e, a.user.id))
+          });
+          order = sel.chosen ? [sel.chosen.key].concat(sel.alternatives.map((x) => x.key)) : [];
+        }
+        const plan = planFallback({ order,
+          baseMs: body.baseMs, capMs: body.capMs, jitter: body.jitter,
+          maxAttemptsPerProvider: body.maxAttemptsPerProvider, maxTotalAttempts: body.maxTotalAttempts,
+          budgetUsd: body.budgetUsd, seed: body.seed });
+        return json(res, 200, Object.assign({ ok: plan.ok, order }, plan, {
+          simulated: body.seed != null,
+          note: 'planeamento puro: nenhum pedido foi feito e nenhum valor foi gasto; a execução real usa a mesma política em runWithFallback'
+        }));
       }
 
       if (p === '/api/provider-os/cost' && method === 'POST') {

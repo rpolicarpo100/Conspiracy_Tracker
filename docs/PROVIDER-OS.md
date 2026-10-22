@@ -1,7 +1,7 @@
-# PROVIDER OS — catálogo com evidência, ranking, arquivo e motor de testes (fases 1–3)
+# PROVIDER OS — catálogo com evidência, ranking, testes, selector e fallback (fases 1–4)
 
 Versão `2.0.0-fase4a` · esquema **v7** · código: `server/provider-catalog.mjs`, `server/store.mjs`,
-rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`
+rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`, `tests/selector.mjs`, `tests/provedores-ui.mjs`
 
 Este documento descreve **o que está implementado e medido** e, com o mesmo cuidado, o que ainda não
 existe. A regra que governa tudo: uma afirmação no catálogo tem de trazer a evidência que a sustenta
@@ -105,6 +105,10 @@ corrente — dois agentes não se sobrepõem em silêncio (testado em módulo e 
 | `/api/provider-os/cost` | POST | custo por tarefa com base medida |
 | `/api/provider-os/test` | POST | motor de testes níveis 1–6 (níveis ≥4 exigem `confirmCost`) |
 | `/api/provider-os/tests?key=` | GET | histórico imutável de testes por fornecedor |
+| `/api/provider-os/selector/meta` | GET | 13 passos e política de fallback (fase 4) |
+| `/api/provider-os/select` | POST | decisão do selector, gravada e auditada (fase 4) |
+| `/api/provider-os/decisions` | GET | histórico de decisões (fase 4) |
+| `/api/provider-os/fallback/plan` | POST | plano de fallback simulado, custo zero (fase 4) |
 | `/api/projects/:id/work[/:versão]` | GET/POST | arquivo versionado com concorrência optimista |
 
 Todas exigem sessão; as mutações exigem CSRF; descoberta e semente ficam em auditoria
@@ -163,17 +167,91 @@ geração vazia, capacidades declaradas, percentis, 429) e servidor real (6: `co
 gravado, ligação real ao OpenRouter, limiar de 40 %, sintético fora do ranking, ferramenta sem
 endpoint).
 
-Suite completa: **19 suites · 352 asserções · 0 falhas** no servidor e **6 suites · 53 · 0** na
-interface (`docs/TEST-RESULTS.txt` §37–§38).
+`node tests/selector.mjs` → **24 asserções · 0 falhas** (13 passos, restrições duras, fixação com
+conflito, cobertura, orçamento/latência, capacidades, desempate determinístico, validade, plano
+determinístico, tecto de tentativas, 429 vs 401, efeito externo, orçamento do fallback, PRNG, e 6
+rotas HTTP).
 
-## 10. O que **não** está feito (declarado)
+Suite completa: **20 suites · 376 asserções · 0 falhas** no servidor e **7 suites · 61 · 0** na
+interface (`docs/TEST-RESULTS.txt` §37–§39).
+
+## 10. Selector automático com fallback (fase 4)
+
+`server/selector.mjs` decide **quem** e **o que fazer quando falha**, em duas partes separadas de
+propósito. Nenhuma das duas faz pedidos por si: quem chama injecta a função de chamada e de espera —
+é o que permite testar as regras de dinheiro sem gastar um cêntimo.
+
+### 10.1 Selecção em 13 passos (a ordem é a decisão)
+
+| # | passo | o que faz | porquê |
+| --- | --- | --- | --- |
+| 1 | tarefa | classifica e escolhe os pesos | a mesma candidata vale notas diferentes por tarefa |
+| 2 | restrições | elimina por privacidade, região, execução local | restrição dura elimina, não penaliza |
+| 3 | fixação | honra o modelo fixado pelo pedido | trocar em silêncio um modelo fixado é desonesto |
+| 4 | exclusões | risco crítico, sem geração, suspenso, evidência > 90 dias | há falhas que uma nota alta não apaga |
+| 5 | evidência | exige ≥ 40 % dos pesos medidos | uma dimensão entre oito não é ranking |
+| 6 | classificação | ordena pela nota da tarefa | só métricas medidas |
+| 7 | orçamento | elimina quando o custo **medido** excede o máximo | custo desconhecido não é custo zero (fica assinalado) |
+| 8 | latência | elimina quando o p50 medido excede o máximo | p50 medido, não promessa comercial |
+| 9 | capacidades | exige PASS no nível 5 | declarado não é testado |
+| 10 | disponibilidade | exige credencial e estado operacional | sem chave não executa |
+| 11 | desempate | nota → fiabilidade → custo → chave | ordem estável: o resultado não depende da ordem do array (testado) |
+| 12 | alternativa | nomeia a 2.ª e diz por que perdeu | uma escolha sem alternativa é uma imposição |
+| 13 | registo | validade, data de reavaliação, o que a faria mudar | uma decisão sem prazo envelhece em silêncio |
+
+Cada execução devolve os 13 passos com o que aconteceu em cada um, a lista de eliminadas **com
+motivo e etapa**, a justificação legível, a alternativa com a razão da derrota e o que mudaria a
+decisão. Se nada passar, **não há escolha**: `chosen: null` e `noChoiceReason` escrito.
+
+Conflito declarado: se o fornecedor fixado for eliminado, o sistema **não** escolhe outro em
+silêncio — devolve conflito com a etapa e o motivo.
+
+### 10.2 Fallback: backoff + jitter, e o que nunca se repete
+
+- **Plano puro** (`planFallback`): calcula tentativas e esperas sem fazer nada. A primeira
+  tentativa de cada fornecedor não espera; as repetições usam backoff exponencial (500 → 1000 → …)
+  com *jitter* completo (`[0, exp]`), tecto de 8 s, máximo de tentativas por fornecedor e total.
+- **PRNG determinístico** (mulberry32): com `seed`, o mesmo plano sai igual — sem isto, «jitter»
+  não seria testável e a alegação ficaria por provar.
+- **Classificação do desfecho**: transitório (429, 5xx, timeout, rede) repete; **permanente**
+  (401, 403, 404 de caminho, modelo inexistente, 400, quota) não repete e salta para o seguinte;
+  **indeterminado** (o efeito externo pode já ter acontecido) **pára tudo** e exige confirmação.
+  Princípio: repete-se uma leitura, não um pagamento.
+- **Orçamento**: se o custo acumulado ultrapassar o limite, a execução pára no momento exacto e diz
+  quanto gastou. Não há tentativas «só mais uma».
+
+Testado: 24 asserções (`tests/selector.mjs`) — 12 no módulo de selecção, 6 na política de fallback
+e 6 nas rotas HTTP, incluindo o caso honesto: catálogo carregado mas sem teste de geração → **não
+escolhe** e regista a recusa.
+
+### 10.3 Rotas novas
+
+| rota | método | o que faz |
+| --- | --- | --- |
+| `/api/provider-os/selector/meta` | GET | 13 passos, restrições aceites, política de fallback por omissão |
+| `/api/provider-os/select` | POST | selecção (catálogo ou candidatos explícitos), grava decisão + auditoria |
+| `/api/provider-os/decisions` | GET | histórico imutável de decisões com justificação e alternativas |
+| `/api/provider-os/fallback/plan` | POST | plano calculado, **sem pedidos e sem custo** |
+
+### 10.4 Interface
+
+Novo separador **Fornecedores de IA** na consola (`src/ui/provedores.js`): catálogo com evidência
+datada, ranking por tarefa (com aviso quando não há nota), decisão do selector com justificação,
+alternativa, eliminações e os 13 passos, e o plano de fallback com a política à vista. O botão de
+testes **1–2 é grátis** (não usa chave); os níveis 3–4 pedem confirmação explícita porque gastam a
+chave do utilizador. Captura: `docs/shot-30-provedores.png`.
+
+## 11. O que **não** está feito (declarado)
 
 1. **Testes de geração (níveis 4–6) contra fornecedores reais** — exigem uma chave do utilizador. Sem
    ela, `BLOCKED`, não `PASS`. O caminho está provado com servidor sintético (marcado como tal), o que
-   valida o nosso código mas **não** atribui nota a nenhum fornecedor.
-2. **Selector automático e fallback** (fase 4): o ranking existe, a escolha por tarefa com
-   justificação ainda não.
-3. **Interface** (fase 7): dashboard de fornecedores, descoberta e benchmarks não têm ecrã próprio.
+   valida o nosso código mas **não** atribui nota a nenhum fornecedor. Consequência visível: hoje o
+   selector recusa escolher (nenhuma entrada tem nível 4) — é o comportamento correcto, não uma avaria.
+2. **Executor real do fallback**: a política está implementada e testada (`runWithFallback`) mas **não
+   está ligada a nenhum fluxo de produção** — de propósito, porque sem chave não há execução real e
+   ligá-la antes disso seria um caminho pago sem prova. Quando houver chave, é uma chamada.
+3. **Interface**: o separador «Fornecedores de IA» existe (catálogo, ranking, selector, plano); falta o
+   painel de descoberta contínua e os benchmarks comparativos (fase 7).
 4. **Scheduler**: reavaliação periódica continua a não existir (nenhum timer no servidor).
 5. **Ferramentas externas**: `opencode` está catalogado como ferramenta, **não integrado**; nada é
    instalado automaticamente.

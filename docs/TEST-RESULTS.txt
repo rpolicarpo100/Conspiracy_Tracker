@@ -978,3 +978,77 @@ G. Continua por fazer
    · chave própria do utilizador para níveis 4–6 contra fornecedores reais (hoje BLOCKED);
    · health check agendado e reavaliação adaptativa (fase 5);
    · painel de testes na interface (fase 7).
+
+== 39. FASE 4 DO «PROVIDER OS» — SELECTOR AUTOMÁTICO, FALLBACK E INTERFACE (2026-10-22, 2.0.0-fase4b)
+Código novo: `server/selector.mjs`, `src/ui/provedores.js` · testes: `tests/selector.mjs`,
+`tests/provedores-ui.mjs` · rotas novas: `/selector/meta`, `/select`, `/decisions`, `/fallback/plan`
+(90 rotas no total).
+
+A. Selecção em 13 passos — resultado real
+   PASS os 13 passos existem, na ordem do pedido, cada um com razão escrita
+   PASS escolhe a melhor nota da tarefa e diz porquê (providers/b 81/B · alternativa providers/a
+        «nota 80 contra 81; custo 0.01 contra 0.02 USD»)
+   PASS a mesma candidata muda de nota com a tarefa (código 80 · ferramentas 81)
+   PASS restrição dura elimina em vez de penalizar (dados sensíveis, retenção > 30 d, região errada;
+        região DESCONHECIDA não é tratada como errada)
+   PASS modelo fixado respeitado; fixado inválido → conflito declarado, sem substituição silenciosa;
+        fixado inexistente → recusa
+   PASS sem prova suficiente não escolhe nada («nenhuma candidata passou todos os passos») e
+        catálogo vazio também não
+   PASS cobertura de evidência: 20 % dos pesos → eliminada na etapa «evidencia», com a lista do que falta
+   PASS orçamento/latência eliminam quando medidos; custo DESCONHECIDO fica com aviso, não eliminado
+   PASS capacidades: declarado é eliminado, testado (nível 5 PASS) é escolhido
+   PASS sem credencial → eliminada em «disponibilidade»
+   PASS desempate determinístico: a mesma escolha nas duas ordens do array (critério: chave)
+   PASS prazo de reavaliação calculado (evidência de 60 d → 30 dias, reavaliar em 2026-11-21)
+
+B. Fallback — resultado real
+   PASS plano determinístico com semente (mesma semente → mesmo plano); primeira tentativa não
+        espera; esperas dentro do intervalo do jitter; backoff 500 → 1000 ms sem jitter
+   PASS tecto `maxTotalAttempts` corta o plano (4 fornecedores × 3 = 12 → 5)
+   PASS 429 repete (a#1 a#2 b#1) · 401 NÃO repete e salta para o seguinte (a#1 b#1)
+   PASS efeito externo possível → INDETERMINADO: 1 tentativa e paragem, com exigência de confirmação
+   PASS orçamento do fallback pára no momento em que é excedido (gastou 0.02 com limite 0.01)
+   PASS PRNG reprodutível e distribuído (semente 1 → 0.627 · 0.003 · 0.527)
+
+C. Rotas — resultado real
+   PASS sem catálogo, `/select` recusa (HTTP 409 com motivo)
+   PASS com semente mas sem teste de geração: 8 eliminadas com motivo, `chosen: null`, recusa registada
+   PASS candidatos explícitos: escolhe, grava alternativa, justificação e confiança no histórico
+   PASS `/fallback/plan` calcula 4 tentativas sem fazer pedidos (0 custo, declarado)
+   PASS `/fallback/plan` sem ordem explícita não inventa uma ordem: plano vazio com motivo
+   PASS `/selector/meta`: 13 passos · máx. 8 tentativas · jitter full
+
+D. Interface — resultado real (Playwright)
+   PASS o separador abre com catálogo vazio e diz como começar (6 tarefas · 7 classes)
+   PASS o selector de tarefas lista as tarefas reais (conversa · codigo · raciocinio · investigacao ·
+        documentos · ferramentas) — depois de corrigir um bug: eram mostrados índices «0», «1»…
+   PASS carregar a semente: 8 de 8 entradas com evidência datada
+   PASS ranking sem geração: 8 linhas, 0 notas, aviso de ranking provisório
+   PASS selector recusa escolher, mostra as 8 eliminações e os 13 passos
+   PASS plano de fallback declarado como simulado (0 pedidos, 0 custo)
+   PASS testar níveis 1–2 é grátis: 7 fornecedores testados, 14 registos no histórico, sem chave
+   PASS decisão fica no histórico do servidor, não só no ecrã
+   PASS sem erros de runtime
+
+E. Defeitos encontrados e corrigidos nesta fase
+   1. `runWithFallback` passava `undefined` para `planFallback` e desligava os limites por omissão —
+      o plano vinha vazio e todas as execuções devolviam FALHOU. Corrigido com fusão única da
+      política e com `planFallback` a ignorar chaves `undefined`;
+   2. a interface mostrava «0» no selector de tarefas: `/selector/meta` devolve `taskTypes` como
+      lista e o código iterava com `Object.keys` (índices). O teste passou a comparar as opções com a
+      meta;
+   3. o teste de interface dos níveis 1–2 esperava por um texto que também existe no botão e media o
+      estado antes do fim — passou a esperar pela mensagem final.
+
+F. Suite completa (20 suites de servidor + 7 de interface)
+   Servidor: 14 · 17 · 18 · 13 · 26 · 17 · 19 · 13 · 16 · 28 · 18 · 19 · 21 · 15 · 25 · 7 · 25 · 23 ·
+   18 · 24 → 376 verificações, 0 falhas
+   Interface: 5 · 7 · 15 · 6 · 10 · 10 · 9 → 62 verificações, 0 falhas
+   Captura: `docs/shot-30-provedores.png` (ranking provisório + decisão com 13 passos)
+
+G. O que continua por fazer
+   · níveis 4–6 contra fornecedores reais (falta chave do utilizador) — por isso o selector recusa
+     escolher hoje, que é o comportamento correcto;
+   · `runWithFallback` não está ligado a nenhum fluxo de produção (decisão consciente);
+   · scheduler de reavaliação e painel de descoberta contínua (fase 5/7).

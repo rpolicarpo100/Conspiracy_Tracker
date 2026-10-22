@@ -33,7 +33,7 @@
     const items = [
       ['ask', 'Investigar'], ['sources', 'Fontes'], ['evidence', 'Livro de provas'],
       ['real', 'Dados reais'], ['agents', 'Agentes de recolha'], ['apis', 'APIs'],
-      ['registro', 'Registo de fontes'], ['ai', 'Configuração de IA']
+      ['registro', 'Registo de fontes'], ['provedores', 'Fornecedores de IA'], ['ai', 'Configuração de IA']
     ];
     const wrap = el('div', { class: 'chips' });
     items.forEach(([id, label]) => wrap.appendChild(el('button', {
@@ -77,6 +77,7 @@
     else if (tab === 'agents') body.appendChild(viewAgents());
     else if (tab === 'apis') body.appendChild(viewApis());
     else if (tab === 'registro') body.appendChild(viewFontes());
+    else if (tab === 'provedores') body.appendChild(viewProvedores());
     else body.appendChild(viewAI());
     // re-render tabs active state
     const chips = body.parentNode.querySelector('.chips');
@@ -382,6 +383,31 @@
       fontesNode = VN.fontesUI.mount({ el: el, clear: clear, toast: toast, api: call });
     }
     return fontesNode;
+  }
+
+  /* ------------- 2c. FORNECEDORES DE IA (Provider OS) ------------- */
+  let provedoresNode = null;
+  function viewProvedores() {
+    if (!provedoresNode) {
+      /* mesma chamada com estado HTTP explícito usada no registo de fontes:
+         «recusado» e «sem rede» não podem ser a mesma mensagem */
+      const call = async (path, opts) => {
+        opts = opts || {};
+        const headers = { accept: 'application/json' };
+        if (opts.body !== undefined) headers['content-type'] = 'application/json';
+        const csrf = document.cookie.split('; ').find((c) => c.startsWith('vn_csrf='));
+        if (csrf && (opts.method || 'GET') !== 'GET') headers['x-csrf-token'] = decodeURIComponent(csrf.split('=')[1]);
+        const res = await fetch(new URL(path.replace(/^\//, ''), location.href).href, {
+          method: opts.method || 'GET', headers, credentials: 'same-origin',
+          body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+        }).catch(() => null);
+        if (!res) return { ok: false, status: 0, json: null, error: { message: 'servidor inacessível' } };
+        const json = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, json, error: json && json.error };
+      };
+      provedoresNode = VN.provedoresUI.mount({ el: el, clear: clear, toast: toast, api: call });
+    }
+    return provedoresNode;
   }
 
   /* ---------------- 3. LIVRO DE PROVAS ---------------- */
