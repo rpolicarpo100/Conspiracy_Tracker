@@ -34,6 +34,10 @@ import {
   REEVAL_POLICY, reevaluationState, planReevaluation, runReevaluation, healthVerdict
 } from './scheduler.mjs';
 import {
+  ACCESS_DETAIL_FIELDS, DISCOVERY_CATEGORY_LABELS, ADAPTERS as DISCOVERY_IMPL,
+  categoryOf, categorySummary, accessDetailCoverage, validateAccessDetails, mergeDiscovered
+} from './discovery.mjs';
+import {
   SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
   parseUrl, canonicalUrl, dedupeKey as sourceDedupeKey, domainOf, stateFromCheck,
   rateSource, coverageFrom, ADAPTERS
@@ -43,7 +47,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase5';
+const APP_VERSION = '2.0.0-fase6';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -2276,6 +2280,8 @@ export async function createApi(opts) {
           categories: Object.entries(CATEGORY).map(([id, d]) => ({ id, description: d })),
           discoveryAdapters: Object.values(DISCOVERY_ADAPTERS).map((d) => ({ key: d.key, label: d.label, url: d.url, needsKey: d.needsKey, what: d.what })),
           taskTypes: Object.entries(TASK_TYPES).map(([id, t]) => ({ id, label: t.label, weights: t.weights })),
+          discoveryCategories: Object.entries(DISCOVERY_CATEGORY_LABELS).map(([id, label]) => ({ id, label })),
+          accessDetailFields: Object.entries(ACCESS_DETAIL_FIELDS).map(([id, label]) => ({ id, label })),
           exclusions: EXCLUSION_RULES.map((r) => ({ id: r.id, reason: r.reason })),
           catalogueSize: store.catalogEntries().length,
           note: 'só entra no catálogo o que tem evidência com URL e estado; DECLARED é o que o fornecedor afirma, MEASURED é o que esta aplicação mediu'
@@ -2288,13 +2294,22 @@ export async function createApi(opts) {
         const kind = url.searchParams.get('kind');
         const cls = url.searchParams.get('access');
         const q = String(url.searchParams.get('q') || '').toLowerCase();
+        const cat = url.searchParams.get('category');
+        const semCampo = url.searchParams.get('missing');
+        if (semCampo && !ACCESS_DETAIL_FIELDS[semCampo]) {
+          /* um filtro inválido não devolve zero em silêncio: isso faria crer que
+             ninguém tem o campo em falta */
+          return err(res, 400, 'campo de acesso desconhecido: «' + semCampo + '»', { known: Object.keys(ACCESS_DETAIL_FIELDS) });
+        }
         let list = store.catalogEntries();
         if (kind) list = list.filter((e) => e.kind === kind);
         if (cls) list = list.filter((e) => e.access && e.access.class === cls);
+        if (cat) list = list.filter((e) => categoryOf(e) === cat.toUpperCase());
+        if (semCampo) list = list.filter((e) => accessDetailCoverage(e).unknown.includes(semCampo));
         if (q) list = list.filter((e) => (e.name + ' ' + e.key).toLowerCase().includes(q));
         return json(res, 200, {
-          ok: true, total: list.length,
-          entries: list.slice(0, 200).map((e) => publicEntry(e)),
+          ok: true, total: list.length, category: cat || null,
+          entries: list.slice(0, 200).map((e) => Object.assign(publicEntry(e), { discoveryCategory: categoryOf(e) })),
           note: list.length > 200 ? 'mostradas 200 de ' + list.length + ': use ?q= para procurar' : null
         });
       }
@@ -2319,52 +2334,105 @@ export async function createApi(opts) {
         if (!providerDiscoveryLimiter.allowed(a.user.id)) return err(res, 429, 'descobertas demasiado frequentes (10/hora): o catálogo externo não é nosso');
         const body = await readBody(req);
         const adapterId = String(body.adapter || '').trim();
-        const adapter = DISCOVERY_ADAPTERS[adapterId];
-        if (!adapter) return err(res, 400, 'adaptador de descoberta desconhecido', { known: Object.keys(DISCOVERY_ADAPTERS) });
-        if (adapter.needsKey) return err(res, 501, 'este adaptador exige chave e ainda não está implementado');
+        const meta = DISCOVERY_ADAPTERS[adapterId];
+        const impl = DISCOVERY_IMPL[adapterId];
+        if (!meta || !impl) return err(res, 400, 'adaptador de descoberta desconhecido', { known: Object.keys(DISCOVERY_IMPL) });
+        if (meta.needsKey) return err(res, 501, 'este adaptador exige chave e ainda não está implementado');
+        const query = adapterId === 'github_coding_agents'
+          ? '?q=topic:coding-agent+topic:coding-assistant&sort=stars&order=desc&per_page=' + Math.min(100, Math.max(10, Number(body.pageSize) || 40))
+          : '';
+        const url = adapterId === 'github_coding_agents' ? meta.url + query : meta.url;
         const t0 = Date.now();
         let payload = null, httpStatus = null, failure = null;
         try {
-          const res2 = await fetch(adapter.url, {
-            headers: { 'user-agent': 'ConspiracyTracker/2 (descoberta de modelos; ver docs/PROVIDER-OS.md)', accept: 'application/json' },
-            signal: AbortSignal.timeout(20000)
+          const res2 = await fetch(url, {
+            headers: { 'user-agent': 'ConspiracyTracker/2 (descoberta de fornecedores; ver docs/PROVIDER-OS.md)',
+              accept: adapterId === 'github_coding_agents' ? 'application/vnd.github+json' : 'application/json' },
+            signal: AbortSignal.timeout(30000)
           });
           httpStatus = res2.status;
-          if (!res2.ok) failure = 'HTTP ' + res2.status + ' na consulta ao catálogo';
-          else payload = await res2.json();
+          if (!res2.ok) failure = 'HTTP ' + res2.status + ' na consulta ao catálogo' +
+            (res2.status === 403 || res2.status === 429 ? ' (limite de utilização da API pública)' : '');
+          else {
+            /* tecto de leitura: 12 MB. Um catálogo externo não pode encher a memória. */
+            const buf = await res2.arrayBuffer();
+            if (buf.byteLength > impl.maxBytes) failure = 'resposta de ' + Math.round(buf.byteLength / 1e6) + ' MB excede o limite de ' + Math.round(impl.maxBytes / 1e6) + ' MB';
+            else payload = JSON.parse(Buffer.from(buf).toString('utf8'));
+          }
         } catch (e) {
-          failure = e.name === 'TimeoutError' ? 'timeout de 20 s' : String(e.message || e).slice(0, 200);
+          failure = e.name === 'TimeoutError' ? 'timeout de 30 s' : String(e.message || e).slice(0, 200);
         }
         const ms = Date.now() - t0;
         if (failure) {
-          await store.audit({ type: 'provider_discovery_failed', actorId: a.user.id, action: 'discover', detail: { adapter: adapterId, failure, ms } });
-          return json(res, 502, { ok: false, adapter: adapterId, httpStatus, failure, ms, note: 'nada foi gravado: uma falha de rede não cria candidatos' });
+          await store.audit({ type: 'provider_discovery_failed', actorId: a.user.id, action: 'discover',
+            detail: { adapter: adapterId, failure, ms, url } });
+          return json(res, 502, { ok: false, adapter: adapterId, httpStatus, failure, ms, url,
+            note: 'nada foi gravado: uma falha de rede não cria candidatos' });
         }
-        const out = adapterId === 'openrouter_models'
-          ? fromOpenRouter(payload, { at: new Date().toISOString(), url: adapter.url })
-          : fromHuggingFace(payload, { at: new Date().toISOString(), url: adapter.url });
-        /* um catálogo externo pode trazer centenas de modelos: entra um lote
-           limitado por execução, e o que ficou de fora é dito, não escondido */
-        const LIMIT = 120;
+        const out = impl.parse(payload, { at: new Date().toISOString(), url });
+        /* catálogo externo pode trazer milhares: entra um lote por execução e o
+           que ficou de fora é dito, não escondido */
+        const LIMIT = Math.min(200, Math.max(1, Number(body.limit) || 120));
         const considered = out.entries.slice(0, LIMIT);
         let created = 0, updated = 0, rejected = 0;
+        const rejects = [];
         for (const e of considered) {
           const v = validateEntry(e);
-          if (!v.ok) { rejected++; continue; }
-          const r = await store.upsertCatalogEntry(Object.assign({}, e, { state: 'DISCOVERED' }), a.user.id);
+          const vd = validateAccessDetails(e);
+          if (!v.ok || !vd.ok) { rejected++; if (rejects.length < 5) rejects.push({ key: e.key, errors: v.errors.concat(vd.errors).map((x) => x.msg) }); continue; }
+          /* descoberta não apaga medição: funde-se com o que já existe */
+          const existente = store.catalogEntry(e.key);
+          const final = mergeDiscovered(existente, Object.assign({}, e, { state: existente ? existente.state : 'DISCOVERED' }));
+          const r = await store.upsertCatalogEntry(final, a.user.id);
           if (r.created) created++; else updated++;
         }
         providerDiscoveryLimiter.hit(a.user.id);
+        const porCategoria = {};
+        for (const e of considered) { const c = categoryOf(e); porCategoria[c] = (porCategoria[c] || 0) + 1; }
         await store.audit({ type: 'provider_discovered', actorId: a.user.id, action: 'discover',
-          detail: { adapter: adapterId, total: out.total, created, updated, rejected, ms, url: adapter.url } });
+          detail: { adapter: adapterId, total: out.total, created, updated, rejected, ms, url, categories: porCategoria } });
         return json(res, 200, {
-          ok: true, adapter: adapterId, url: adapter.url, httpStatus, ms,
+          ok: true, adapter: adapterId, url, httpStatus, ms,
           total: out.total, considered: considered.length, truncated: Math.max(0, out.entries.length - considered.length),
-          created, updated, rejected,
+          created, updated, rejected, rejects,
+          categories: porCategoria, feeds: meta.categories,
+          extra: out.modelsTotal != null ? { modelsTotal: out.modelsTotal, providersWithPrice: out.providersWithPrice, providersWithLimit: out.providersWithLimit }
+            : (out.archived != null ? { archivedRepos: out.archived, query: out.query } : null),
           freeCount: out.freeCount == null ? null : out.freeCount,
-          sample: out.entries.slice(0, 5).map((e) => ({ key: e.key, access: e.access.class, pricing: e.pricing || null })),
-          note: 'os candidatos entram como DISCOVERED: nada disto prova que o modelo funcione'
+          sample: out.entries.slice(0, 5).map((e) => ({ key: e.key, access: e.access.class, category: categoryOf(e),
+            known: accessDetailCoverage(e).known + '/' + accessDetailCoverage(e).total, maintenance: e.maintenanceSignal || null })),
+          note: 'os candidatos entram como DISCOVERED: nada disto prova que o serviço funcione, e o que a fonte não publica fica UNKNOWN'
         });
+      }
+
+      /* Categorias A–E e cobertura dos 9 campos de acesso — o mapa do que falta. */
+      if (p === '/api/provider-os/discovery/categories' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const entries = store.catalogEntries();
+        const resumo = categorySummary(entries);
+        const campos = {};
+        for (const f of Object.keys(ACCESS_DETAIL_FIELDS)) {
+          campos[f] = { label: ACCESS_DETAIL_FIELDS[f], measured: 0, declared: 0, unknown: 0 };
+        }
+        for (const e of entries) {
+          for (const f of Object.keys(ACCESS_DETAIL_FIELDS)) {
+            const d = (e.accessDetails || {})[f];
+            if (!d || d.status === 'UNKNOWN' || d.value == null) campos[f].unknown++;
+            else if (d.status === 'MEASURED') campos[f].measured++;
+            else campos[f].declared++;
+          }
+        }
+        const runs = store.auditList({ type: 'provider_discovered', limit: 200 });
+        const ultimoPor = {};
+        for (const r of runs) { const ad = r.detail && r.detail.adapter; if (ad && !ultimoPor[ad]) ultimoPor[ad] = { at: r.at, ...r.detail }; }
+        return json(res, 200, Object.assign({}, resumo, {
+          adapters: Object.values(DISCOVERY_IMPL).map((x) => {
+            const m = DISCOVERY_ADAPTERS[x.key] || {};
+            return { key: x.key, label: m.label, url: m.url, feeds: x.categories, needsKey: !!m.needsKey, lastRun: ultimoPor[x.key] || null };
+          }),
+          fields: campos,
+          note: 'cada campo conta só o que tem prova: valor sem fonte não entra (é recusado na validação)'
+        }));
       }
 
       if (p === '/api/provider-os/test' && method === 'POST') {

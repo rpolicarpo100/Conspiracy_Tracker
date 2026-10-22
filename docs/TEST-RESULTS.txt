@@ -1112,3 +1112,68 @@ H. O que continua por fazer
      falsa sensação de vigilância — a execução é accionada (utilizador ou cron externo);
    · níveis 4–6 contra fornecedores reais (falta chave do utilizador);
    · painel de descoberta contínua e benchmarks comparativos (fase 7).
+
+== 41. FASE 6 DO «PROVIDER OS» — DESCOBERTA CONTÍNUA, CATEGORIAS A–E E 9 CAMPOS DE ACESSO
+   (2026-10-22, 2.0.0-fase6)
+Código novo: `server/discovery.mjs` · testes: `tests/discovery.mjs` · rotas:
+`/api/provider-os/discovery/categories` e filtros `?category=` / `?missing=` no catálogo
+(95 rotas no total) · adaptadores novos: `models_dev`, `github_coding_agents`.
+
+A. Os 9 campos de acesso — resultado real
+   PASS 9 campos: conta · cartao · limites · concorrencia · geografia · usoComercial · privacidade ·
+        hardware · confirmadoEm
+   PASS valor sem fonte é RECUSADO: 4 recusas testadas (sem URL, sem método, valor vazio, campo
+        inventado) e 1 aceitação correcta
+   PASS UNKNOWN é o valor por omissão: vazio 0/9 (0 %) · 2 campos com prova → 2/9 (22 %), com 7 faltas
+        nomeadas
+
+B. Categorias A–E — resultado real
+   PASS 6 regras de derivação verificadas (A anónimo, B chave gratuita, C router mesmo com chave,
+        D ferramenta, E modelo/pesos)
+   PASS semente real: A=0 · B=6 · C=1 · D=1 · E=0 (nada é etiquetado à mão)
+
+C. Adaptadores — resultado real
+   PASS models.dev (fixture): 3 fornecedores · 3 modelos contados · preço de referência do modelo
+        pago mais barato · contexto MEDIDO · 6 campos UNKNOWN · validação passa
+   PASS models.dev: fornecedor sem modelos → UNKNOWN_ACCESS, sem limites e sem preço (não inventa)
+   PASS GitHub (fixture): activo vs arquivado distinguidos · licença declarada (MIT / NOASSERTION) ·
+        classe UNKNOWN (repositório não é serviço)
+   PASS descoberta real no GitHub: 40 criadas, 177 no total, 0 promoções de estado
+   PASS descoberta real no models.dev: 38 criadas · 9 143 modelos contados · OpenRouter mantém
+        DOCUMENTED/FREE_API_KEY e as 7 evidências que tinha
+
+D. A regra «descobrir não apaga o que foi medido» — resultado real
+   PASS fusão preserva estado (LINK_TESTED), classe medida (FREE_API_KEY) e evidência (2 itens, incluindo
+        o 401) · campo medido não é substituído por UNKNOWN · campo novo é acrescentado
+   PASS no servidor: nenhuma entrada existente mudou de estado após duas descobertas reais
+
+E. Filtros e interface — resultado real
+   PASS `?category=D` → 1 ferramenta (antes da descoberta) · `?missing=privacidade` → 8 (todas)
+   PASS filtro com campo inválido → HTTP 400 com a lista de campos (não devolve zero em silêncio)
+   PASS interface: chips A–E com contagens reais (Todas 8 · A 0 · B 6 · C 1 · D 1 · E 0)
+   PASS interface: tabela dos 9 campos mostra «privacidade desconhecida em 8 de 8»
+   PASS interface: correr o GitHub no browser → 8 → 48 entradas, categorias D=40
+   PASS interface: filtro por D mostra 41 ferramentas e volta a «todas» sem perder estado
+   PASS interface: sem erros de runtime
+
+F. Defeitos encontrados e corrigidos
+   1. uma descoberta substituía a semente medida (`providers/openrouter` passaria de FREE_API_KEY com
+      401 medido para FREE_TRIAL de catálogo de terceiros) — corrigido com `mergeDiscovered` e testado;
+   2. `?missing=campoInvalido` devolvia zero em silêncio (fazia crer que ninguém tinha o campo em falta)
+      — passou a 400 com a lista de campos válidos;
+   3. o preço de referência de um fornecedor usava modelos a preço 0, o que tornava o custo por tarefa
+      artificialmente gratuito — passou a usar o modelo PAGO mais barato, com a existência de preço 0
+      registada na classe e na evidência;
+   4. `tests/provider-os.mjs` contava 2 adaptadores (agora 4) e `fase3c/fase3d` aceitavam versões até
+      `fase5` — actualizados por motivo real, não para fazer passar.
+
+G. Suite completa
+   Servidor: 22 suites · 410 verificações · 0 falhas
+   Interface: 7 suites · 68 verificações · 0 falhas
+   Captura: `docs/shot-32-descoberta.png`
+
+H. O que continua por fazer
+   · benchmarks comparativos (mesmas perguntas, vários fornecedores) — exige chaves;
+   · privacidade dos fornecedores: desconhecida em 8 de 8 (nenhuma fonte pública a publica em formato
+     legível por máquina) — o painel diz isso em vez de preencher com suposições;
+   · scheduler a correr sozinho (decisão da fase 5 mantém-se: no plano gratuito o serviço dorme).

@@ -225,7 +225,8 @@ await t('servidor · meta do catálogo expõe classes, estados e regras (sem dad
   const r = await call('GET', '/api/provider-os/meta');
   ok(r.status === 200, 'HTTP ' + r.status);
   ok(r.json.accessClasses.length === 7 && r.json.taskTypes.length === 6, JSON.stringify({ a: r.json.accessClasses.length, t: r.json.taskTypes.length }));
-  ok(r.json.discoveryAdapters.length === 2, 'adaptadores: ' + r.json.discoveryAdapters.length);
+  /* 4 adaptadores desde a fase 6 (openrouter, huggingface, models.dev, github) */
+  ok(r.json.discoveryAdapters.length === 4, 'adaptadores: ' + r.json.discoveryAdapters.length);
   ok(r.json.catalogueSize === 0, 'catálogo devia começar vazio nesta base: ' + r.json.catalogueSize);
   return '7 classes · 6 tipos de tarefa · 2 adaptadores · catálogo vazio';
 });

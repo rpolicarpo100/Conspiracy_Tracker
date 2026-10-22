@@ -1,7 +1,7 @@
-# PROVIDER OS — catálogo com evidência, ranking, testes, selector, fallback e reavaliação (fases 1–5)
+# PROVIDER OS — catálogo com evidência, ranking, testes, selector, fallback, reavaliação e descoberta (fases 1–6)
 
 Versão `2.0.0-fase4a` · esquema **v7** · código: `server/provider-catalog.mjs`, `server/store.mjs`,
-rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`, `tests/selector.mjs`, `tests/scheduler.mjs`, `tests/provedores-ui.mjs`
+rotas em `server/api.mjs` · testes: `tests/provider-os.mjs`, `tests/provider-tests.mjs`, `tests/selector.mjs`, `tests/scheduler.mjs`, `tests/discovery.mjs`, `tests/provedores-ui.mjs`
 
 Este documento descreve **o que está implementado e medido** e, com o mesmo cuidado, o que ainda não
 existe. A regra que governa tudo: uma afirmação no catálogo tem de trazer a evidência que a sustenta
@@ -113,6 +113,8 @@ corrente — dois agentes não se sobrepõem em silêncio (testado em módulo e 
 | `/api/provider-os/schedule/run` | POST | reavaliação real **níveis 1–2** (`dryRun` disponível) (fase 5) |
 | `/api/provider-os/health/check` | POST | sonda de saúde (prova de vida, não de qualidade) (fase 5) |
 | `/api/provider-os/health` | GET | veredicto de saúde por fornecedor (fase 5) |
+| `/api/provider-os/discovery/categories` | GET | mapa A–E + cobertura dos 9 campos de acesso (fase 6) |
+| `/api/provider-os/catalog?category=&missing=` | GET | filtros por categoria A–E e por campo de acesso em falta (fase 6) |
 | `/api/projects/:id/work[/:versão]` | GET/POST | arquivo versionado com concorrência optimista |
 
 Todas exigem sessão; as mutações exigem CSRF; descoberta e semente ficam em auditoria
@@ -180,8 +182,12 @@ rotas HTTP).
 repete, prioridades, derivação determinística, saúde ≠ qualidade, orçamento do lote, e 7 verificações
 por HTTP incluindo os invariantes da sonda).
 
-Suite completa: **21 suites · 397 asserções · 0 falhas** no servidor e **7 suites · 64 · 0** na
-interface (`docs/TEST-RESULTS.txt` §37–§40).
+`node tests/discovery.mjs` → **13 asserções · 0 falhas** (9 campos e as suas recusas, categorias
+A–E por regra, parsers dos dois adaptadores novos, fusão que preserva medições, e 5 verificações por
+HTTP incluindo descoberta real).
+
+Suite completa: **22 suites · 410 asserções · 0 falhas** no servidor e **7 suites · 68 · 0** na
+interface (`docs/TEST-RESULTS.txt` §37–§41).
 
 ## 10. Selector automático com fallback (fase 4)
 
@@ -294,7 +300,69 @@ No separador **Fornecedores de IA**: tabela «Próximas reavaliações» (fornec
 motivo), lista de agendadas com a data e o intervalo, botão **Reavaliar agora** (níveis 1–2) e botão
 **Sonda de saúde** que mostra quantos responderam e quantos testes/estados mudaram (0 e 0).
 
-## 12. O que **não** está feito (declarado)
+## 12. Descoberta contínua: 5 categorias e 9 campos de acesso (fase 6)
+
+`server/discovery.mjs`. Duas peças: **o que se descobre** (4 adaptadores reais, sem chave) e **o que
+fica registado sobre cada fornecedor** (9 campos, cada um com prova ou «desconhecido»).
+
+### 12.1 As 5 categorias, derivadas por regra
+
+| cat. | significado | regra |
+| --- | --- | --- |
+| A | sem chave (acesso anónimo) | `access.class = ANONYMOUS_PUBLIC` (exige medição sem chave) |
+| B | plano gratuito / chave gratuita | `FREE_API_KEY` ou `FREE_TRIAL`, não agregador |
+| C | router / agregador | `category = router/agregador` (mesmo com chave: um router com chave continua a ser router) |
+| D | ferramenta ou agente | `kind = tool`/`eval` |
+| E | modelo ou serviço especializado | resto (modelos, pesos, endpoints pagos) |
+
+Nenhuma entrada é etiquetada à mão: `categoryOf()` aplica esta cascata e é testada com seis casos.
+
+### 12.2 Os 9 campos de acesso
+
+`conta` · `cartao` · `limites` · `concorrencia` · `geografia` · `usoComercial` · `privacidade` ·
+`hardware` · `confirmadoEm` — cada um é `MEASURED` (com data e método), `DECLARED` (com URL) ou
+`UNKNOWN`. **Um valor sem fonte é recusado na validação**, e é recusado duas vezes: no módulo da
+descoberta e na entrada do catálogo. É a diferença entre «a fonte diz que não é preciso cartão» e
+«alguém escreveu que não é preciso cartão».
+
+O painel mostra quantos campos estão medidos, declarados e desconhecidos por campo — hoje
+**privacidade é desconhecida em 8 de 8 entradas da semente**, e isso aparece no ecrã em vez de ser
+omitido.
+
+### 12.3 Adaptadores (todos sem chave, todos com URL registado)
+
+| adaptador | fonte | o que traz | medido em 2026-10-22 |
+| --- | --- | --- | --- |
+| `openrouter_models` | `openrouter.ai/api/v1/models` | modelos com preço por token e contexto | 468 modelos, 21 com preço 0 |
+| `hf_models` | `huggingface.co/api/models` | pesos de modelo (não é endpoint) | 20 por execução |
+| `models_dev` | `models.dev/api.json` | fornecedores, contexto, preço, capacidades | **232 fornecedores · 9 143 modelos · 223 com preço** |
+| `github_coding_agents` | `api.github.com/search/repositories` | ferramentas/agentes: licença, estrelas, último push, arquivado | 7 261 repositórios no tema; 40 por lote |
+
+O adaptador do GitHub mede o que é verificável e útil para uma decisão: **licença** (declarada, com
+aviso de que não é parecer jurídico), **estrelas**, **último push** e **arquivado**. O sinal de
+manutenção é derivado: `activo` · `sem push há > 90 dias` · `> 1 ano` · `arquivado`.
+
+> **Observação real, com data**: na consulta de 2026-10-22, `opencode-ai/opencode` está **arquivado**
+> (último push 2025-09-18) e o repositório activo com o nome `opencode` é `anomalyco/opencode`
+> (220 019 estrelas, MIT, push no mesmo dia). Fica registado como facto da API do GitHub; **qual dos
+> dois corresponde ao projecto opencode.ai exige confirmação humana** — o sistema não decide isso
+> sozinho, e a entrada `tools/opencode` do catálogo aponta para a documentação, não para um repo.
+
+### 12.4 A regra que evita o pior acidente
+
+**Descobrir nunca apaga o que foi medido** (`mergeDiscovered`): o estado mais avançado fica, a classe
+de acesso medida fica, a evidência antiga é preservada e a nova é acrescentada (dedupe por
+afirmação+detalhe), e um campo `UNKNOWN` só é preenchido se ainda estiver vazio. Sem isto, correr o
+`models_dev` substituiria `providers/openrouter` — que tem um **401 medido** — por uma linha de
+catálogo de terceiros a dizer `FREE_TRIAL`. Testado nos dois sentidos (módulo e servidor).
+
+### 12.5 Interface
+
+No separador **Fornecedores de IA**: chips A–E com contagens reais (e filtro reversível que filtra o
+catálogo), um botão por adaptador com a última execução, e a tabela dos 9 campos com medidos /
+declarados / desconhecidos. Captura: `docs/shot-32-descoberta.png`.
+
+## 13. O que **não** está feito (declarado)
 
 1. **Testes de geração (níveis 4–6) contra fornecedores reais** — exigem uma chave do utilizador. Sem
    ela, `BLOCKED`, não `PASS`. O caminho está provado com servidor sintético (marcado como tal), o que
@@ -303,8 +371,9 @@ motivo), lista de agendadas com a data e o intervalo, botão **Reavaliar agora**
 2. **Executor real do fallback**: a política está implementada e testada (`runWithFallback`) mas **não
    está ligada a nenhum fluxo de produção** — de propósito, porque sem chave não há execução real e
    ligá-la antes disso seria um caminho pago sem prova. Quando houver chave, é uma chamada.
-3. **Interface**: o separador «Fornecedores de IA» existe (catálogo, ranking, selector, plano); falta o
-   painel de descoberta contínua e os benchmarks comparativos (fase 7).
+3. **Interface**: separador «Fornecedores de IA» com catálogo, ranking, selector, plano, reavaliação e
+   descoberta A–E; falta o painel de **benchmarks comparativos** (execuções lado a lado com as mesmas
+   perguntas) — que exige chaves para valer alguma coisa.
 4. **Scheduler automático por temporizador**: o *calendário* e a *execução* existem (`/schedule`,
    `/schedule/run`) e são testados, mas nada corre sozinho num relógio — no plano gratuito do Render o
    serviço dorme, e um timer que não corre daria falsa sensação de vigilância. A execução é accionada
@@ -314,3 +383,6 @@ motivo), lista de agendadas com a data e o intervalo, botão **Reavaliar agora**
 6. **Terceiro olho por IA**: só existe o auditor determinístico.
 7. **Custos agregados por utilizador**: o custo por tarefa é calculável; a soma mensal por fornecedor
    ainda não é apresentada.
+8. **Privacidade dos fornecedores**: desconhecida em todas as entradas — nenhuma das fontes públicas
+   consultadas a publica de forma legível por máquina. Não é um bug; é a realidade dos dados, e o
+   painel diz isso em vez de preencher com suposições.

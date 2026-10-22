@@ -156,6 +156,56 @@ await t('a sonda de saúde declara que não é um teste de qualidade', async () 
   return r.checked + ' sondados · 0 testes criados · 0 estados alterados';
 });
 
+await t('descoberta: as 5 categorias A–E aparecem com contagens reais', async () => {
+  const s = await p.evaluate(() => VN.provedoresUI.getState());
+  if (!s.disc) throw new Error('mapa de categorias não carregou');
+  const txt = await body();
+  if (!/Descoberta contínua/.test(txt)) throw new Error('sem secção de descoberta');
+  const chips = await p.evaluate(() => [...document.querySelectorAll('#discoveryBox .chips .btn')].map((b) => b.textContent.trim()));
+  if (chips.length < 6) throw new Error('chips: ' + chips.join(' | '));
+  const comA = ['A', 'B', 'C', 'D', 'E'].every((c) => chips.some((t) => t.startsWith(c + ' · ')));
+  if (!comA) throw new Error('falta categoria: ' + chips.join(' | '));
+  return s.disc.totals.entries + ' entradas · ' + chips.join(' · ');
+});
+
+await t('descoberta: os 9 campos de acesso mostram quantos estão desconhecidos', async () => {
+  const linhas = await p.evaluate(() => [...document.querySelectorAll('#accessFields tbody tr')]
+    .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.trim())));
+  if (linhas.length !== 9) throw new Error('linhas: ' + linhas.length);
+  const priv = linhas.find((c) => c[0].startsWith('privacidade'));
+  if (!priv) throw new Error('sem linha de privacidade');
+  /* células: [campo+rótulo, medido, declarado, desconhecido] */
+  if (Number(priv[3]) !== 8) throw new Error('privacidade desconhecida em ' + priv[3] + ' entradas (esperado 8): ' + priv.join(' | '));
+  const totalDesconhecido = linhas.reduce((n, c) => n + Number(c[3]), 0);
+  return '9 campos · privacidade desconhecida em 8 de 8 · ' + totalDesconhecido + ' células «desconhecido» no total';
+});
+
+await t('descoberta: correr o GitHub traz ferramentas reais e o catálogo cresce', async () => {
+  const antes = await p.evaluate(() => (VN.provedoresUI.getState().disc || {}).totals.entries);
+  await p.evaluate(() => document.getElementById('btnDisc_github_coding_agents').click());
+  await waitFor(() => { const n = document.getElementById('providerStatus'); return !!n && /^Descoberta github_coding_agents/.test(n.textContent); }, 90000);
+  const depois = await p.evaluate(() => VN.provedoresUI.getState().disc.totals.entries);
+  if (depois <= antes) throw new Error('catálogo não cresceu: ' + antes + ' → ' + depois);
+  const txt = await body();
+  if (!/criadas/.test(txt)) throw new Error('sem relato da descoberta');
+  return antes + ' → ' + depois + ' entradas · ' + (await p.evaluate(() => VN.provedoresUI.getState().msg.text)).slice(0, 110);
+});
+
+await t('descoberta: filtrar por categoria D mostra só ferramentas (e o filtro é reversível)', async () => {
+  await p.evaluate(() => [...document.querySelectorAll('#discoveryBox .chips .btn')].find((b) => b.textContent.trim().startsWith('D · ')).click());
+  await p.waitForTimeout(1500);
+  const s = await p.evaluate(() => VN.provedoresUI.getState());
+  if (s.filterCat !== 'D') throw new Error('filtro não aplicado: ' + s.filterCat);
+  const categorias = await p.evaluate(() => [...document.querySelectorAll('#providersTable tbody tr')].length);
+  const total = s.disc.categories.find((c) => c.id === 'D').total;
+  if (categorias !== Math.min(total, 200)) throw new Error('linhas ' + categorias + ' vs total D ' + total);
+  await p.evaluate(() => [...document.querySelectorAll('#discoveryBox .chips .btn')][0].click());
+  await p.waitForTimeout(1200);
+  const s2 = await p.evaluate(() => VN.provedoresUI.getState());
+  if (s2.filterCat !== '') throw new Error('filtro não voltou a «todas»');
+  return total + ' ferramentas na categoria D · filtro reposto';
+});
+
 await t('a decisão fica no histórico do servidor (não só no ecrã)', async () => {
   const hist = await p.evaluate(async () => (await fetch('api/provider-os/decisions').then((r) => r.json())));
   if (!hist.total) throw new Error('sem decisões registadas');

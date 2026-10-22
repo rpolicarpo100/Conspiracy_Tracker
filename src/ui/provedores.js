@@ -18,6 +18,7 @@
   const S = {
     meta: null, entries: null, ranking: null, decisions: null,
     decision: null, plan: null, schedule: null, health: null,
+    disc: null, discResult: null, filterCat: '',
     task: 'conversa', busy: '', msg: null, open: null
   };
 
@@ -34,13 +35,14 @@
     const wrap = el('div', { id: 'provedoresroot' });
 
     async function load() {
-      const [meta, cat, rank, dec, sch, hea] = await Promise.all([
+      const [meta, cat, rank, dec, sch, hea, disc] = await Promise.all([
         api('/api/provider-os/meta'),
-        api('/api/provider-os/catalog'),
+        api('/api/provider-os/catalog' + (S.filterCat ? '?category=' + S.filterCat : '')),
         api('/api/provider-os/ranking?task=' + encodeURIComponent(S.task)),
         api('/api/provider-os/decisions'),
         api('/api/provider-os/schedule'),
-        api('/api/provider-os/health')
+        api('/api/provider-os/health'),
+        api('/api/provider-os/discovery/categories')
       ]);
       if (meta.ok) S.meta = meta.json;
       if (cat.ok) S.entries = cat.json.entries;
@@ -48,6 +50,7 @@
       if (dec.ok) S.decisions = dec.json;
       if (sch.ok) S.schedule = sch.json;
       if (hea.ok) S.health = hea.json;
+      if (disc.ok) S.disc = disc.json;
     }
 
     function chip(res) {
@@ -140,6 +143,73 @@
         await load(); paint();
       } }));
       wrap.appendChild(acoes);
+
+      /* ---- descoberta contínua (fase 6) ---- */
+      if (S.disc) {
+        const box = el('div', { style: 'margin:10px 0;padding:8px;border:1px solid var(--line)', id: 'discoveryBox' });
+        box.appendChild(el('h4', { style: 'font-size:12px;margin:0 0 4px', text:
+          'Descoberta contínua — ' + S.disc.totals.entries + ' entradas em 5 categorias' }));
+        const chips = el('div', { class: 'chips', style: 'margin-bottom:6px' });
+        const todas = el('button', { class: 'btn sm' + (S.filterCat === '' ? ' primary' : ''), type: 'button', text: 'Todas (' + S.disc.totals.entries + ')',
+          onclick: async () => { S.filterCat = ''; await load(); paint(); } });
+        chips.appendChild(todas);
+        (S.disc.categories || []).forEach((c) => {
+          chips.appendChild(el('button', {
+            class: 'btn sm' + (S.filterCat === c.id ? ' primary' : ''),
+            type: 'button', title: c.label,
+            text: c.id + ' · ' + c.total,
+            onclick: async () => { S.filterCat = S.filterCat === c.id ? '' : c.id; await load(); paint(); }
+          }));
+        });
+        box.appendChild(chips);
+        box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted)', text:
+          (S.disc.categories || []).map((c) => c.id + ' — ' + c.label).join(' · ') }));
+        if (S.filterCat) {
+          const c = (S.disc.categories || []).find((x) => x.id === S.filterCat);
+          box.appendChild(el('div', { style: 'font-size:11px;margin-top:4px', text:
+            'Filtro activo: ' + S.filterCat + ' — ' + (c ? c.label : '') + ' (' + (c ? c.total : 0) + ' entradas, ' + (c ? c.measured : 0) + ' com ≥2 campos medidos)' }));
+        }
+
+        /* adaptadores reais, todos sem chave */
+        const adap = el('div', { class: 'actions', style: 'margin:6px 0' });
+        (S.disc.adapters || []).forEach((ad) => {
+          adap.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnDisc_' + ad.key,
+            title: ad.url + ' (alimenta ' + ad.feeds.join('/') + ')',
+            text: 'Descobrir: ' + ad.label.split('(')[0].trim(), onclick: async () => {
+              S.msg = { text: 'A consultar ' + ad.url + '…' };
+              paint();
+              const r = await api('/api/provider-os/discover', { method: 'POST', body: { adapter: ad.key, limit: 60 } });
+              if (!r.ok) { S.msg = { text: 'Descoberta recusada (' + ad.key + '): ' + reasonOf(r) }; paint(); return; }
+              S.discResult = Object.assign({ adapter: ad.key }, r.json);
+              S.msg = { text: 'Descoberta ' + ad.key + ': ' + r.json.created + ' criadas, ' + r.json.updated + ' actualizadas, ' +
+                r.json.rejected + ' recusadas, ' + r.json.truncated + ' fora do lote · categorias ' +
+                Object.entries(r.json.categories || {}).map(([k, v]) => k + '=' + v).join(' ') };
+              await load(); paint();
+            } }));
+        });
+        box.appendChild(adap);
+        (S.disc.adapters || []).forEach((ad) => {
+          if (!ad.lastRun) return;
+          box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted)', text:
+            ad.key + ': última execução ' + String(ad.lastRun.at || '').slice(0, 16).replace('T', ' ') + ' · ' +
+            (ad.lastRun.created || 0) + ' criadas · ' + (ad.lastRun.ms || 0) + ' ms' }));
+        });
+
+        /* cobertura dos 9 campos: o mapa do que falta é parte do resultado */
+        const campos = S.disc.fields || {};
+        box.appendChild(el('table', { class: 'listtable', id: 'accessFields', style: 'margin-top:6px' }, [
+          el('thead', {}, [el('tr', {}, ['Campo de acesso', 'Medido', 'Declarado', 'Desconhecido'].map((h) => el('th', { text: h })))]),
+          el('tbody', {}, Object.entries(campos).map(([k, v]) => el('tr', {}, [
+            el('td', {}, [el('b', { text: k }), el('div', { class: 'muted', style: 'font-size:10px', text: v.label })]),
+            el('td', { class: 'mono', text: String(v.measured) }),
+            el('td', { class: 'mono', text: String(v.declared) }),
+            el('td', { class: 'mono', style: v.unknown === S.disc.totals.entries && S.disc.totals.entries ? 'color:var(--muted)' : '', text: String(v.unknown) })
+          ])))
+        ]));
+        box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted);margin-top:4px', text:
+          'Um campo só conta quando tem fonte datada; «desconhecido» é uma resposta, não uma falha a esconder.' }));
+        wrap.appendChild(box);
+      }
 
       /* ---- catálogo ---- */
       if (!S.entries || !S.entries.length) {

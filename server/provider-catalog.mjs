@@ -100,6 +100,15 @@ export function validateEntry(e) {
     errors.push({ msg: 'a entrada parece conter uma chave: o catálogo nunca guarda segredos' });
   }
   if (e.pricing && !e.pricing.currency) errors.push({ msg: 'pricing sem moeda' });
+  /* detalhes de acesso (conta, cartão, limites, …): valor sem fonte é recusado */
+  if (e.accessDetails) {
+    for (const [field, d] of Object.entries(e.accessDetails)) {
+      if (!d || d.status === 'UNKNOWN') continue;
+      if (d.value == null || String(d.value).trim() === '') errors.push({ msg: 'accessDetails.' + field + ': valor vazio com estado ' + d.status });
+      if (d.status === 'MEASURED' && (!d.at || !d.method)) errors.push({ msg: 'accessDetails.' + field + ': MEASURED exige data e método' });
+      if (d.status === 'DECLARED' && !d.url) errors.push({ msg: 'accessDetails.' + field + ': DECLARED exige URL da fonte' });
+    }
+  }
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -230,6 +239,18 @@ export const DISCOVERY_ADAPTERS = {
     url: 'https://huggingface.co/api/models?limit=20&sort=downloads&direction=-1', needsKey: false,
     category: CATEGORY.SPECIALIZED,
     what: 'pesos de modelo; NÃO é um endpoint de inferência e é registado como tal'
+  },
+  models_dev: {
+    key: 'models_dev', label: 'models.dev (preços e limites por fornecedor)',
+    url: 'https://models.dev/api.json', needsKey: false,
+    category: CATEGORY.SPECIALIZED,
+    what: 'fornecedores, modelos, contexto, preço por token e capacidades — o que publica; o resto fica UNKNOWN'
+  },
+  github_coding_agents: {
+    key: 'github_coding_agents', label: 'GitHub (ferramentas e agentes de programação)',
+    url: 'https://api.github.com/search/repositories', needsKey: false,
+    category: CATEGORY.CODING_TOOL,
+    what: 'repositórios por tema: licença, estrelas, último push e se está arquivado (sinal de manutenção)'
   }
 };
 
@@ -389,6 +410,20 @@ export function costOfTask({ promptTokens, completionTokens, pricing }) {
 export function publicEntry(e, now) {
   const { evidence, ...rest } = e;
   return Object.assign({}, rest, {
+    accessDetails: e.accessDetails || {},
+    accessDetailCoverage: (() => {
+      const fields = ['conta', 'cartao', 'limites', 'concorrencia', 'geografia', 'usoComercial', 'privacidade', 'hardware', 'confirmadoEm'];
+      const out = { measured: [], declared: [], unknown: [], total: fields.length };
+      for (const f of fields) {
+        const d = (e.accessDetails || {})[f];
+        if (!d || d.status === 'UNKNOWN' || d.value == null) out.unknown.push(f);
+        else if (d.status === 'MEASURED') out.measured.push(f);
+        else out.declared.push(f);
+      }
+      out.known = out.measured.length + out.declared.length;
+      out.pct = Math.round((out.known / out.total) * 100);
+      return out;
+    })(),
     evidence: (evidence || []).map((x) => ({ a: x.a, status: x.status, at: x.at || null, url: x.url || null, method: x.method || null, detail: x.detail || null })),
     evidenceSummary: evidenceSummary(e, now)
   });
