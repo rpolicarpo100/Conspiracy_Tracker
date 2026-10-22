@@ -1302,3 +1302,44 @@ I. O que NÃO está feito (e porquê)
    · deployment: EXECUTADO em 22-10-2026 (autorizado pelo utilizador) — `main` f1536bd → 1c440a2,
      /health confirma 2.0.0-fase8 e o registo responde 403 em produção. O arranque do administrador
      por HTTPS foi publicado a seguir; produção fica à espera de que o operador corra o passo.
+
+================================================================================
+§44  PERSISTÊNCIA DURÁVEL EM POSTGRES (22 de outubro de 2026)
+     Ramo `main` · versão 2.0.0-fase8 · base Neon real (PostgreSQL 17.11)
+================================================================================
+
+A. O que mudou
+   server/pg.mjs (novo): documento na tabela vn_state (jsonb) com versão,
+   auditoria append-only em vn_audit, cópias em vn_snapshot; TLS verificado
+   (sslmode=verify-full), 4 ligações, timeouts de 12 s.
+   server/store.mjs: grava PRIMEIRO na base, depois no ficheiro; se a base
+   recusar, a operação falha e a memória volta ao último estado bom.
+   /ready: persistence.mode, durableBetweenDeploys, versão, latência, erros;
+   com DATABASE_URL definida e base sem confirmação de escrita → 503 (degradado).
+
+B. Teste real (tests/persistencia-pg.mjs · 8/8 com base Neon)
+   PASS esquema criado e primeira gravação confirmada (modo postgres+ficheiro, versão 1)
+   PASS registo de utilizador gravado
+   PASS projecto e utilizador presentes no jsonb (verificado por leitura directa à base)
+   PASS processo morto + DATA_DIR novo e vazio → login aceite e projecto visível
+        (equivalente a um deploy que apaga o disco)
+   PASS conflito de duas instâncias recusado com PG_VERSION_CONFLICT (16 → 17)
+   PASS cópia de segurança criada e restaurada, projectos idênticos (17 → 18)
+   PASS auditoria append-only com user_registered, session_created, project_created, login_succeeded
+   PASS limpeza dos dados de teste
+
+C. Sem DATABASE_URL
+   A suite declara SKIP (não PASS): sem base real não se prova durabilidade.
+   A suite completa continua verde em modo ficheiro: 24 suites · 441 verificações · 0 falhas.
+
+D. Projecto Neon criado
+   conspiracy-tracker · curly-thunder-73546075 · aws-eu-central-1 · PG 17.11
+   Os outros dois projectos da conta (GOD, aci-platform) não foram tocados.
+
+E. O que continua por fazer
+   · DATABASE_URL no painel do Render (passo do operador) — sem ele produção
+     continua com disco efémero e /ready diz durableBetweenDeploys:false;
+   · rotação automática de cópias (depende de CRON_TOKEN);
+   · subcontratante adicional (Neon) tem de aparecer na política de privacidade
+     publicada antes de o serviço ser usado por terceiros;
+   · um documento por base: acima de alguns MB, normalizar colecções grandes.

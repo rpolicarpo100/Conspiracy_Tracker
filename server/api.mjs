@@ -730,13 +730,28 @@ export async function createApi(opts) {
             } : null
           },
           keyVault: { ok: vault.enabled, mode: vault.enabled ? 'aes-256-gcm' : 'desactivado', reason: vault.reason },
-          persistence: {
-            ok: !!opts.dataDir || !!process.env.DATA_DIR,
-            durableBetweenDeploys: !!(opts.dataDir || process.env.DATA_DIR) && !process.env.RENDER,
-            note: 'no plano gratuito do Render o disco é efémero: os dados não sobrevivem a um deploy'
-          }
+          persistence: (() => {
+            const p = typeof store.persistence === 'function' ? store.persistence() : null;
+            if (!p) return { ok: false, durableBetweenDeploys: false, note: 'estado de persistência indisponível' };
+            return {
+              ok: p.mode === 'postgres+ficheiro' ? p.durableBetweenDeploys : true,
+              mode: p.mode,
+              durableBetweenDeploys: p.durableBetweenDeploys,
+              postgres: p.postgres,
+              file: p.file,
+              note: p.durableBetweenDeploys
+                ? 'os dados estão numa base Postgres: sobrevivem a um deploy, a um reinício e à troca de instância'
+                : (p.postgres.configured
+                  ? 'DATABASE_URL está definida mas a base não confirmou a escrita (' + (p.postgres.lastError || 'sem detalhe') + '): os dados continuam a viver no disco efémero'
+                  : 'sem DATABASE_URL: o disco do plano gratuito do Render é apagado em cada deploy')
+            };
+          })()
         };
-        const ready = checks.storage.ok;
+        /* «pronto» inclui persistência: com DATABASE_URL definida mas sem
+           confirmação de escrita, o serviço está degradado — é melhor dizê-lo
+           do que aceitar trabalho que se perde. */
+        const persistOk = checks.persistence.ok !== false;
+        const ready = checks.storage.ok && persistOk;
         return json(res, ready ? 200 : 503, {
           ok: ready, status: ready ? 'ready' : 'degraded', checks, version: APP_VERSION, now: now(),
           /* um modo só-de-leitura é dito na cara, não escondido em /health */
@@ -790,7 +805,15 @@ export async function createApi(opts) {
           },
           privacy: {
             adminAccess: 'os administradores podem consultar projectos e execuções para suporte, segurança e operação; cada acesso fica registado na auditoria',
-            storage: 'os dados são guardados no servidor da aplicação; no plano gratuito do Render o disco é efémero'
+            storage: (() => {
+              const p = typeof store.persistence === 'function' ? store.persistence() : null;
+              if (!p) return 'estado de armazenamento indisponível';
+              return p.durableBetweenDeploys
+                ? 'os dados são guardados numa base Postgres gerida e sobrevivem a deploy e reinício; o servidor guarda uma cópia de trabalho local'
+                : (p.postgres.configured
+                  ? 'a base Postgres está configurada mas não confirmou a escrita: os dados vivem no disco efémero do servidor'
+                  : 'os dados são guardados no servidor da aplicação; no plano gratuito do Render o disco é efémero (apagado em cada deploy)');
+            })()
           },
           accessChecks: {
             states: ACCESS_STATE_LABEL, method: ACCESS_METHOD, maxRedirects: MAX_REDIRECTS,

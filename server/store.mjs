@@ -1,11 +1,19 @@
 /* =====================================================================
-   ARMazenamento persistente em ficheiro (JSON) com escrita atómica.
-   LIMITAÇÃO CONHECIDA E DECLARADA: no plano gratuito do Render o disco é
-   efémero — os dados sobrevivem a reinícios do processo, mas NÃO a um novo
-   deploy. Para produção: montar um disco persistente (DATA_DIR) ou trocar
-   este módulo por Postgres (a API abaixo é a única superfície a substituir).
+   ARMazenamento persistente: ficheiro JSON com escrita atómica + Postgres.
+
+   O ficheiro continua a ser a memória rápida do processo (e a rede de
+   segurança local: tmp → fsync → rename, sha256, 3 cópias). Quando existe
+   DATABASE_URL, o MESMO documento é gravado numa base Postgres gerida
+   (Neon/Supabase) — é isso que faz os dados sobreviverem a um deploy.
+   Ordem de escrita: primeiro a base, depois o ficheiro. Se a base falhar,
+   nada é dado como gravado e a memória volta ao último estado bom.
+
+   Sem DATABASE_URL nada muda: ficheiro apenas, e /ready declara
+   durableBetweenDeploys:false (o disco do plano gratuito é apagado em cada
+   deploy — mitiga-se, não se resolve com ficheiros).
    ===================================================================== */
 import { promises as fs } from 'node:fs';
+import { createPgStore } from './pg.mjs';
 import fs_sync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,7 +150,13 @@ export function createStore(dir) {
   const lockFile = path.join(root, 'db.lock');
   const BACKUPS = 3;
   let lockState = { held: false, readOnly: false, owner: null, reason: null };
-  const recovery = { used: null, reason: null, freshStart: false, skippedBackups: 0, backups: [] };
+  const recovery = { used: null, reason: null, freshStart: false, skippedBackups: 0, backups: [], source: null };
+  /* Postgres: só conta como activo se a inicialização correr bem. Uma base
+     configurada e inacessível não pode fazer o serviço parecer durável nem
+     derrubar a aplicação inteira: fica «activo:false» com o erro à vista. */
+  const pgStore = createPgStore(process.env.DATABASE_URL, {});
+  let pgActive = false;
+  let pgVersion = null;
 
   const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
 
@@ -206,10 +220,50 @@ export function createStore(dir) {
     } catch { return null; }
   }
 
+  /* Tenta trazer o documento da base. Devolve true se a base for a origem. */
+  async function carregarDoPostgres() {
+    if (!pgStore.enabled) return false;
+    try {
+      await pgStore.init();
+      pgActive = true;
+    } catch (e) {
+      pgActive = false;
+      console.error('[store] Postgres configurado mas inacessível na inicialização: ' + String(e.message || e).slice(0, 200));
+      console.error('[store] a aplicação continua com o ficheiro local; /ready vai declarar durableBetweenDeploys:false');
+      return false;
+    }
+    try {
+      const remoto = await pgStore.load();
+      if (!remoto || !remoto.doc) return false;
+      db = Object.assign(EMPTY(), remoto.doc);
+      pgVersion = remoto.version;
+      const missing = Object.keys(EMPTY()).filter((k) => !(k in remoto.doc));
+      const m = migrate(db, missing);
+      if (m.applied.length) {
+        console.log('[store] migração aplicada sobre a base Postgres:', m.from, '→', m.to,
+          m.applied.map((a) => a.changes.join('; ')).join(' | '));
+      }
+      recovery.source = 'postgres';
+      recovery.reason = 'base carregada do Postgres (versão ' + remoto.version + ', gravada em ' +
+        (remoto.updatedAt instanceof Date ? remoto.updatedAt.toISOString() : String(remoto.updatedAt || '?')) + ')';
+      lastGood = JSON.stringify(db);
+      loaded = true;
+      /* o ficheiro local passa a cópia de trabalho, para as cópias de segurança
+         continuarem a existir mesmo com a base configurada */
+      await persist();
+      return true;
+    } catch (e) {
+      console.error('[store] leitura do Postgres falhou: ' + String(e.message || e).slice(0, 200));
+      return false;
+    }
+  }
+
   async function load() {
     if (loaded) return db;
     await fs.mkdir(root, { recursive: true });
     acquireLock();
+
+    if (await carregarDoPostgres()) return db;
 
     let raw = null, parsed = null, problema = null;
     const principal = tryRead(file);
@@ -261,6 +315,20 @@ export function createStore(dir) {
       /* fotografia do estado em disco: é a ela que se volta se uma gravação falhar */
       lastGood = JSON.stringify(db);
       loaded = true;
+      recovery.source = recovery.source || 'ficheiro';
+      /* havia dados locais e a base está vazia: é a migração para Postgres.
+         Sem isto, o primeiro deploy em modo Postgres começaria vazio. */
+      if (pgActive && pgVersion == null) {
+        try {
+          pgVersion = await pgStore.save(db, null, 'migracao-inicial');
+          recovery.source = 'ficheiro→postgres';
+          recovery.reason = (recovery.reason || '') +
+            ' · documento local publicado na base Postgres (versão ' + pgVersion + ')';
+          console.log('[store] documento local migrado para Postgres (versão ' + pgVersion + ')');
+        } catch (e) {
+          console.error('[store] migração para Postgres falhou: ' + String(e.message || e).slice(0, 200));
+        }
+      }
       return db;
     }
 
@@ -272,6 +340,7 @@ export function createStore(dir) {
     loaded = true;
     db.migrations.push({ from: 0, to: SCHEMA_VERSION, at: new Date().toISOString(),
       changes: ['base criada directamente na versão ' + SCHEMA_VERSION] });
+    recovery.source = pgActive ? 'base nova (postgres)' : 'base nova (ficheiro)';
     if (!lockState.readOnly) await persist();
     return db;
   }
@@ -281,6 +350,12 @@ export function createStore(dir) {
   function persist() {
     writeChain = writeChain.then(async () => {
       if (lockState.readOnly) throw new Error('base em modo só-de-leitura: ' + lockState.reason);
+      /* A base primeiro: se ela recusar (rede, conflito de versão), nada foi
+         gravado e a memória volta ao último estado bom — nunca se anuncia um
+         êxito que só existiu no ficheiro local. */
+      if (pgActive) {
+        pgVersion = await pgStore.save(db, pgVersion, process.env.RENDER_INSTANCE_ID || 'api');
+      }
       const data = JSON.stringify(db, null, 1);
       const tmp = file + '.tmp-' + process.pid;
       const fh = await fs.open(tmp, 'w', 0o600);
@@ -935,9 +1010,12 @@ export function createStore(dir) {
 
     /* --- auditoria --- */
     async audit(event) {
-      db.audit.push(Object.assign({ id: id('evt'), at: new Date().toISOString() }, event));
+      const ev = Object.assign({ id: id('evt'), at: new Date().toISOString() }, event);
+      db.audit.push(ev);
       if (db.audit.length > 50000) db.audit = db.audit.slice(-50000);
       await persist();
+      /* registo append-only em tabela: sobrevive mesmo a um documento corrompido */
+      if (pgActive) await pgStore.appendAudit(ev);
     },
     auditList(filter) {
       let list = db.audit.slice().reverse();
@@ -966,9 +1044,35 @@ export function createStore(dir) {
       };
     },
     readOnly() { return !!lockState.readOnly; },
+    /* Estado da persistência durável: é isto que /ready publica. Nada aqui é
+       optimista — 'durable' só é true com gravação confirmada na base. */
+    persistence() {
+      return {
+        mode: pgActive ? 'postgres+ficheiro' : 'ficheiro',
+        durableBetweenDeploys: !!(pgActive && pgStore.ready),
+        postgres: {
+          configured: pgStore.enabled,
+          active: pgActive,
+          ready: pgStore.ready,
+          version: pgVersion,
+          host: pgStore.status.host,
+          database: pgStore.status.database,
+          ssl: pgStore.status.ssl,
+          schemaReady: pgStore.status.schemaReady,
+          writes: pgStore.status.writes,
+          errors: pgStore.status.errors,
+          lastWriteAt: pgStore.status.lastWriteAt,
+          lastError: pgStore.status.lastError,
+          latencyMs: pgStore.status.latencyMs
+        },
+        file: { dir: root, role: pgActive ? 'cópia de trabalho e cópias de segurança' : 'único armazenamento' }
+      };
+    },
+    pg: pgStore,
     async close() {
       /* uma base só-de-leitura não tem nada para gravar: fechar não é erro */
       if (!lockState.readOnly) await writeChain.catch(() => {});
+      await pgStore.close();
       releaseLock();
     },
     persist

@@ -208,10 +208,12 @@ navegador; com sessão, projectos e chaves ficam associados ao utilizador e isol
   «contraditória»; retirar uma prova exige motivo e não apaga o histórico.
 
 Variáveis de ambiente relevantes (nunca com segredos no repositório): `APP_SECRET` (≥24 caracteres,
-obrigatório para guardar chaves), `DATA_DIR` (pasta de dados), `REGISTER_OPEN` (ausente = registo
-fechado; `true` abre-o e tem de ser uma decisão escrita), `ADMIN_EMAIL` (diagnóstico: se ainda não
-existe administrador, `/api/meta` diz que é preciso correr `tools/create-admin.mjs`),
-`LOGIN_MAX_ATTEMPTS`, `REGISTER_MAX`, `AGENT_BUDGET`, `PORT`.
+obrigatório para guardar chaves), `DATABASE_URL` (base Postgres: é o que torna os dados duráveis —
+ver `docs/PERSISTENCIA.md`), `DATA_DIR` (pasta de dados), `REGISTER_OPEN` (ausente = registo
+fechado; `true` abre-o e tem de ser uma decisão escrita), `ADMIN_BOOTSTRAP_TOKEN` (arranque do
+primeiro administrador por HTTPS), `ADMIN_EMAIL` (diagnóstico: se ainda não existe administrador,
+`/api/meta` diz que é preciso correr `tools/create-admin.mjs`), `LOGIN_MAX_ATTEMPTS`,
+`REGISTER_MAX`, `AGENT_BUDGET`, `PORT`.
 
 ## Publicar (Render, plano gratuito)
 
@@ -275,10 +277,20 @@ Depois de criar o administrador, **retire `ADMIN_BOOTSTRAP_TOKEN`** do ambiente.
 disco for efémero (plano gratuito), um redeploy apaga as contas e o token é o único caminho de volta —
 mantenha-o até a persistência ser durável e depois remova-o. Ver `docs/AUDITORIA-2026-10-22.md` §4.
 
+## Persistência
+
+Sem `DATABASE_URL`, os dados vivem apenas no disco do serviço — e no plano gratuito do Render esse
+disco é **apagado em cada deploy**. Com `DATABASE_URL` (Postgres gerido: Neon, Supabase, outro), o
+mesmo documento é gravado numa base e sobrevive a deploy, reinício e troca de instância. O modo
+activo, a versão do documento e os erros de gravação estão sempre visíveis em `/ready`
+(`checks.persistence`), e `durableBetweenDeploys` só é `true` depois de a base confirmar a escrita.
+Cópias pontuais e restauro: `node tools/pg-snapshot.mjs`. Detalhes e provas em
+`docs/PERSISTENCIA.md`.
+
 ## Limitações
 
-Persistência garantida em produção **não existe** enquanto o serviço correr no plano gratuito (sem
-disco): um deploy apaga contas, projectos e chaves guardadas no servidor. Não há MFA, recuperação de
+Persistência garantida em produção exige `DATABASE_URL` configurada. Sem ela, um deploy apaga
+contas, projectos e chaves guardadas no servidor. Não há MFA, recuperação de
 palavra-passe por email, retenção automática nem backups de dados. Não há OCR nem assinatura digital
 do livro de provas, e acima de ~500 nós visíveis é necessário trocar o adaptador por WebGL.
 
