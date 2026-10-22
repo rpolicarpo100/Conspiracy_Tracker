@@ -1875,3 +1875,41 @@ E. O que continua por fazer
    chaves a aplicação analisa documentos através do fornecedor público
    (Pollinations). Sem chave nenhuma NÃO fica inutilizável: fica mais lenta e
    partilhada.
+
+§54.8  P U B L I C A Ç Ã O  E  V E R I F I C A Ç Ã O  E M  P R O D U Ç Ã O
+   4 commits enviados para `main` (deploy automático do Render em cada um):
+     86de625  fase 12 (motor, persistência, código morto, docs)
+     293a7e6  versão 2.0.0-fase12 + estado actual regenerado
+     16842fb  GET /api/ai/estado (diagnóstico público, sem valores)
+     48ac18e  ?probe=1 — sondagem real, limitada a 1/min e 3/h por IP
+
+   PASS /health → commit 48ac18eeb74ebf9137eaa491dfc1b9b44bd9e043 ·
+        2.0.0-fase12 · uptime de instância nova
+   PASS /ready → ready · storage.ok:true · writeOk:true · failedWrites:0 ·
+        dirRecreations:0 · checksumVerified:true · postgres activo
+        (Neon, versão 750)
+   PASS GET /api/sources → 401 (antes desta fase: 404 — a rota tinha sido
+        apagada por um patch; agora existe e só falta sessão)
+   PASS GET /api/search?q=… e /api/providers sem sessão → 401
+   PASS GET /api/ai/estado → modo «sem-chave», fornecedor pollinations,
+        chavesDoOperador 0, cofrePorUtilizador true
+   PASS GET /api/ai/estado?probe=1 → verificado {ok:true, ms:280,
+        amostra:"ok"} — a IA de produção respondeu de facto, sem chave nenhuma
+        configurada. O que se envia é a frase fixa «Responda apenas: ok».
+
+   O que isto quer dizer sobre «pôr APIs de IA no Render»
+   · o catálogo já declara 11 fornecedores com `sync:false` e o estado de cada
+     chave aparece em Conta → Chaves de IA;
+   · com ZERO chaves a análise por IA funciona (provado acima). Uma chave
+     gratuita só a torna mais rápida e não partilhada;
+   · colar as chaves é a única parte que exige o painel do Render — passo a
+     passo em docs/IA-FORNECEDORES.md §1, ligações de cada chave na tabela §2.
+
+   PENDENTE DA TUA PARTE
+   · colar AI_KEY_* no Render (opcional; recomendado: uma, a mais rápida);
+   · revogar as chaves Render e Neon antigas (as que já não são usadas);
+   · decidir sobre REGISTER_OPEN: com o registo fechado, só tu (e quem criares
+     por administração) entra na instância.
+
+   ROLLBACK: `git revert 48ac18e && git push origin main` (ou o commit anterior).
+   Sem alterações de esquema nesta fase: esquema v7 mantém-se.
