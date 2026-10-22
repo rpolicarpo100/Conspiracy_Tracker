@@ -10,6 +10,7 @@
       (passos, orçamento, paragem, retoma, cancelamento) sem chamar nenhum modelo.
    Nenhum teste inventa resultados: quando não há IA, o motor TEM de parar.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import http from 'node:http';

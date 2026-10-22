@@ -12,25 +12,29 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase4a**
+- versão da aplicação: **2.0.0-fase8**
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 84
-- ficheiros de teste: 35 · blocos de teste declarados (`await t`): 372 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 100
+- ficheiros de teste: 43 · blocos de teste declarados (`await t`): 495 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
 | ficheiro | asserções | tipo |
 | --- | --- | --- |
+| `tests/_env.mjs` | 0 | servidor/módulo |
 | `tests/account-ui.mjs` | 15 | interface (Playwright) |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
 | `tests/agents.mjs` | 18 | servidor/módulo |
 | `tests/apis-ui.mjs` | 7 | interface (Playwright) |
 | `tests/apis.mjs` | 13 | servidor/módulo |
+| `tests/auth-privacidade.mjs` | 13 | servidor/módulo |
+| `tests/benchmark.mjs` | 18 | servidor/módulo |
 | `tests/console-tabs.mjs` | 0 | interface (Playwright) |
 | `tests/deployed.mjs` | 6 | interface (Playwright) |
+| `tests/discovery.mjs` | 13 | servidor/módulo |
 | `tests/documents-ui.mjs` | 6 | interface (Playwright) |
 | `tests/evidence.mjs` | 17 | servidor/módulo |
 | `tests/fase3c.mjs` | 28 | servidor/módulo |
@@ -46,13 +50,17 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/ocr.mjs` | 15 | servidor/módulo |
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
 | `tests/perf.mjs` | 0 | interface (Playwright) |
+| `tests/provedores-ui.mjs` | 16 | interface (Playwright) |
 | `tests/provider-os.mjs` | 25 | servidor/módulo |
+| `tests/provider-tests.mjs` | 18 | servidor/módulo |
 | `tests/real-fetch.mjs` | 0 | interface (Playwright) |
 | `tests/realdata-bundle.mjs` | 0 | servidor/módulo |
 | `tests/research.mjs` | 19 | servidor/módulo |
 | `tests/scale-diag.mjs` | 0 | interface (Playwright) |
+| `tests/scheduler.mjs` | 21 | servidor/módulo |
 | `tests/search.mjs` | 17 | interface (Playwright) |
 | `tests/seguranca.mjs` | 25 | servidor/módulo |
+| `tests/selector.mjs` | 24 | servidor/módulo |
 | `tests/server.mjs` | 26 | servidor/módulo |
 | `tests/shot-search.mjs` | 0 | interface (Playwright) |
 | `tests/shots.mjs` | 0 | interface (Playwright) |
@@ -61,10 +69,10 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: e1df1b6 fase 1 do provider OS: auditoria do existente, baseline medida e correcção do executor de testes
+- último commit: f1536bd fase 7 do Provider OS: benchmarks verificáveis (nivel 7), matriz comparativa, cron de servico e workflow (23 suites/428)
 - árvore de trabalho: com alterações locais
-- último bloco de resultados: §37 — FASE 2 DO «PROVIDER OS» — CATÁLOGO COM EVIDÊNCIA, RANKING E ARQUIVO (2026-10-22,
-- documentação: 27 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md)
+- último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
+- documentação: 28 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md)
 
 ### Coerência
 

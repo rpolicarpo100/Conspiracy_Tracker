@@ -8,6 +8,7 @@
    (não executado, com motivo) e com fornecedor substituído por stub (JSON
    válido e JSON inválido).
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { AGENTS, agentById, redTeamAudit, executeAgent, runLocalAgent } from '../server/agents.mjs';

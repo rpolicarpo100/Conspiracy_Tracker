@@ -10,8 +10,17 @@ nenhuma decisão depende dela. Todos os pedidos passam por `requireUser` / `requ
 
 | Papel | Descrição | Como se obtém |
 | --- | --- | --- |
-| `USER` | utilizador autenticado; vê e gere apenas os seus dados | registo normal |
-| `ADMIN` | acrescenta gestão de utilizadores, métricas reais e auditoria | promoção do primeiro registo cujo email coincide com `ADMIN_EMAIL`; **não** existe rota de auto-promoção |
+| `USER` | utilizador autenticado; vê e gere apenas os seus dados | criado por um administrador em `POST /api/admin/users`, com palavra-passe temporária a trocar no primeiro acesso |
+| `ADMIN` | acrescenta gestão de utilizadores, métricas reais e auditoria | procedimento local `tools/create-admin.mjs` (primeiro administrador) ou `POST /api/admin/users` com `role:"ADMIN"` por um administrador existente; **não** existe rota de auto-promoção |
+
+O **registo público está fechado por omissão** (`REGISTER_OPEN` ausente → `403 REGISTRATION_CLOSED`).
+Passou a haver, por isso, um caminho explícito para dar acesso: um administrador cria a conta e
+entrega uma palavra-passe temporária (mostrada uma única vez, nunca guardada em claro); enquanto não
+for trocada, o servidor responde `403 PASSWORD_CHANGE_REQUIRED` a todas as rotas menos
+`/api/auth/me`, `/api/auth/logout`, `/api/auth/password` e `/api/meta`.
+
+`ADMIN_EMAIL` deixou de promover ninguém: com o registo fechado não existe «primeiro registo». A
+variável sobrevive apenas como diagnóstico publicado em `/api/meta` (`registration.firstAdminNote`).
 
 Não existe papel `ANALYST` nesta versão (previsto como opcional; não implementado).
 

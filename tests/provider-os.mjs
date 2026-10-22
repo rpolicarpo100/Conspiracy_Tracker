@@ -6,6 +6,7 @@
      · rede     — catálogo público externo; se falhar, é SKIP declarado
                   (nunca PASS, nunca contagem escondida).
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import { createApi } from '../server/api.mjs';
 import fs from 'node:fs';

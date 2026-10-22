@@ -9,6 +9,7 @@
                  filtros do catálogo e o invariante «descobrir não despromove»;
      · honestidade — o que a fonte não publica fica UNKNOWN e é contado.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -240,6 +241,7 @@ await t('servidor · descoberta real no GitHub (categoria D) e nada é promovido
   const r = await call('POST', '/api/provider-os/discover', { adapter: 'github_coding_agents', pageSize: 20, limit: 20 });
   if (r.status === 502) skip('serviço externo: ' + (r.json && r.json.failure));
   ok(r.status === 200, 'HTTP ' + r.status + ' ' + r.text.slice(0, 160));
+  if (r.json.sourcesEmpty) skip('fonte externa devolveu zero registos (índice/limite do GitHub, não o nosso código): ' + r.json.note.slice(0, 90));
   ok(r.json.created + r.json.updated >= 1, 'nada gravado: ' + JSON.stringify({ c: r.json.created, u: r.json.updated, rej: r.json.rejected }));
   ok(r.json.categories && r.json.categories.D >= 1, 'categorias: ' + JSON.stringify(r.json.categories));
   /* nenhuma entrada que já existia pode mudar de estado por causa de uma descoberta */

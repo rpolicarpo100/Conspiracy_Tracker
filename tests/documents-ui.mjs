@@ -11,6 +11,7 @@
    4. marcar como revisto;
    5. e que a ficha do projecto continua com 0 provas enquanto ninguém as criar.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';

@@ -1,5 +1,6 @@
 /* Testes do servidor: autenticação, isolamento, privilégios, chaves de IA,
    roteador de fornecedores (com servidor simulado), auditoria e saúde. */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';

@@ -5,6 +5,7 @@
    a partir do segredo que o servidor devolve uma única vez na ativação — não há mock.
    O que se prova: a sessão não existe antes do código, um código errado não abre sessão,
    um código certo abre, e desactivar exige palavra-passe + código. */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { totpAt } from '../server/mfa.mjs';
 
 const BASE = process.argv[2] || 'https://conspiracy-aitracker.onrender.com';

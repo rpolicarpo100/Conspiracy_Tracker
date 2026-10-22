@@ -17,6 +17,7 @@
       · sem cópia válida → recomeça vazia e DECLARA-O (nunca em silêncio);
       · segunda instância no mesmo diretório → só-de-leitura e /ready 503.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import fs from 'node:fs';
 import os from 'node:os';
 import http from 'node:http';

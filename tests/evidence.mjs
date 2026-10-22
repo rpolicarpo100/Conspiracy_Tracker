@@ -5,6 +5,7 @@
    Cada teste verifica comportamento do SERVIDOR, não da interface: o cliente
    pede, o servidor decide. Corre contra uma instância própria e isolada.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';

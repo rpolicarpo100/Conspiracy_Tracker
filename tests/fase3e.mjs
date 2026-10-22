@@ -14,6 +14,7 @@
    motor do Chromium). O `fetchDoc` é injectado para servir esse ficheiro:
    nenhum teste depende da internet nem de terceiros.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import fs from 'node:fs';
 import http from 'node:http';
 import crypto from 'node:crypto';

@@ -11,6 +11,7 @@
      · cron        — sem CRON_TOKEN recusa (503), com token errado 401,
                      com token certo reavalia níveis 1–2 e não gasta nada.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';

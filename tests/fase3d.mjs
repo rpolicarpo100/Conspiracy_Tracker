@@ -13,6 +13,7 @@
    · caminhos com restrições dizem quantas relações excluíram;
    · nada disto atravessa a fronteira entre contas.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { validateMemory, memoryToMarkdown, MEMORY_KINDS } from '../server/memory.mjs';
@@ -362,7 +363,7 @@ await t('esquema actual registado e coerente com o código', async () => {
   const v = st.schemaVersion();
   await st.close();
   ok(meta.json.schemaVersion === v, 'schemaVersion ' + meta.json.schemaVersion + ' ≠ ' + v);
-  ok(/^2\.0\.0-fase(3|4|5|6|7)/.test(meta.json.version), 'versão ' + meta.json.version);
+  ok(/^2\.0\.0-fase(3|4|5|6|7|8)/.test(meta.json.version), 'versão ' + meta.json.version);
   ok(meta.json.schemaVersion >= 5, 'esquema antigo: ' + meta.json.schemaVersion);
 });
 

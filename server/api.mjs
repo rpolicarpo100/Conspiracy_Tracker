@@ -50,7 +50,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase7';
+const APP_VERSION = '2.0.0-fase8';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -241,9 +241,21 @@ export async function createApi(opts) {
   const counters = store.counters;
 
   /* ---------- helpers de autorização ---------- */
+  /* Rotas que continuam acessíveis quando a conta tem uma palavra-passe
+     temporária por trocar: sem elas o utilizador não conseguiria trocá-la. */
+  const TROCA_OBRIGATORIA_PERMITIDAS = [
+    /^\/api\/auth\/me$/, /^\/api\/auth\/logout$/, /^\/api\/auth\/password$/, /^\/api\/meta$/
+  ];
   async function requireUser(req, res) {
     const a = await auth.currentUser(req);
     if (!a) { err(res, 401, 'sessão inválida ou expirada'); return null; }
+    if (a.user.mustChangePassword) {
+      const path = String(req.url || '').split('?')[0];
+      if (!TROCA_OBRIGATORIA_PERMITIDAS.some((re) => re.test(path))) {
+        err(res, 403, 'tem de trocar a palavra-passe temporária antes de continuar', { code: 'PASSWORD_CHANGE_REQUIRED' });
+        return null;
+      }
+    }
     return a;
   }
   function requireCsrf(req, res, a) {
@@ -756,8 +768,17 @@ export async function createApi(opts) {
             })()
           },
           registration: {
-            open: true,
+            open: auth.registrationOpen,
+            source: 'variável de ambiente REGISTER_OPEN (fechado quando ausente)',
+            policy: auth.registrationOpen
+              ? 'aberto por configuração explícita da operação'
+              : 'fechado por omissão: as contas são criadas por um administrador ou por tools/create-admin.mjs no servidor',
             firstAdminEmailConfigured: !!auth.adminEmail,
+            firstAdminNote: (() => {
+              if (!auth.adminEmail) return 'ADMIN_EMAIL não definido: nenhuma conta se torna administradora automaticamente';
+              if (!store.data.users.some((u) => u.role === 'ADMIN')) return 'ADMIN_EMAIL definido e ainda sem administrador: use tools/create-admin.mjs no servidor (com o registo fechado, o papel não é atribuído por registo)';
+              return 'já existe um administrador; ADMIN_EMAIL deixou de ter efeito';
+            })(),
             passwordPolicy: ['pelo menos 10 caracteres', 'uma minúscula', 'uma maiúscula', 'um dígito']
           },
           privacy: {
@@ -778,6 +799,13 @@ export async function createApi(opts) {
         const ip = ipOf(req);
         if (auth.registerLimiter.blocked(ip)) return err(res, 429, 'demasiados registos a partir deste endereço');
         auth.registerLimiter.hit(ip);
+        /* P0: registo público fechado por omissão. A recusa é registada na
+           auditoria para que uma tentativa de abuso fique visível, mas a
+           resposta não revela se já existe conta, nem quantas existem. */
+        if (!auth.registrationOpen) {
+          await store.audit({ type: 'registration_refused', ip, action: 'register', detail: { reason: 'closed', ua: String(req.headers['user-agent'] || '').slice(0, 120) } });
+          return err(res, 403, 'o registo público está desactivado; a conta tem de ser criada por um administrador', { code: 'REGISTRATION_CLOSED' });
+        }
         const body = await readBody(req);
         const email = String(body.email || '').trim().toLowerCase();
         if (!emailRe.test(email)) return err(res, 400, 'email inválido');
@@ -1039,9 +1067,9 @@ export async function createApi(opts) {
         const problems = passwordProblems(body.next);
         if (problems.length) return err(res, 400, 'palavra-passe fraca: ' + problems.join(', '));
         const { salt, hash } = hashPassword(body.next);
-        await store.updateUser(a.user.id, { salt, passwordHash: hash });
+        await store.updateUser(a.user.id, { salt, passwordHash: hash, mustChangePassword: false });
         await store.revokeAllSessions(a.user.id, a.session.id);
-        await store.audit({ type: 'password_changed', actorId: a.user.id, ip: ipOf(req), action: 'change_password', detail: { otherSessionsRevoked: true } });
+        await store.audit({ type: 'password_changed', actorId: a.user.id, ip: ipOf(req), action: 'change_password', detail: { otherSessionsRevoked: true, temporaryPasswordReplaced: !!a.user.mustChangePassword } });
         return json(res, 200, { ok: true, otherSessionsRevoked: true });
       }
 
@@ -2351,8 +2379,13 @@ export async function createApi(opts) {
         const impl = DISCOVERY_IMPL[adapterId];
         if (!meta || !impl) return err(res, 400, 'adaptador de descoberta desconhecido', { known: Object.keys(DISCOVERY_IMPL) });
         if (meta.needsKey) return err(res, 501, 'este adaptador exige chave e ainda não está implementado');
+        /* `sort=stars` numa consulta com dois tópicos faz o GitHub devolver
+           total_count 0 (medido em 2026-10-22: sem sort → 177 resultados;
+           com sort=stars → 0, HTTP 200). A ordenação é feita aqui, sobre os
+           itens recebidos, em vez de confiar num parâmetro que esvazia a
+           resposta em silêncio. */
         const query = adapterId === 'github_coding_agents'
-          ? '?q=topic:coding-agent+topic:coding-assistant&sort=stars&order=desc&per_page=' + Math.min(100, Math.max(10, Number(body.pageSize) || 40))
+          ? '?q=topic:coding-agent+topic:coding-assistant&per_page=' + Math.min(100, Math.max(10, Number(body.pageSize) || 40))
           : '';
         const url = adapterId === 'github_coding_agents' ? meta.url + query : meta.url;
         const t0 = Date.now();
@@ -2383,6 +2416,11 @@ export async function createApi(opts) {
             note: 'nada foi gravado: uma falha de rede não cria candidatos' });
         }
         const out = impl.parse(payload, { at: new Date().toISOString(), url });
+        if (adapterId === 'github_coding_agents') {
+          /* ordem por estrelas calculada localmente (ver nota acima); o campo
+             usado é o que veio da resposta, nunca um valor estimado */
+          out.entries.sort((a, b) => ((b.repo && Number(b.repo.stars)) || 0) - ((a.repo && Number(a.repo.stars)) || 0));
+        }
         /* catálogo externo pode trazer milhares: entra um lote por execução e o
            que ficou de fora é dito, não escondido */
         const LIMIT = Math.min(200, Math.max(1, Number(body.limit) || 120));
@@ -2404,8 +2442,13 @@ export async function createApi(opts) {
         for (const e of considered) { const c = categoryOf(e); porCategoria[c] = (porCategoria[c] || 0) + 1; }
         await store.audit({ type: 'provider_discovered', actorId: a.user.id, action: 'discover',
           detail: { adapter: adapterId, total: out.total, created, updated, rejected, ms, url, categories: porCategoria } });
+        /* Uma fonte que responde 200 com zero registos NÃO é um resultado: é
+           uma resposta vazia. Fica dita como tal para que ninguém leia «0
+           criadas» como «não há nada lá» — e para que um teste de rede possa
+           ser declarado SKIP em vez de falha do nosso código. */
+        const sourcesEmpty = out.entries.length === 0;
         return json(res, 200, {
-          ok: true, adapter: adapterId, url, httpStatus, ms,
+          ok: true, adapter: adapterId, url, httpStatus, ms, sourcesEmpty,
           total: out.total, considered: considered.length, truncated: Math.max(0, out.entries.length - considered.length),
           created, updated, rejected, rejects,
           categories: porCategoria, feeds: meta.categories,
@@ -2414,7 +2457,9 @@ export async function createApi(opts) {
           freeCount: out.freeCount == null ? null : out.freeCount,
           sample: out.entries.slice(0, 5).map((e) => ({ key: e.key, access: e.access.class, category: categoryOf(e),
             known: accessDetailCoverage(e).known + '/' + accessDetailCoverage(e).total, maintenance: e.maintenanceSignal || null })),
-          note: 'os candidatos entram como DISCOVERED: nada disto prova que o serviço funcione, e o que a fonte não publica fica UNKNOWN'
+          note: sourcesEmpty
+            ? 'a fonte respondeu HTTP ' + httpStatus + ' com zero registos para esta consulta: nada foi gravado e isto não conta como evidência de que o catálogo esteja vazio (pode ser índice externo, limite de utilização ou consulta sem correspondência)'
+            : 'os candidatos entram como DISCOVERED: nada disto prova que o serviço funcione, e o que a fonte não publica fica UNKNOWN'
         });
       }
 
@@ -2995,6 +3040,37 @@ export async function createApi(opts) {
             'relações propostas/verificadas (motor de investigação não implementado nesta fase)',
             'armazenamento em disco (não medido no plano gratuito)'
           ]
+        });
+      }
+
+      /* Criação de contas por um administrador: é o caminho normal quando o
+         registo público está fechado. A palavra-passe temporária é devolvida
+         UMA vez (nunca guardada em claro) e a conta obriga a troca no primeiro
+         acesso — ver mustChangePassword em /api/auth/me. */
+      if (p === '/api/admin/users' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireAdmin(a, res)) return;
+        if (!requireCsrf(req, res, a)) return;
+        const ip = ipOf(req);
+        const body = await readBody(req);
+        const email = String(body.email || '').trim().toLowerCase();
+        if (!emailRe.test(email)) return err(res, 400, 'email inválido');
+        if (store.userByEmail(email)) return err(res, 409, 'não foi possível criar a conta com estes dados');
+        const tempPassword = String(body.password || '') || ('Vn-' + newToken(9).replace(/[^A-Za-z0-9]/g, '').slice(0, 10) + '-' + Math.floor(Math.random() * 9000 + 1000));
+        const problems = passwordProblems(tempPassword);
+        if (problems.length) return err(res, 400, 'palavra-passe fraca: ' + problems.join(', '));
+        const role = body.role === 'ADMIN' ? 'ADMIN' : 'USER';
+        const { salt, hash } = hashPassword(tempPassword);
+        const user = await store.createUser({ email, passwordHash: hash, salt, role, termsAcceptedAt: body.acceptTerms === true ? now() : null });
+        await store.updateUser(user.id, { mustChangePassword: true, createdBy: a.user.id });
+        await store.audit({
+          type: 'admin_user_created', actorId: a.user.id, subjectId: user.id, ip,
+          action: 'create_user', detail: { role, passwordShownOnce: true }
+        });
+        await store.count('users_created_by_admin');
+        return json(res, 201, {
+          ok: true, user: publicUser(store.userById(user.id)), tempPassword,
+          note: 'esta palavra-passe é mostrada uma única vez; não é guardada em claro e a conta tem de a trocar no primeiro acesso'
         });
       }
 

@@ -9,6 +9,7 @@
    · retirar uma relação não a apaga;
    · outra conta não vê nem altera o grafo.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { buildGraph, entityKey, validateRelation, edgeConfidence, RELATION_TYPES, ENTITY_TYPES } from '../server/graph.mjs';

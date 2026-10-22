@@ -1,4 +1,5 @@
 /* Interface de conta: registo, projectos, sessão, administração e chaves de IA. */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';

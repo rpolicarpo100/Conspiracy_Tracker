@@ -13,6 +13,7 @@
       resultado global não finge que passou; se a API responder com 429,
       também não se inventa sucesso.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';

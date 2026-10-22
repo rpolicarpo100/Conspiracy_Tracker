@@ -7,6 +7,7 @@
      · servidor — as rotas reais: `/select`, `/decisions`, `/fallback/plan`,
                  incluindo o caso honesto de catálogo sem prova (não escolhe).
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';

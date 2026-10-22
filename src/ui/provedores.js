@@ -106,6 +106,10 @@
             ? 'Escolhido ' + r.json.chosen.key + ' · nota ' + r.json.chosen.score + '/' + r.json.chosen.band + ' · confiança ' + r.json.confidence
             : 'Não foi escolhido nenhum fornecedor: ' + r.json.noChoiceReason };
         } else S.msg = { text: 'Selecção recusada: ' + reasonOf(r) };
+        /* A decisão aparece já: recarregar o catálogo são duas idas ao servidor
+           e, até elas terminarem, o ecrã mostrava o estado anterior — quem
+           lê não deve ficar à espera para saber que o selector recusou. */
+        paint();
         await load(); paint();
       } }));
       acoes.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnFallbackPlan', text: 'Plano de fallback', onclick: async () => {

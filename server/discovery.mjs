@@ -206,7 +206,11 @@ export function fromGitHubSearch(json, opts) {
   const at = (opts && opts.at) || new Date().toISOString();
   const base = (opts && opts.url) || DISCOVERY_ADAPTERS.github_coding_agents.url;
   const query = (opts && opts.query) || GITHUB_QUERY;
-  const url = base + '?q=' + query + '&sort=stars&order=desc';
+  /* Se o chamador já indica o URL exacto que consultou, é esse que fica na
+     evidência. Reconstruí-lo aqui colava um segundo «?» e, pior, escrevia
+     `sort=stars` num pedido que deixou de o ter (o GitHub devolvia 0
+     resultados com esse parâmetro — ver nota em server/api.mjs). */
+  const url = (opts && opts.url) ? opts.url : base + '?q=' + query;
   const items = (json && Array.isArray(json.items)) ? json.items : [];
   const entries = items.map((r) => {
     const lic = (r.license && (r.license.spdx_id || r.license.name)) || null;

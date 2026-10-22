@@ -9,6 +9,7 @@
      · honestidade — a mesma história dá sempre a mesma fila; a sonda não
                   cria testes nem muda estados; nada é pago automaticamente.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';

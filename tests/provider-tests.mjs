@@ -10,6 +10,7 @@
      · rede      — um fornecedor verdadeiro, níveis 1–2 (sem chave). Se a rede
                    falhar é SKIP com motivo, nunca PASS.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';

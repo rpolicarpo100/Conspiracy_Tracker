@@ -15,6 +15,15 @@ const MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 8);   // por chave
 const WINDOW = 15 * 60 * 1000;
 const REGISTER_MAX = Number(process.env.REGISTER_MAX || 10);        // por IP e por hora
 
+/* O registo público é uma decisão de operação, não um valor por omissão.
+   Fecha-se com a ausência da variável: só abre com REGISTER_OPEN=true
+   escrito de propósito. Lido a cada chamada para que a configuração possa
+   ser verificada sem reiniciar o módulo (e para os testes a poderem ligar). */
+export function registrationOpen() {
+  const v = String(process.env.REGISTER_OPEN == null ? '' : process.env.REGISTER_OPEN).trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes' || v === 'sim';
+}
+
 export function hashPassword(password, salt) {
   const s = salt || crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(String(password), s, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, maxmem: SCRYPT.maxmem }).toString('hex');
@@ -123,7 +132,8 @@ export function createAuth(store, opts) {
 
   return {
     loginLimiter, registerLimiter, issueSession, cookiesFor, currentUser, csrfOk,
-    adminEmail, SESSION_TTL, MAX_ATTEMPTS
+    adminEmail, SESSION_TTL, MAX_ATTEMPTS,
+    get registrationOpen() { return registrationOpen(); }
   };
 }
 
@@ -132,6 +142,7 @@ export function publicUser(u) {
   return {
     id: u.id, email: u.email, role: u.role, status: u.status,
     emailVerified: u.emailVerified, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt,
-    termsAcceptedAt: u.termsAcceptedAt, mfa: !!u.mfa
+    termsAcceptedAt: u.termsAcceptedAt, mfa: !!u.mfa,
+    mustChangePassword: !!u.mustChangePassword
   };
 }

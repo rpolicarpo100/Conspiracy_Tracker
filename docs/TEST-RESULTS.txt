@@ -1232,3 +1232,68 @@ H. O que continua por fazer
    · executar o benchmark contra fornecedores reais — exige uma chave do utilizador (hoje: BLOCKED);
    · o cron só corre depois de CRON_TOKEN estar definido no Render e no GitHub (passo do utilizador);
    · séries temporais e custos agregados por mês (fase 8).
+
+================================================================================
+§43  FASE 8 — AUDITORIA E PRIVACIDADE (22 de outubro de 2026)
+     Ramo `fase8-login-privacidade` · versão 2.0.0-fase8 · 100 rotas
+     Nada desta secção foi publicado em produção. Produção continua em f1536bd.
+================================================================================
+
+A. Ponto de partida auditado
+   / 200 (15 610 B, ~0,24 s ×2) · /health 200 (f1536bd) · /ready 200
+   503 original NÃO reproduzido → causa não provada (PARCIAL; faltam logs do Render)
+   Sonda de 50 rotas sem sessão: 24×401 · 3×200 · 23×404 (método errado na sonda)
+   Análise estática: 100 rotas, 4 sem requireUser e todas legítimas
+   Ver docs/AUDITORIA-2026-10-22.md
+
+B. P0 corrigido — registo público fechado por omissão
+   PASS sem REGISTER_OPEN → /api/meta registration.open:false e registo → 403 REGISTRATION_CLOSED
+   PASS a recusa fica na auditoria (`registration_refused`, motivo `closed`)
+   PASS com REGISTER_OPEN=true → 201 (prova que a variável é a única via de abertura)
+   PASS interface: sem «Criar conta» quando o servidor diz que está fechado
+   PASS 23 suites de teste declaram o opt-in em tests/_env.mjs (nenhum ficheiro de produção o lê)
+
+C. P0 corrigido — primeiro administrador sem credenciais no código
+   PASS tools/create-admin.mjs: papel ADMIN, palavra-passe só como hash scrypt, nada em claro no disco
+   PASS recusa --password (ficaria no histórico da shell) → código 2
+   PASS recusa um segundo administrador sem --force → código 3 com motivo
+   PASS recusa palavra-passe fraca → código 6
+
+D. Registo fechado sem perder a capacidade de dar acesso
+   PASS POST /api/admin/users (admin + CSRF) devolve palavra-passe temporária uma única vez
+   PASS conta com palavra-passe temporária → 403 PASSWORD_CHANGE_REQUIRED em rotas normais
+   PASS após a troca → 200; /api/admin/users com papel USER → 403
+   PASS conta do administrador (criada por create-admin) entra normalmente (mustChangePassword:false)
+
+E. Autenticação e privacidade medidas (tests/auth-privacidade.mjs · 13/13)
+   PASS cookies vn_sid HttpOnly + Secure + SameSite=Lax (vn_csrf sem HttpOnly, por desenho)
+   PASS sem sessão: /api/projects, /api/auth/sessions, /api/admin/users, /api/admin/audit,
+        /api/admin/metrics, /api/provider-os/*, /api/auth/export, /api/provider-os/benchmark/suite → 401
+   PASS logout revoga; cookie anterior → 401; cookie inventado → 401
+   PASS sem CSRF → 403 e nenhum projecto criado (contagem antes = depois)
+   PASS isolamento entre contas: lista sem o projecto alheio, leitura directa 404, eliminação 404
+   PASS limite de tentativas: 401·401·401·401·429·429 (LOGIN_MAX_ATTEMPTS=4), por IP e por conta
+   PASS auditoria com login_failed, login_blocked, admin_user_created, registration_refused
+
+F. P1 corrigido — descoberta no GitHub
+   PASS `sort=stars` numa consulta de dois tópicos devolvia total_count 0 com HTTP 200
+        (medido: 177 sem sort, 0 com sort=stars, 177 com sort=updated)
+        → ordenação calculada localmente; resposta vazia passa a vir marcada e explicada
+   PASS o URL registado na evidência é o que foi realmente pedido (deixou de reconstruir sort=stars)
+
+G. P1 corrigido — decisão do selector
+   PASS o painel repinta imediatamente ao escolher; a recusa do selector é visível sem esperar
+        pelas duas idas ao servidor (era a causa da falha intermitente em tests/provedores-ui.mjs)
+
+H. Suite completa (medida nesta máquina, 22-10-2026)
+   Servidor: 24 suites · 437 verificações · 0 falhas · 4 SKIP de rede externa declarados
+   Interface: 7 suites · 69 verificações · 0 falhas
+   tools/status.mjs --check: 2.0.0-fase8 · esquema v7 · 13 agentes · 100 rotas
+
+I. O que NÃO está feito (e porquê)
+   · disco durável: BLOQUEADO — plano gratuito do Render não tem disco; exige plano pago ou
+     Postgres externo (decisão e credenciais do utilizador);
+   · cron activo: BLOQUEADO — falta CRON_TOKEN no Render e no GitHub;
+   · recuperação de palavra-passe por email: não implementada (exige serviço de envio);
+   · página de login minimalista a substituir a aplicação sem sessão: por fazer;
+   · deployment: NÃO executado — falta autorização; produção continua em f1536bd.

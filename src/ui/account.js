@@ -145,6 +145,21 @@
   }
 
   function paintAuth(root) {
+    /* o registo é uma decisão do servidor: o browser não a presume nem a
+       esconde com um botão que só falharia depois de preencher o formulário */
+    const reg = (S.meta && S.meta.registration) || null;
+    const regAberta = !!(reg && reg.open);
+    if (S.authMode === 'register' && !regAberta) {
+      root.appendChild(el('div', { class: 'warnbox', id: 'registoFechado', style: 'font-size:11px' }, [
+        el('b', { text: 'Registo público fechado. ' }),
+        el('span', { text: (reg && reg.policy) || 'as contas são criadas por um administrador.' }),
+        el('div', { style: 'margin-top:4px;color:var(--muted)', text: 'Peça a um administrador para criar a conta; receberá uma palavra-passe temporária para trocar no primeiro acesso.' })
+      ]));
+      root.appendChild(el('div', { class: 'chips' }, [
+        el('button', { class: 'btn sm', type: 'button', text: 'Voltar à entrada', onclick: () => { S.authMode = 'login'; paint(); } })
+      ]));
+      return;
+    }
     if (S.authMode === 'register') {
       const f = DRAFT.auth;
       root.appendChild(el('p', { text: 'Criar conta. Os dados ficam no servidor da aplicação; a política de privacidade explica o que é guardado e quem pode consultar.' }));
@@ -186,7 +201,9 @@
           await refresh();
         }
       }),
-      el('button', { class: 'btn sm', type: 'button', text: 'Criar conta', onclick: () => { S.authMode = 'register'; paint(); } })
+      regAberta
+        ? el('button', { class: 'btn sm', type: 'button', id: 'btnIrRegisto', text: 'Criar conta', onclick: () => { S.authMode = 'register'; paint(); } })
+        : el('span', { class: 'muted', style: 'font-size:10px;align-self:center', text: 'registo público fechado — a conta é criada por um administrador' })
     ]));
     if (S.mfaChallenge) {
       const g = DRAFT.mfaChallenge || (DRAFT.mfaChallenge = { code: '', recoveryCode: '' });
@@ -343,6 +360,12 @@
   }
 
   function paintAccount(root) {
+    if (S.me && S.me.mustChangePassword) {
+      root.appendChild(el('div', { class: 'warnbox', id: 'trocaObrigatoria', style: 'font-size:11px' }, [
+        el('b', { text: 'Palavra-passe temporária. ' }),
+        el('span', { text: 'Esta conta foi criada por um administrador com uma palavra-passe temporária. Enquanto não a trocar (no formulário «Alterar palavra-passe», abaixo), o servidor recusa todas as outras operações com o código PASSWORD_CHANGE_REQUIRED.' })
+      ]));
+    }
     root.appendChild(el('table', { class: 'listtable' }, [
       el('tbody', {}, [
         ['Email', S.me.email], ['Papel', S.me.role], ['Criada em', S.me.createdAt],

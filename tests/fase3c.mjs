@@ -11,6 +11,7 @@
    · o orçamento de agentes pára antes de executar e diz quando reinicia;
    · outra conta não exporta nem verifica provas alheias.
    ===================================================================== */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import http from 'node:http';
@@ -374,7 +375,7 @@ await t('meta publica a política de verificação de acesso', async () => {
   const r = await A.call('GET', '/api/meta');
   ok(r.json.accessChecks && r.json.accessChecks.states.acessivel === 'acessível', 'estados');
   ok(/sem contornar/.test(r.json.accessChecks.policy), 'política');
-  ok(/^2\.0\.0-fase(3|4|5|6|7)/.test(r.json.version), 'versão: ' + r.json.version);
+  ok(/^2\.0\.0-fase(3|4|5|6|7|8)/.test(r.json.version), 'versão: ' + r.json.version);
 });
 
 srv.kill('SIGKILL');

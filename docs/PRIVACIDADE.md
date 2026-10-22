@@ -123,6 +123,12 @@ Eventos de auditoria efectivamente emitidos pelo servidor: `user_registered`, `l
   todos os pedidos que alteram estado (sem cabeçalho → 403).
 - Limitação de tentativas: 8 falhas por chave/janela no login, 10 registos por IP/hora
   (`tests/server.mjs` verifica 429).
+- Registo público **fechado por omissão**: as contas são criadas por um administrador
+  (`POST /api/admin/users`) ou pelo procedimento local `tools/create-admin.mjs`; cada recusa de
+  registo fica na auditoria (`registration_refused`). O primeiro administrador nunca tem
+  credenciais no código nem no repositório.
+- Palavra-passe temporária: obriga a troca antes de qualquer outra operação
+  (`403 PASSWORD_CHANGE_REQUIRED`), e a troca revoga as outras sessões.
 - Anti-enumeração: email desconhecido e palavra-passe errada devolvem o mesmo 401.
 - Verificação de permissões sempre no servidor; projectos de outro utilizador devolvem 404 sem
   revelar conteúdo.

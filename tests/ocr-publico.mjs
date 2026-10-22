@@ -1,3 +1,4 @@
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 /* Verificação AO VIVO do OCR no serviço público, com conta descartável.
    Uso: node tests/ocr-publico.mjs [URL]
 

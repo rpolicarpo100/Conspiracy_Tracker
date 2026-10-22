@@ -1,5 +1,6 @@
 /* Interface do registo de fontes (fase 3G): catálogo, verificação, classificação,
    decisão, cobertura e histórico de descobertas — tudo a partir do servidor real. */
+import './_env.mjs';   // opt-in explícito: registo aberto só nos testes (ver tests/_env.mjs)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';

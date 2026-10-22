@@ -22,12 +22,21 @@ Repositório: https://github.com/rpolicarpo100/Conspiracy_Tracker
 
 ```bash
 npm install
-APP_SECRET='segredo-com-pelo-menos-24-caracteres' ADMIN_EMAIL='admin@exemplo.pt' \
-DATA_DIR="$PWD/.data" node tools/serve.mjs   # http://localhost:8080
+APP_SECRET='segredo-com-pelo-menos-24-caracteres' DATA_DIR="$PWD/.data" \
+  node tools/create-admin.mjs            # pergunta email e palavra-passe (sem eco)
+APP_SECRET='segredo-com-pelo-menos-24-caracteres' DATA_DIR="$PWD/.data" \
+  node tools/serve.mjs                   # http://localhost:8080
 ```
 
-`APP_SECRET` é obrigatório para guardar chaves de IA (cofre AES-256-GCM); `ADMIN_EMAIL` promove o
-primeiro registo com esse email; `DATA_DIR` guarda o `store.json` fora do código.
+Depois disso a entrada faz-se com essa conta. **O registo público está fechado por omissão**: sem
+`REGISTER_OPEN=true` escrito de propósito, `POST /api/auth/register` responde `403 REGISTRATION_CLOSED`.
+As contas seguintes são criadas por um administrador em `/api/admin/users` (interface «Conta e
+administração»), que devolve uma palavra-passe temporária **uma única vez** e obriga à troca no
+primeiro acesso.
+
+`APP_SECRET` é obrigatório para guardar chaves de IA (cofre AES-256-GCM); `DATA_DIR` guarda o
+`store.json` fora do código. `ADMIN_EMAIL` já não cria administradores por si: com o registo fechado
+não há «primeiro registo» a promover — serve apenas para diagnóstico em `/api/meta`.
 
 Ou, numa sessão Arena, abrir o `index.html` com o servidor de pré-visualização.
 Dependências visuais: Cytoscape.js + fcose (MIT), servidas localmente em `node_modules` — nada de CDN.
@@ -199,8 +208,10 @@ navegador; com sessão, projectos e chaves ficam associados ao utilizador e isol
   «contraditória»; retirar uma prova exige motivo e não apaga o histórico.
 
 Variáveis de ambiente relevantes (nunca com segredos no repositório): `APP_SECRET` (≥24 caracteres,
-obrigatório para guardar chaves), `ADMIN_EMAIL` (promove o primeiro registo com esse email),
-`DATA_DIR` (pasta de dados), `LOGIN_MAX_ATTEMPTS`, `REGISTER_MAX`, `AGENT_BUDGET`, `PORT`.
+obrigatório para guardar chaves), `DATA_DIR` (pasta de dados), `REGISTER_OPEN` (ausente = registo
+fechado; `true` abre-o e tem de ser uma decisão escrita), `ADMIN_EMAIL` (diagnóstico: se ainda não
+existe administrador, `/api/meta` diz que é preciso correr `tools/create-admin.mjs`),
+`LOGIN_MAX_ATTEMPTS`, `REGISTER_MAX`, `AGENT_BUDGET`, `PORT`.
 
 ## Publicar (Render, plano gratuito)
 
@@ -239,8 +250,11 @@ guardar quando falta `APP_SECRET`.
 **Acção necessária do operador**: definir `APP_SECRET` (≥24 caracteres) nas variáveis de ambiente do
 serviço no Render. Sem isso, `/ready` reporta `keyVault.ok:false` e a aplicação devolve
 `503 needsEnv=APP_SECRET` em vez de guardar chaves — é o comportamento correcto, mas as chaves de IA
-ficam indisponíveis. `ADMIN_EMAIL` deve ser definido no painel (nunca no repositório) para haver
-administrador.
+ficam indisponíveis.
+
+O administrador cria-se **no servidor**, não por registo público: `node tools/create-admin.mjs`
+(no Render, pela consola do serviço, com o mesmo `DATA_DIR` do serviço). Nada de credenciais no
+repositório nem em variáveis de ambiente do painel. Ver `docs/AUDITORIA-2026-10-22.md` §4.
 
 ## Limitações
 
