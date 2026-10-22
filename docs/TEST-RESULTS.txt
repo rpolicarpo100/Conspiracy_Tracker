@@ -1615,3 +1615,23 @@ E. O que continua por fazer
    em Conta → Chaves de IA. Sem ela, os sete agentes de IA não correm — e o
    sistema diz isso em vez de fingir. A verificação local e todo o trabalho de
    provas funcionam sem chave nenhuma.
+
+================================================================================
+§52  FASE 10 PUBLICADA (22 de outubro de 2026, 20:5x UTC)
+================================================================================
+   Push `7092430..6e2f618` em main → deploy automático do Render.
+
+   PASS /health → commit 6e2f618 · versão 2.0.0-fase10
+   PASS porta de entrada presente, data-vn-auth=por-autenticar, modo simples
+        não visível antes da sessão (verificado com Chromium sobre a produção)
+   PASS GET /api/search sem sessão → 401
+   PASS nenhum erro de JavaScript na entrada
+   PASS /api/meta → retention.automated:true · registo fechado · 103 rotas
+
+   Capturas (servidor local, mesma versão): docs/shot-38-modo-simples.png
+   (ecrã único de entrada) e docs/shot-39-investigacao.png (investigação com
+   prova, próximo passo, «IA sem chave» declarado e verificação automática).
+
+   ROLLBACK: `git revert 6e2f618 && git push origin main` devolve a fase 9
+   (o modo avançado continua a ser o ecrã inicial e /api/search desaparece).
+   Sem alterações de esquema: nada a desfazer na base.
