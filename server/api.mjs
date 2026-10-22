@@ -867,13 +867,17 @@ export async function createApi(opts) {
         if (store.userByEmail(email)) return err(res, 409, 'não foi possível criar a conta com estes dados');
         const { salt, hash } = hashPassword(body.password);
         const user = await store.createUser({ email, passwordHash: hash, salt, role: 'ADMIN', termsAcceptedAt: now() });
-        await store.updateUser(user.id, { createdBy: 'bootstrap-https' });
+        /* A palavra-passe desta via passa por um canal humano (foi escrita
+           algures). Marcar mustChangePassword obriga a trocá-la no primeiro
+           acesso, para que o que circulou deixe de servir. */
+        await store.updateUser(user.id, { createdBy: 'bootstrap-https', mustChangePassword: body.mustChangePassword === true });
         await store.audit({ type: 'admin_user_created', actorId: user.id, subjectId: user.id, ip,
           action: 'bootstrap_admin', detail: { via: 'POST /api/auth/bootstrap', passwordChosenByOperator: true } });
         const s = await auth.issueSession(user, { ip, ua: req.headers['user-agent'] });
         await store.audit({ type: 'session_created', actorId: user.id, ip, action: 'login_after_bootstrap' });
         return json(res, 201, {
           ok: true, user: publicUser(user), csrf: s.csrf,
+          mustChangePassword: body.mustChangePassword === true,
           note: 'administrador criado; retire ADMIN_BOOTSTRAP_TOKEN do ambiente agora — a rota fica sem efeito assim que existir um administrador, mas o segredo não deve ficar guardado sem uso'
         }, { 'set-cookie': auth.cookiesFor(s.token, s.csrf) });
       }

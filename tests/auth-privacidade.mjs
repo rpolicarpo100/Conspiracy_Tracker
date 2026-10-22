@@ -179,6 +179,34 @@ await t('o arranque do primeiro administrador por HTTPS exige o segredo e fecha-
   return 'sem segredo 503 · segredo errado 401 · primeiro 201 ADMIN · segundo 403';
 });
 
+await t('o arranque pode obrigar a trocar a palavra-passe que circulou por escrito', async () => {
+  /* instância própria: DATA limpa, token próprio */
+  const DATA4 = '/tmp/vn-authpriv-mc-' + crypto.randomBytes(3).toString('hex');
+  fs.mkdirSync(DATA4, { recursive: true });
+  const TOK = 'troca-' + crypto.randomBytes(8).toString('hex');
+  const PORT4 = PORT3 + 60;
+  const srv4 = startServer(DATA4, PORT4, { ADMIN_BOOTSTRAP_TOKEN: TOK });
+  await sleep(1800);
+  const c = client('http://127.0.0.1:' + PORT4);
+  const r = await c.call('/api/auth/bootstrap', {
+    method: 'POST', headers: { 'x-bootstrap-token': TOK },
+    body: { email: 'chefe@troca.test', password: 'PalavraForte123', mustChangePassword: true }
+  });
+  if (r.status !== 201) throw new Error('arranque: HTTP ' + r.status);
+  if (r.json.mustChangePassword !== true) throw new Error('não marcou a troca obrigatória');
+  c.state.csrf = r.json.csrf;
+  const bloqueado = await c.call('/api/admin/users');
+  if (bloqueado.status !== 403 || bloqueado.json.error.code !== 'PASSWORD_CHANGE_REQUIRED') {
+    throw new Error('rota de administração com palavra-passe por trocar: HTTP ' + bloqueado.status);
+  }
+  const troca = await c.call('/api/auth/password', { method: 'POST', body: { current: 'PalavraForte123', next: 'DefinitivaForte-77' } });
+  if (troca.status !== 200) throw new Error('troca: HTTP ' + troca.status + ' ' + troca.text.slice(0, 120));
+  const livre = await c.call('/api/admin/users');
+  if (livre.status !== 200) throw new Error('depois da troca: HTTP ' + livre.status);
+  srv4.child.kill();
+  return 'bootstrap com mustChangePassword → 403 nas restantes rotas → troca → 200';
+});
+
 await t('a recusa de registo fica registada na auditoria', async () => {
   await admin.login(ADMIN_EMAIL, ADMIN_PW);
   const a = await admin.call('/api/admin/audit?limit=200');
