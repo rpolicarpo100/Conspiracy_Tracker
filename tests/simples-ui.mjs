@@ -179,6 +179,21 @@ await t('a pesquisa no meu trabalho encontra a prova e o projecto', async () => 
   return resumo.replace(/\s+/g, ' ').slice(0, 70) + ' · ' + tipos.length + ' itens';
 });
 
+await t('quando alarga a pesquisa, a interface diz que alargou e marca os parciais', async () => {
+  await p.fill('#smBusca', 'Calouste astronomia');
+  await p.evaluate(() => document.getElementById('smProcurar').click());
+  /* o resumo anterior ainda está no ecrã: espera-se pelo texto NOVO */
+  await waitFor(() => {
+    const n = document.getElementById('smResumo');
+    return n && /astronomia/.test(n.textContent);
+  }, null, 15000);
+  const resumo = await texto('#smResumo');
+  if (!/alarguei/.test(resumo)) throw new Error('não declarou o alargamento: ' + resumo.slice(0, 80));
+  const tags = await p.evaluate(() => [...document.querySelectorAll('#smResults .sm-item-tag')].map((n) => n.textContent));
+  if (!tags.some((t) => /parcial/.test(t))) throw new Error('nenhum resultado marcado como parcial');
+  return 'alargamento declarado · ' + tags.filter((t) => /parcial/.test(t)).length + ' parciais';
+});
+
 await t('a pesquisa recusa termos demasiado curtos em vez de devolver tudo', async () => {
   await p.fill('#smBusca', 'a');
   await p.evaluate(() => document.getElementById('smProcurar').click());

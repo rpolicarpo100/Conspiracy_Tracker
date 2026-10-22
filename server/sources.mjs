@@ -188,16 +188,6 @@ export const dedupeKey = (input) => {
 
 /* ---------------- verificação técnica ---------------- */
 
-export const TECHNICAL_CHECKS = [
-  { id: 'exists', label: 'O domínio resolve e responde', weight: 20 },
-  { id: 'tls', label: 'Certificado TLS válido (ou http declarado)', weight: 10 },
-  { id: 'identity', label: 'Domínio corresponde à organização indicada', weight: 15 },
-  { id: 'structured', label: 'Formatos estruturados ou API documentada', weight: 15 },
-  { id: 'searchable', label: 'Pesquisa interna ou paginação', weight: 10 },
-  { id: 'metadata', label: 'Metadados e datas nos documentos', weight: 15 },
-  { id: 'incremental', label: 'Actualização incremental possível', weight: 15 }
-];
-
 /* Converte a observação de `checkAccess` num estado explícito. Nunca diz
    «acessível» quando o que houve foi um bloqueio de protecção. */
 export function stateFromCheck(check) {

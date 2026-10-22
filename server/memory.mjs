@@ -94,4 +94,3 @@ export function memoryToMarkdown(notes, opts) {
   return out.join('\n');
 }
 
-export function newMemoryId() { return 'mem-' + crypto.randomBytes(8).toString('base64url'); }

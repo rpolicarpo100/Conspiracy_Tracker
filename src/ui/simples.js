@@ -169,20 +169,22 @@
     box.appendChild(el('p', { class: 'sm-muted', id: 'smResumo',
       text: total === 0
         ? 'Nada encontrado para «' + j.q + '». ' + (j.projects === 0 ? 'Ainda não tens investigações — cria a primeira acima.' : 'Tenta outra palavra ou cria uma investigação para este tema.')
-        : total + ' resultado(s) para «' + j.q + '» · ' + (j.total || 0) + ' no teu trabalho · ' + publicos.length + ' na base real' }));
+        : total + ' resultado(s) para «' + j.q + '» · ' + (j.total || 0) + ' no teu trabalho · ' + publicos.length + ' na base real' +
+          (j.widened ? ' · não havia resultados com todos os termos, por isso alarguei a qualquer um deles' : '') }));
 
     if ((j.results || []).length) {
       box.appendChild(el('h4', { class: 'sm-h4', text: 'No teu trabalho' }));
       const ul = el('div', { class: 'sm-list' });
-      const nomes = { project: 'Investigação', evidence: 'Prova', claim: 'Conclusão', document: 'Documento', memory: 'Nota' };
+      const nomes = { project: 'Investigação', evidence: 'Prova', claim: 'Conclusão', document: 'Documento',
+        memory: 'Nota', relation: 'Relação', entity: 'Entidade' };
       j.results.forEach((x) => {
         ul.appendChild(el('button', {
           class: 'sm-item', type: 'button', dataset: { tipo: x.type, pid: x.projectId },
           onclick: () => abrirProjecto(x.projectId)
         }, [
-          el('span', { class: 'sm-item-tag', text: nomes[x.type] || x.type }),
+          el('span', { class: 'sm-item-tag', text: (nomes[x.type] || x.type) + (x.parcial ? ' · parcial' : '') }),
           el('span', { class: 'sm-item-title', text: x.projectTitle || '' }),
-          el('span', { class: 'sm-item-excerpt', text: (x.where ? x.where + ': ' : '') + (x.excerpt || '') })
+          el('span', { class: 'sm-item-excerpt', text: (x.where ? x.where + ': ' : '') + (x.excerpt || '') + (x.casados > 1 ? ' · ' + x.casados + ' termos' : '') })
         ]));
       });
       box.appendChild(ul);

@@ -131,7 +131,6 @@ export function createStore(dir) {
   const file = path.join(root, 'db.json');
   let db = EMPTY();
   let loaded = false;
-  let writeChain = Promise.resolve();
 
   /* ---------- integridade, cópias de segurança e bloqueio de instância ----------
 
@@ -347,9 +346,57 @@ export function createStore(dir) {
 
   let lastBackupAt = 0;
   let lastGood = null;            // último estado gravado com sucesso (para desfazer)
-  function persist() {
-    writeChain = writeChain.then(async () => {
-      if (lockState.readOnly) throw new Error('base em modo só-de-leitura: ' + lockState.reason);
+  /* Saúde da escrita. Existe porque uma falha repetida de gravação tem de
+     aparecer em /ready em vez de ficar só no log: um serviço que aceita
+     trabalho e não o consegue guardar não está «pronto». */
+  const saude = { ok: true, falhas: 0, ultimaFalha: null, motivo: null, recuperacoes: 0 };
+
+  /* A pasta de dados pode desaparecer com o processo vivo (disco efémero
+     substituído, limpeza externa). Sem isto, cada gravação falhava com ENOENT
+     para sempre e o estado em memória era revertido a cada tentativa. */
+  async function garantirPasta() {
+    try { await fs.mkdir(root, { recursive: true, mode: 0o700 }); } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+    /* as cópias vivem na própria pasta de dados: recriar a pasta basta */
+  }
+
+  function anotarFalha(e) {
+    saude.ok = false;
+    saude.falhas += 1;
+    saude.ultimaFalha = new Date().toISOString();
+    saude.motivo = String((e && e.message) || e).slice(0, 200);
+  }
+  function anotarSucesso() {
+    if (!saude.ok) console.log('[store] escrita recuperada após ' + saude.falhas + ' falha(s)');
+    saude.ok = true; saude.falhas = 0; saude.motivo = null;
+  }
+
+  /* ---------------------------------------------------------------------
+     COALESCÊNCIA DE ESCRITAS (fase 12)
+
+     O modelo é «um documento JSON»: cada alteração reescreve a base inteira.
+     Uma importação de 5 000 provas fazia 5 000 escritas de um documento cada
+     vez maior — 10× mais lento do que o necessário e, no Postgres, 5 000
+     gravações da base completa.
+
+     Aqui as alterações que chegam juntas (durante uma escrita, ou dentro de
+     uma janela de 20 ms) passam a produzir UMA escrita. A promessa devolvida
+     só resolve quando está no disco uma escrita que inclui essa alteração —
+     a garantia de durabilidade não muda, só o número de escritas.
+     --------------------------------------------------------------------- */
+  /* 0 = escrever já. A coalescência acontece na mesma para pedidos que chegam
+     ENQUANTO uma escrita decorre (é aí que o ganho existe e não custa latência).
+     Um valor >0 junta também pedidos seguidos, à custa de esperar por ele. */
+  const DEBOUNCE_MS = Math.max(0, Number(process.env.STORE_WRITE_DEBOUNCE_MS || 0));
+  let geracao = 0;        // alterações pedidas
+  let gravada = 0;        // alterações já no disco
+  let corrente = null;    // escrita em curso (promessa)
+  let escritas = 0;       // contador para /api/meta e diagnóstico
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function escreverBase() {
+    if (lockState.readOnly) throw new Error('base em modo só-de-leitura: ' + lockState.reason);
       /* A base primeiro: se ela recusar (rede, conflito de versão), nada foi
          gravado e a memória volta ao último estado bom — nunca se anuncia um
          êxito que só existiu no ficheiro local. */
@@ -358,12 +405,24 @@ export function createStore(dir) {
       }
       const data = JSON.stringify(db, null, 1);
       const tmp = file + '.tmp-' + process.pid;
-      const fh = await fs.open(tmp, 'w', 0o600);
-      try {
-        await fh.writeFile(data);
-        await fh.sync();                     // os bytes chegam ao disco antes do rename
-      } finally { await fh.close(); }
-      await fs.rename(tmp, file);
+      /* uma tentativa normal; se a pasta desapareceu, recria-se e repete-se uma
+         vez — sem esconder a recuperação do log */
+      const escrever = async () => {
+        const fh = await fs.open(tmp, 'w', 0o600);
+        try {
+          await fh.writeFile(data);
+          await fh.sync();                   // os bytes chegam ao disco antes do rename
+        } finally { await fh.close(); }
+        await fs.rename(tmp, file);
+      };
+      try { await escrever(); }
+      catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+        await garantirPasta();
+        saude.recuperacoes += 1;
+        console.error('[store] pasta de dados ausente: recriada e escrita repetida (' + e.path + ')');
+        await escrever();
+      }
       try {
         const dh = await fs.open(root, 'r');
         try { await dh.sync(); } finally { await dh.close(); }   // o rename também
@@ -378,7 +437,26 @@ export function createStore(dir) {
         lastBackupAt = Date.now();
         rotateBackups(data);
       }
-    }).catch((e) => {
+      escritas += 1;
+      anotarSucesso();
+  }
+
+  function persist() {
+    const minha = ++geracao;
+    if (!corrente) {
+      corrente = (async () => {
+        try {
+          while (gravada < geracao) {
+            if (DEBOUNCE_MS) await esperar(DEBOUNCE_MS);   // junta o que chegar entretanto
+            const alvo = geracao;
+            await escreverBase();
+            gravada = alvo;
+          }
+        } finally { corrente = null; }
+      })();
+    }
+    return corrente.then(() => undefined, (e) => {
+      anotarFalha(e);
       console.error('[store] falha ao gravar:', e.message);
       /* a memória não pode ficar à frente do disco: desfaz-se a alteração */
       if (lastGood) {
@@ -391,7 +469,6 @@ export function createStore(dir) {
       }
       throw e;
     });
-    return writeChain;
   }
 
   const id = (p) => p + '-' + crypto.randomBytes(9).toString('base64url');
@@ -1094,6 +1171,10 @@ export function createStore(dir) {
       };
     },
     readOnly() { return !!lockState.readOnly; },
+    /* quantas escritas físicas aconteceram (para provar a coalescência) */
+    writeStats() { return { escritas: escritas, geracao: geracao, debounceMs: DEBOUNCE_MS }; },
+    /* saúde da escrita: usada por /ready para não declarar «pronto» o que não grava */
+    storageHealth() { return Object.assign({}, saude); },
     /* Estado da persistência durável: é isto que /ready publica. Nada aqui é
        optimista — 'durable' só é true com gravação confirmada na base. */
     persistence() {
@@ -1121,7 +1202,8 @@ export function createStore(dir) {
     pg: pgStore,
     async close() {
       /* uma base só-de-leitura não tem nada para gravar: fechar não é erro */
-      if (!lockState.readOnly) await writeChain.catch(() => {});
+      /* espera pela escrita em curso, se houver: fechar não pode perder o último lote */
+      if (!lockState.readOnly) { try { await persist(); } catch { /* já registado em saude */ } }
       await pgStore.close();
       releaseLock();
     },

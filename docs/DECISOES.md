@@ -249,3 +249,47 @@ Formato: data · decisão · motivo · o que foi recusado.
     resumo é do autor.
     Motivo: era a única forma de responder «é possível extrair informação do SSRN?» com um sim e um
     não ao mesmo tempo — e ambos verdadeiros.
+
+43. **2026-10-23 · Pesquisa: termos independentes, ordem explicável, alargamento declarado.**
+    A consulta deixa de ser uma cadeia única e passa a ser analisada: termos soltos (E entre eles),
+    `"frases exactas"`, `-exclusões` e prefixo a partir de 3 letras; acentos e caixa indiferentes
+    (dobra 1:1, para o recorte cair exactamente sobre o texto original). Dentro de cada item os
+    campos têm pesos, e a ordem é o número de pontos — que a interface pode mostrar.
+    Motivo: medido em `tools/bench-antigo.mjs`, a substring encontrava **3/23** consultas com o
+    próprio documento no dossiê (**2/19** nas de dois termos). Uma aplicação de investigação onde
+    «financiou 2019» devolve zero não é uma aplicação de investigação.
+
+44. **2026-10-23 · Quando nada casa com todos os termos, alarga-se — e diz-se.**
+    O alargamento a OU só acontece quando o resultado com E é vazio; a resposta leva
+    `widened:true`, os itens levam `parcial:true` e uma frase explica o que se fez. A ordem do
+    alargamento usa a raridade do termo: `clamp(1+ln(total/df),1,4)`, para um código que existe
+    em 2 documentos valer mais do que uma palavra que existe em 50.
+    Motivo: uma lista de ecos apresentada como resposta é pior do que não responder. E a raridade
+    resolveu um erro real de ordenação («banca zq7x9» punha o projecto à frente da prova certa).
+
+45. **2026-10-23 · Palavras vazias fora dos termos soltos, dentro das frases.**
+    `de`, `a`, `o`, `da`, `para`, `que`… não entram como termos independentes (não distinguem nada
+    e fariam casar tudo); dentro de uma `"frase"` continuam a contar, porque aí a ordem é a
+    informação. Uma consulta que só tenha palavras vazias é recusada com `400` e motivo.
+    Motivo: procurar «de a o» e receber o dossiê inteiro é ruído com aparência de resultado.
+
+46. **2026-10-23 · Grafo também é trabalho do utilizador: relações e entidades entram na pesquisa.**
+    Uma relação devolve sempre o par nomeado («A → B») como excerto, mesmo quando o termo casou no
+    tipo de relação («Financiou») — quem lê quer saber quem com quem.
+    Motivo: um resultado que mostra só «Financiou» não diz nada e ocupa o lugar de um que diz.
+
+47. **2026-10-23 · Escrita coalescente e saúde de escrita visível.**
+    `persist()` junta pedidos durante uma escrita em curso; `STORE_WRITE_DEBOUNCE_MS` por omissão
+    **0** (20 ms por lote tornou a criação de corpus 2,4× mais lenta sem ganho: 60 escritas → 9 já
+    acontece sem espera). `/ready` passa a expor `writeOk`, `failedWrites`, `lastWriteError` e
+    `dirRecreations`, e marca `storage.ok:false` quando uma escrita falha. Pasta de dados apagada
+    com o processo vivo é recriada, com uma repetição registada em log.
+    Motivo: «pronto» tem de significar «grava». Dizer `ok` com todas as escritas a falhar por
+    `ENOENT` foi o pior defeito encontrado nesta fase, porque era silencioso.
+
+48. **2026-10-23 · Depois de qualquer patch em `server/api.mjs`, procurar rotas apagadas.**
+    `git diff server/api.mjs | grep '^-'` e verificar se alguma linha removida casa com
+    `p === '/api/...'` ou `p.match(/^\/api\/...`. Substituições de texto já apagaram 53 linhas
+    (incluindo `GET` e `POST /api/sources`) com sintaxe válida e todos os testes de fumo a passar.
+    Motivo: um ficheiro de 4 000 linhas com rotas é precisamente onde uma remoção passa despercebida;
+    o `node --check` não apanha ausência de código.

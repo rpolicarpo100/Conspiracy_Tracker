@@ -16,7 +16,7 @@
    testar as regras de dinheiro e de repetição sem gastar um cêntimo.
    ===================================================================== */
 
-import { TASK_TYPES, EXCLUSION_RULES, scoreCandidate } from './provider-catalog.mjs';
+import { TASK_TYPES, scoreCandidate } from './provider-catalog.mjs';
 import { classifyFailure } from './provider-tests.mjs';
 
 /* ---------- 13 passos (a ordem é a do pedido e não é decorativa) ---------- */

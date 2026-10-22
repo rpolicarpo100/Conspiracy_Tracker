@@ -400,4 +400,3 @@ export function buildGraph({ project, evidence, relations, claims, window: win, 
   };
 }
 
-export function newRelationId() { return 'rel-' + crypto.randomBytes(8).toString('base64url'); }

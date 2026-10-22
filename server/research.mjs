@@ -12,6 +12,7 @@
    · nada aqui escreve provas: a extracção devolve CANDIDATOS que o utilizador
      tem de confirmar (a prova continua a exigir excerto e decisão humana).
    ===================================================================== */
+import { hostOf } from './evidence.mjs';
 import crypto from 'node:crypto';
 
 export const PROMPT_VERSION = 'p1';
@@ -69,9 +70,6 @@ export const canonicalUrl = (raw) => {
   } catch { return s; }
 };
 
-export const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch { return null; } };
-
-export const hashText = (t) => crypto.createHash('sha256').update(String(t || ''), 'utf8').digest('hex');
 
 /* Detecção de conteúdo que tenta dar ordens ao agente (o conteúdo web não é confiável). */
 const INJECTION = [

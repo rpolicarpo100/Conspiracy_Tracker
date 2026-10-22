@@ -6,7 +6,7 @@
    ===================================================================== */
 import crypto from 'node:crypto';
 import { createStore } from './store.mjs';
-import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser, parseCookies } from './auth.mjs';
+import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser } from './auth.mjs';
 import { keyVault } from './crypto-keys.mjs';
 import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, isPrivateHost } from './providers.mjs';
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
@@ -17,22 +17,23 @@ import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_R
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
 import { validateEntityLink } from './graph.mjs';
 import { extrairIdSSRN, lerMetadadosSSRN, sondarBloqueioSSRN, SSRN } from './ssrn.mjs';
+import { PESQUISA, parseQuery, pontuarItem, recorte, ordenar, pesoRaridade } from './search.mjs';
 import { MEMORY_KINDS, MEMORY_LIMITS, validateMemory, memoryToMarkdown } from './memory.mjs';
 import { extractPdfText, PDF_LIMITS } from './pdftext.mjs';
 import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
 import { MFA, newSecret, otpauthUri, verifyTotp, newRecoveryCodes, consumeRecoveryCode, makeAttemptLimiter, maskSecret } from './mfa.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
-import { runProviderTests, TEST_LEVELS, RESULTS as TEST_RESULTS, classifyFailure } from './provider-tests.mjs';
+import { runProviderTests, TEST_LEVELS } from './provider-tests.mjs';
 import {
   ACCESS_CLASSES, PROVIDER_STATES, EVIDENCE_STATUS, KINDS, CATEGORY, DISCOVERY_ADAPTERS,
-  SEED, validateEntry, evidenceSummary, publicEntry, fromOpenRouter, fromHuggingFace,
-  TASK_TYPES, EXCLUSION_RULES, scoreCandidate, bandOf, costOfTask
+  SEED, validateEntry, evidenceSummary, publicEntry,
+  TASK_TYPES, EXCLUSION_RULES, scoreCandidate, costOfTask
 } from './provider-catalog.mjs';
 import {
-  selectProvider, planFallback, runWithFallback, classifyOutcome, SELECTION_STEPS, FALLBACK_DEFAULTS
+  selectProvider, planFallback, runWithFallback, SELECTION_STEPS, FALLBACK_DEFAULTS
 } from './selector.mjs';
 import {
-  REEVAL_POLICY, reevaluationState, planReevaluation, runReevaluation, healthVerdict
+  planReevaluation, runReevaluation, healthVerdict
 } from './scheduler.mjs';
 import {
   BENCHMARK_SUITE, BENCHMARK_VERSION, runBenchmark, compareBenchmarks
@@ -230,15 +231,6 @@ export async function fetchDocument(url) {
 }
 /* Recorte à volta do termo encontrado, com reticências: a pesquisa mostra onde
    casou em vez de despejar o excerto inteiro no ecrã. */
-function recorte(texto, alvoNorm) {
-  const t = String(texto || '');
-  const plano = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const i = plano.indexOf(alvoNorm);
-  if (i < 0) return t.slice(0, 160);
-  const ini = Math.max(0, i - 60), fim = Math.min(t.length, i + alvoNorm.length + 100);
-  return (ini > 0 ? '…' : '') + t.slice(ini, fim).trim() + (fim < t.length ? '…' : '');
-}
-
 export async function createApi(opts) {
   opts = opts || {};
   /* em produção não se passa nada: `fetchDoc` é sempre a recolha real.
@@ -836,10 +828,15 @@ export async function createApi(opts) {
       if (p === '/ready') {
         const integ = typeof store.integrity === 'function' ? store.integrity() : null;
         const readOnly = !!(integ && integ.lock && integ.lock.readOnly);
+        /* a escrita pode falhar sem o modo ser só-de-leitura (disco cheio, pasta
+           removida, permissões): se falhou, /ready não pode dizer «pronto» */
+        const escrita = typeof store.storageHealth === 'function' ? store.storageHealth() : { ok: true, falhas: 0 };
         const checks = {
           storage: {
-            ok: !!store.data && !readOnly, writable: !readOnly,
-            readOnly, reason: readOnly ? integ.lock.reason : null,
+            ok: !!store.data && !readOnly && escrita.ok !== false, writable: !readOnly && escrita.ok !== false,
+            readOnly, reason: readOnly ? integ.lock.reason : (escrita.ok === false ? 'a última gravação falhou: ' + escrita.motivo : null),
+            writeOk: escrita.ok !== false, failedWrites: escrita.falhas || 0,
+            lastWriteError: escrita.motivo || null, dirRecreations: escrita.recuperacoes || 0,
             integrity: integ ? {
               checksumVerified: integ.checksum, backups: integ.backups,
               recoveredFrom: integ.recovery.used ? integ.recovery.used.split('/').pop() : null,
@@ -1801,59 +1798,170 @@ export async function createApi(opts) {
         const soProjecto = String(url.searchParams.get('project') || '').trim();
         const limite = Math.min(60, Math.max(1, Number(url.searchParams.get('limit') || 30)));
         if (q.length < 2) return json(res, 400, { ok: false, error: { code: 400, message: 'escreve pelo menos 2 caracteres' } });
-        const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        const alvo = norm(q);
+        const consulta = parseQuery(q);
+        if (!consulta.valido) return json(res, 400, { ok: false, error: { code: 400, message: 'a consulta não tem termos aproveitáveis (mínimo 2 letras por termo)' } });
         const projectos = store.projectsOf(a.user.id).filter((prj) => !soProjecto || prj.id === soProjecto);
-        const ids = new Set(projectos.map((x) => x.id));
-        const tituloDe = new Map(projectos.map((x) => [x.id, x.title]));
-        const achados = [];
-        const add = (tipo, prj, campo, texto, extra) => {
-          const t = String(texto || '');
-          if (!t || norm(t).indexOf(alvo) < 0) return;
-          achados.push(Object.assign({ type: tipo, projectId: prj.id, projectTitle: prj.title,
-            field: campo, excerpt: recorte(t, alvo) }, extra || {}));
-        };
-        for (const prj of projectos) {
-          add('project', prj, 'pergunta', prj.title, { projectTitle: prj.title, where: 'título' });
-          add('project', prj, 'pergunta', prj.question, { where: 'pergunta' });
-          add('project', prj, 'pergunta', prj.description, { where: 'descrição' });
-          add('project', prj, 'pergunta', prj.objective, { where: 'objectivo' });
-          for (const ev of store.evidenceOf(prj.id)) {
-            if (ev.retractedAt) continue;
-            add('evidence', prj, 'prova', ev.title, { id: ev.id, where: 'título da prova' });
-            add('evidence', prj, 'prova', ev.excerpt, { id: ev.id, where: 'excerto' });
-            add('evidence', prj, 'prova', ev.originalUrl, { id: ev.id, where: 'URL' });
-            add('evidence', prj, 'prova', ev.author, { id: ev.id, where: 'autor' });
+
+        /* Um item por coisa real: a mesma prova não entra duas vezes só porque o
+           termo aparece no título e no excerto. Guarda-se o melhor campo. */
+        function procurar(cons, exigirTodos) {
+          const out = [];
+          const empurrar = (base, pares, peso, forcado) => {
+            const campos = pares.filter(([, texto]) => texto).map(([campo, texto]) => ({ campo, texto }));
+            const r = pontuarItem(campos, cons, peso, { exigirTodos });
+            if (!r) return;
+            /* numa relação, o que interessa é quem com quem: o excerto é sempre
+               o par nomeado, mesmo quando o termo casou só no tipo de relação */
+            const excerpt = (forcado && forcado.excerpt) || recorte(r.texto, r.primeiro);
+            out.push(Object.assign({}, base, {
+              field: r.campo, where: r.campo, excerpt: excerpt, pontos: r.pontos, casados: r.detalhe.length
+            }));
+          };
+          for (const prj of projectos) {
+            const base = { projectId: prj.id, projectTitle: prj.title };
+            empurrar(Object.assign({ type: 'project', id: prj.id, at: prj.createdAt }, base),
+              [['título', prj.title], ['pergunta', prj.question], ['descrição', prj.description], ['objectivo', prj.objective]], PESQUISA.pesos.project);
+            for (const ev of store.evidenceOf(prj.id)) {
+              if (ev.retractedAt) continue;
+              empurrar(Object.assign({ type: 'evidence', id: ev.id, at: ev.createdAt }, base),
+                [['título da prova', ev.title], ['excerto', ev.excerpt], ['URL', ev.originalUrl], ['autor', ev.author]], PESQUISA.pesos.evidence);
+            }
+            for (const c of store.claimsOf(prj.id)) {
+              empurrar(Object.assign({ type: 'claim', id: c.id, state: c.state, at: c.createdAt }, base),
+                [['afirmação', c.text], ['raciocínio', c.reasoning]], PESQUISA.pesos.claim);
+            }
+            for (const n of store.notesOf(prj.id)) {
+              if (n.archivedAt) continue;
+              empurrar(Object.assign({ type: 'memory', id: n.id, state: n.kind, at: n.createdAt }, base),
+                [[n.kind || 'nota', n.text]], PESQUISA.pesos.memory);
+            }
+            for (const d of store.documentsOf(prj.id)) {
+              empurrar(Object.assign({ type: 'document', id: d.id, state: d.reviewed ? 'revisto' : 'por revisar', at: d.addedAt || d.createdAt }, base),
+                [['título do documento', d.title], ['texto extraído', d.text]], PESQUISA.pesos.document);
+            }
+            /* o grafo também é trabalho do utilizador: relações e entidades */
+            const entidades = new Map();
+            for (const rel of store.relationsOf(prj.id)) {
+              if (rel.retractedAt) continue;
+              const etiqueta = (RELATION_TYPES[rel.type] && RELATION_TYPES[rel.type].label) || rel.type;
+              const par = rel.from + ' → ' + rel.to;
+              empurrar(Object.assign({ type: 'relation', id: rel.id, state: rel.validationState || 'sem estado', at: rel.createdAt }, base),
+                [['relação', par], ['tipo de relação', etiqueta], ['fundamento', rel.reasoning]], PESQUISA.pesos.relation,
+                { excerpt: par.slice(0, PESQUISA.janelaRecorte) });
+              [rel.from, rel.to].filter(Boolean).forEach((nome) => entidades.set(nome.toLowerCase(), nome));
+            }
+            for (const nome of entidades.values()) {
+              empurrar(Object.assign({ type: 'entity', id: 'ent:' + nome.toLowerCase(), at: null }, base),
+                [['entidade', nome]], PESQUISA.pesos.entity);
+            }
           }
-          for (const c of store.claimsOf(prj.id)) {
-            add('claim', prj, 'conclusão', c.text, { id: c.id, where: 'afirmação', state: c.state });
-            add('claim', prj, 'conclusão', c.reasoning, { id: c.id, where: 'raciocínio', state: c.state });
-          }
-          for (const n of store.notesOf(prj.id)) {
-            if (n.archivedAt) continue;
-            add('memory', prj, 'memória', n.text, { id: n.id, where: n.kind || 'nota', state: n.kind });
-          }
-          for (const d of store.documentsOf(prj.id)) {
-            add('document', prj, 'documento', d.title, { id: d.id, where: 'título do documento', state: d.reviewed ? 'revisto' : 'por revisar' });
-            add('document', prj, 'documento', d.text, { id: d.id, where: 'texto extraído', state: d.reviewed ? 'revisto' : 'por revisar' });
-          }
+          return out;
         }
-        /* ordem: projectos primeiro (é o que a pessoa procura), depois provas,
-           conclusões, documentos e memória; dentro de cada tipo, pelo mais
-           recente possível. Sem relevância inventada: a única coisa que se
-           calcula é onde está o termo. */
-        const ordem = { project: 0, evidence: 1, claim: 2, document: 3, memory: 4 };
-        achados.sort((x, y) => (ordem[x.type] - ordem[y.type]));
+
+        let itens = procurar(consulta, true);
+        let alargado = false;
+        if (!itens.length && consulta.termos.length > 1) {
+          /* OU declarado: alargar é aceitável, esconder que se alargou não é.
+             A ordem do alargamento usa a raridade do termo (um código único vale
+             mais do que uma palavra que aparece em metade do dossiê) — é a
+             diferença entre encontrar o documento certo e uma lista de ecos. */
+          const porTermo = new Map();
+          for (const termo of consulta.termos) {
+            porTermo.set(termo, procurar(Object.assign({}, consulta, { termos: [termo], frases: [] }), true));
+          }
+          const juntos = new Map();
+          for (const [termo, lista] of porTermo) {
+            for (const it of lista) {
+              const chave = it.type + ':' + it.id;
+              const existente = juntos.get(chave);
+              if (existente) {
+                existente.termos.push(termo);
+                existente.pontos = Math.max(existente.pontos, it.pontos);
+              } else {
+                juntos.set(chave, Object.assign({}, it, { termos: [termo] }));
+              }
+            }
+          }
+          const n = juntos.size;
+          for (const it of juntos.values()) {
+            const peso = it.termos.reduce((soma, t) => soma + pesoRaridade((porTermo.get(t) || []).length, n), 0) / it.termos.length;
+            it.pontos = Math.round(it.pontos * peso);
+            it.parcial = true;
+            it.casados = it.termos.length;
+          }
+          itens = Array.from(juntos.values());
+          alargado = itens.length > 0;
+        }
+
+        const resultados = ordenar(itens);
         const porTipo = {};
-        achados.forEach((x) => { porTipo[x.type] = (porTipo[x.type] || 0) + 1; });
+        resultados.forEach((x) => { porTipo[x.type] = (porTipo[x.type] || 0) + 1; });
         return json(res, 200, {
           ok: true, q, scope: soProjecto || 'todos os meus projectos',
-          total: achados.length, counts: porTipo,
-          projects: projectos.length,
-          results: achados.slice(0, limite),
+          total: resultados.length, counts: porTipo, projects: projectos.length,
+          query: { termos: consulta.termos, frases: consulta.termosPorFrase, excluidos: consulta.negativos },
+          widened: alargado,
+          results: resultados.slice(0, limite),
           note: projectos.length === 0
             ? 'ainda não tens investigações: a pesquisa só encontra o que existe'
-            : 'procura no teu próprio trabalho (projectos, provas, conclusões, documentos, memória); não inclui projectos de outras pessoas'
+            : alargado
+              ? 'não havia resultados com todos os termos: alarguei a pesquisa a qualquer um deles (marcados como parciais)'
+              : 'procura no teu próprio trabalho (projectos, provas, conclusões, documentos, relações, entidades, memória); não inclui projectos de outras pessoas'
+        });
+      }
+
+      /* ---- SSRN: metadados reais por Crossref; texto completo declarado inacessível ---- */
+      if (p.match(/^\/api\/ssrn\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!ssrnLimiter.allowed(a.user.id)) return err(res, 429, 'demasiados pedidos ao SSRN nesta hora (limite de cortesia do Crossref)');
+        const entrada = decodeURIComponent(p.split('/')[3]);
+        const id = extrairIdSSRN(entrada);
+        if (!id.ok) return err(res, 400, id.reason);
+        const meta = await lerMetadadosSSRN(id.id);
+        if (!meta.ok) return err(res, 502, 'não foi possível ler os metadados: ' + meta.reason, { fonte: 'Crossref', id: id.id });
+        const comSonda = String(req.url || '').indexOf('sonda=1') >= 0;
+        const sonda = comSonda ? await sondarBloqueioSSRN(id.id) : null;
+        return json(res, 200, {
+          ok: true, ssrn: meta, sonda,
+          medido: SSRN.bloqueioMedido,
+          nota: 'metadados via Crossref (o SSRN deposita lá a ficha). O texto completo NÃO é acessível: a página e o PDF devolvem 403 e não se contorna. O resumo do autor não é o artigo.'
+        });
+      }
+
+      if (p.match(/^\/api\/ssrn\/[^/]+\/import$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!ssrnLimiter.allowed(a.user.id)) return err(res, 429, 'demasiados pedidos ao SSRN nesta hora');
+        const body = await readBody(req);
+        const id = extrairIdSSRN(decodeURIComponent(p.split('/')[3]));
+        if (!id.ok) return err(res, 400, id.reason);
+        const categoria = String(body.category || 'universidades');
+        if (!SOURCE_CATEGORIES[categoria]) return err(res, 400, 'categoria desconhecida (ver /api/sources/meta)');
+        const meta = await lerMetadadosSSRN(id.id);
+        if (!meta.ok) return err(res, 502, 'não foi possível ler os metadados: ' + meta.reason);
+        const url = 'https://doi.org/' + meta.doi;
+        const key = sourceDedupeKey(url);
+        const existente = store.sourceByKey(key);
+        if (existente) {
+          return json(res, 409, { ok: false, error: 'esta fonte já está registada', existing: { id: existente.id, name: existente.name, state: existente.state }, nota: 'duplicados não entram no catálogo' });
+        }
+        const src = await store.createSource({
+          name: String(meta.titulo || ('SSRN ' + id.id)).slice(0, 200),
+          url: new URL(url).toString(), canonicalUrl: canonicalUrl(url), dedupeKey: key,
+          domain: 'doi.org', category: categoria,
+          institution: meta.editora ? String(meta.editora).slice(0, 200) : null,
+          notes: ('Autores: ' + (meta.autores.map((x) => x.nome).join(', ') || 'não declarados') +
+            '. Data: ' + (meta.data || 'não declarada') + '. DOI: ' + meta.doi +
+            '. Texto completo NÃO acessível (SSRN devolve 403; não se contorna). ' +
+            (meta.resumo ? 'Resumo do autor (Crossref): ' + meta.resumo.slice(0, 900) : 'Sem resumo publicado.')).slice(0, 2000),
+          discoveredVia: { adapter: 'ssrn-crossref', ssrnId: id.id, doi: meta.doi, by: a.user.id, at: new Date().toISOString() },
+          state: 'DISCOVERED'
+        }, a.user.id);
+        await store.audit({ type: 'source_discovered', actorId: a.user.id, ip: ipOf(req), subjectId: src.id,
+          action: 'source_create', detail: { url: src.canonicalUrl, category: categoria, via: 'ssrn-crossref' } });
+        return json(res, 201, {
+          ok: true, source: src, metadados: { titulo: meta.titulo, autores: meta.autores, data: meta.data, doi: meta.doi, resumo: meta.resumo },
+          nota: 'registada como DISCOVERED com metadados do Crossref. O texto completo não foi obtido — a ficha diz isso e não finge o contrário.'
         });
       }
 

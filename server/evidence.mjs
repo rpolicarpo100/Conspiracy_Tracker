@@ -37,7 +37,6 @@ export const STATE_LABEL = {
 export const SOURCE_TYPES = ['primaria', 'secundaria', 'reproducao', 'comunicado', 'base-de-dados', 'documento-oficial'];
 export const STANCES = ['favoravel', 'contraria', 'neutra'];
 export const EXTRACTION = ['manual', 'http', 'pdf', 'api', 'ocr'];
-export const CLAIM_KINDS = ['facto', 'alegacao', 'hipotese', 'inferencia'];
 
 /* Uma entidade pode vir como texto ou como objecto. Sem desambiguador, não há
    fusão de homónimos — o tipo é validado contra a lista fechada do grafo. */
@@ -244,5 +243,3 @@ function isoOrNull(v, field, errors) {
   return d.toISOString();
 }
 
-export function newEvidenceId() { return 'ev-' + crypto.randomBytes(8).toString('base64url'); }
-export function newClaimId() { return 'cl-' + crypto.randomBytes(8).toString('base64url'); }

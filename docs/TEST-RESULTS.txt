@@ -1773,3 +1773,105 @@ E. O que continua por fazer
 
    ROLLBACK: `git revert 1bf8135 && git push origin main` (ou o commit seguinte).
    Sem alterações de esquema: nada a desfazer na base de dados.
+
+§54  FASE 12 — PESQUISA REAL, PERSISTÊNCIA HONESTA E CÓDIGO MORTO (23 de outubro de 2026)
+--------------------------------------------------------------------------------
+   Objectivo: a pesquisa dentro do trabalho do utilizador era uma comparação
+   de substring da consulta inteira. «financiou 2019» dava ZERO mesmo com a
+   prova certa no dossiê. Isto não é uma limitação de escala: é a diferença
+   entre uma aplicação que serve para investigar e uma que só arquiva.
+
+§54.1  O D E F E I T O ,  M E D I D O  (tools/bench-antigo.mjs)
+   Mesmo texto, mesma consulta, os dois motores — 320 documentos, 23 consultas:
+   PASS motor antigo (substring da consulta inteira): 3/23 consultas encontram
+        o próprio documento
+   PASS consultas com 2 ou mais termos: antigo 2/19 · novo 19/19
+        (ex.: «financiou 2019», «banco portugal», «ministério saúde» davam ZERO
+         com a prova certa no dossiê; «ajuste directo» e «transferiu verbas»
+         sobreviviam por estarem seguidas no texto)
+   PASS motor novo: 23/23 · 0 falhas
+   O corpus é sintético e declarado: 6 textos de família replicados em 320
+   documentos. Isto mede o MOTOR — não é, nem se apresenta como, resultado de
+   investigação. A bancada de ponta-a-ponta é tools/bench-search.mjs (alvo no
+   topo-5, latência, coerência do recorte, ids únicos ZQ<i>X<j>).
+
+§54.2  O  Q U E  F O I  F E I T O  (server/search.mjs, 218 linhas, módulo próprio)
+   · fold() 1:1 — cada acentuado vira um ASCII SEM mudar o comprimento: é isso
+     que permite usar o índice da dobra para recortar o texto original sem
+     deslizar uma letra por acento (a causa dos recortes errados);
+   · tokens() com posições reais no original;
+   · parseQuery() — termos independentes (E), "frases exactas", -exclusão,
+     prefixo a partir de 3 letras, palavras vazias fora dos termos soltos
+     (dentro de uma "frase" continuam a contar, porque aí a ordem importa);
+   · pontuarTexto()/pontuarItem() — 3 = palavra inteira, 2 = prefixo,
+     1 = dentro de palavra; campo com peso e razão de pontos explicável;
+   · pesoRaridade(df,total) = clamp(1+ln(total/df), 1, 4) — usado no
+     alargamento OU: um termo que aparece em 2 documentos vale mais do que um
+     que aparece em 50. Sem isto, «banca zq7x9» punha o projecto à frente da
+     prova certa;
+   · o grafo entra na pesquisa: relações (par «A → B», tipo e fundamento) e
+     entidades derivadas das relações;
+   · o alargamento a OU é DECLARADO (widened:true, resultados com parcial:true,
+     nota escrita) — alargar é aceitável, esconder que se alargou não é.
+
+§54.3  P E R S I S T Ê N C I A  (server/store.mjs)
+   Defeito 1: pasta de dados apagada com o processo vivo → todas as escritas
+   falhavam para sempre com ENOENT, sem sinal nenhum.
+   PASS garantirPasta() + repetição única no bloco de escrita → log
+        «[store] pasta de dados ausente: recriada e escrita repetida»,
+        POST /api/projects 201 na escrita seguinte, /ready dirRecreations:1
+   Defeito 2: /ready dizia ok mesmo com escritas a falhar.
+   PASS /ready passa a expor writeOk · failedWrites · lastWriteError ·
+        dirRecreations e marca storage.ok=false quando a escrita falha
+   PASS coalescência: 60 alterações concorrentes → 9 escritas físicas em
+        150 ms, todas as 60 provas no disco (antes: 60 escritas)
+   NOTA: STORE_WRITE_DEBOUNCE_MS por omissão 0 — 20 ms por lote tornou a
+        criação do corpus 2,4× mais lenta (11 047 → 26 278 ms) sem ganho.
+
+§54.4  A  R E G R E S S Ã O  Q U E  A  S  F O N T E S  A P A N H A R A M
+   tests/fontes.mjs rebentava em json.items[0]. Causa: um patch anterior por
+   substituição de texto na rota /api/search apagou 53 linhas, incluindo
+   GET e POST /api/sources → todos os pedidos davam 404. Sintaxe válida, por
+   isso nenhum node --check avisou.
+   PASS bloco de 8 103 bytes recuperado de `git show HEAD:server/api.mjs` e
+        reinserido antes de p.match(/^\/api\/sources\/[^/]+$/)
+   REGRA NOVA (em docs/DECISOES.md): depois de cada patch em server/api.mjs,
+        `git diff server/api.mjs | grep '^-'` e procurar `p === '/api/...'`.
+
+§54.5  L I M P E Z A  D E  C Ó D I G O  M O R T O
+   10 importações nunca usadas removidas de server/api.mjs e 1 de
+   server/selector.mjs; 5 exportações sem um único consumidor removidas
+   (CLAIM_KINDS, newEvidenceId, newClaimId, newRelationId, newMemoryId,
+   hashText, TECHNICAL_CHECKS); hostOf duplicado passou a ter uma só
+   implementação (server/evidence.mjs, importado por research.mjs).
+   PASS node tools/analisa-codigo.mjs → 0 importações não usadas · 0 TODO
+
+§54.6  S U Í T E  C O M P L E T A
+   PASS npm test (28 suites, 503 linhas PASS, 0 falhas)
+   PASS npm run test:ui (9 suites: 10/10 · 5/5 · 7/7 · 18/18 · 6/6 · 10/10 ·
+        12/12 · 16/16 · 15/15)
+   PASS tests/simples-ui.mjs (15/15, +1): quando a pesquisa alarga, o resumo
+        diz «alarguei a qualquer um deles» e os itens levam a marca «parcial»
+   PASS tests/pesquisa-servidor.mjs (NOVO, 18/18, entra no npm test):
+        módulo (dobra 1:1, tokens, consulta, pontuação, raridade, recorte) e
+        rota (E, acentos, frase, exclusão, ordem explicável, sem duplicados,
+        grafo, alargamento declarado, 400 com motivo, isolamento entre contas,
+        401 sem sessão, latência com 503 provas: pior caso 15 ms)
+   PASS tools/bench-search.mjs --projectos=8 --provas=40 → 40/40 no topo-5,
+        7 ms de latência média, recortes coerentes 120/120, «documento»
+        p50 6 ms / máx 14 ms
+   PASS tools/bench-search.mjs --projectos=10 --provas=50 (500 provas,
+        corpus 11 s) → 60/60, 9 ms, recortes 120/120
+   PASS tools/status.mjs --check → 2.0.0-fase11 · esquema v7 · 13 agentes ·
+        107 rotas
+   NOTA: --projectos=20 --provas=250 não termina em 10 min (criação do corpus
+        quadrática). Limite prático documentado: ≤10 projectos.
+
+§54.7  I A  S E M  C H A V E  —  P R O V A D E  Q U E  F U N C I O N A
+   PASS VN_KEYLESS_REAL=1 tests/ia-fornecedores.mjs → «o fornecedor sem chave
+        responde de facto»: 478 ms, resposta real, HTTP 200
+   O catálogo no Render (render.yaml) já declara AI_KEY_* para 11 fornecedores
+   com sync:false — o valor é colado no painel, nunca no repositório. Com zero
+   chaves a aplicação analisa documentos através do fornecedor público
+   (Pollinations). Sem chave nenhuma NÃO fica inutilizável: fica mais lenta e
+   partilhada.
