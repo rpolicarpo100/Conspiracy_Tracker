@@ -1729,3 +1729,47 @@ E. O que continua por fazer
    ROLLBACK (se for preciso, depois do push):
      git revert 8280e48 && git push origin main
    Sem alterações de esquema: nada a desfazer na base de dados.
+
+--------------------------------------------------------------------------------
+§53.2  FASE 11 PUBLICADA — PUSH E DEPLOY FEITOS (22 de outubro de 2026, 21:5x UTC)
+--------------------------------------------------------------------------------
+   O §53.1 registou o bloqueio: `git remote -v` vazio e nenhum token no
+   ambiente. O bloqueio era só o REMOTO: a chave SSH de deploy já existia em
+   ~/.ssh/meridiano_deploy (modo 644, o que faz o ssh recusar a chave).
+   Corrigido com `chmod 600` e `git remote add origin
+   git@github.com:rpolicarpo100/Conspiracy_Tracker.git`.
+
+   PASS ssh -T git@github.com → «Hi rpolicarpo100/Conspiracy_Tracker!»
+   PASS git push origin main → ef3dfdd..1bf8135  main -> main
+   PASS Render reconstruiu sozinho em ~50 s (sem tocar no painel)
+
+   VERIFICAÇÃO EM PRODUÇÃO (só o que se pode provar sem a palavra-passe do dono)
+   PASS /health → commit 1bf81358e3e151d13649da9105ecef53473e7191
+        · versão 2.0.0-fase11 · uptime de instância nova
+   PASS /ready → ready · storage ok e gravável · base carregada do Postgres
+        (versão 745)
+   PASS /api/meta → 2.0.0-fase11 · retention.automated:true · registration.open:false
+        · keyVault.enabled:true · 13 fornecedores publicados, incluindo
+        pollinations com keyless:true
+   PASS GET /api/ssrn/4461514 sem sessão → 401 (em ef3dfdd era 404: a rota existe)
+   PASS GET /api/providers · /api/search · /api/projects sem sessão → 401
+   PASS ficheiros servidos já são os novos: src/ui/fontes.js (23 220 B, 3
+        ocorrências de ssrnBox), src/ui/account.js (105 833 B, painel do
+        operador), src/ui/simples.js (36 500 B, estado da IA)
+   PASS Chromium sobre a produção: só #vnGate visível antes da sessão,
+        0 erros de JavaScript · docs/shot-40-fase11-producao.png
+
+   NÃO VERIFICADO (falta acesso)
+   · painéis autenticados em produção (*Conta → Chaves de IA*, caixa SSRN em
+     *Fontes*): exigem a palavra-passe do dono, que não tenho. Foi verificado o
+     mesmo código nos testes de interface locais (98 testes, 0 falhas) e a
+     presença dos ficheiros servidos em produção.
+
+   PENDENTE, DA TUA PARTE (1 minuto, no painel do Render)
+   Render → Environment → colar AI_KEY_<FORNECEDOR> (lista e links em
+   docs/IA-FORNECEDORES.md). Sem chave nenhuma, a aplicação usa o fornecedor
+   público sem chave e a barra diz «IA sem chave» — funciona, mas é mais lento
+   (1 pedido/30 s por IP, partilhado pelo IP do servidor).
+
+   ROLLBACK: `git revert 1bf8135 && git push origin main` (ou o commit seguinte).
+   Sem alterações de esquema: nada a desfazer na base de dados.
