@@ -224,8 +224,30 @@ await t('real · o fornecedor sem chave responde de facto (opt-in VN_KEYLESS_REA
 });
 
 repor();
+await t('diagnóstico público · /api/ai/estado diz o modo sem revelar chaves', async () => {
+  delete process.env.AI_KEYLESS_FALLBACK;
+  const r = await fetch(BASE + '/api/ai/estado');
+  ok(r.status === 200, 'HTTP ' + r.status);
+  const j = await r.json();
+  ok(j.modo === 'sem-chave', 'modo: ' + j.modo);
+  ok(j.fornecedor === 'pollinations' && j.semChave === true, 'fornecedor: ' + j.fornecedor);
+  const corpo = JSON.stringify(j);
+  ok(!/sk-|AIza|gsk_|hf_/.test(corpo), 'o corpo parece conter uma chave: ' + corpo);
+  ok(!('providers' in j) && !('apiKey' in j), 'expõe a lista interna de chaves');
+  process.env.AI_KEY_GROQ = 'SUBSTITUIR-no-painel';
+  const r2 = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(r2.chavesDoOperador === 0, 'um marcador contou como chave: ' + r2.chavesDoOperador);
+  delete process.env.AI_KEY_GROQ;
+  process.env.AI_KEYLESS_FALLBACK = 'false';
+  const r3 = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(r3.modo === 'nenhum' && /sem IA/.test(r3.aviso || ''), 'modo desligado: ' + JSON.stringify(r3));
+  delete process.env.AI_KEYLESS_FALLBACK;
+  return 'sem-chave → marcador não conta → nenhum, sem valores no corpo';
+});
+
 srv.close();
 fs.rmSync(DIR, { recursive: true, force: true });
+
 
 let pass = 0, fail = 0, skipped = 0;
 console.log('FORNECEDORES DE IA — CHAVES DO OPERADOR E SEM CHAVE (FASE 11)\n');

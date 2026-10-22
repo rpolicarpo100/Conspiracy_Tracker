@@ -874,6 +874,30 @@ export async function createApi(opts) {
         });
       }
 
+      /* ---------- estado da IA (público, sem valores) ----------
+         Existe por uma razão prática: quem opera a instância tem de poder saber,
+         sem entrar na conta e sem abrir o painel do Render, se a aplicação tem IA
+         e por que via. Devolve só o modo, o fornecedor e o modelo — nunca a chave,
+         nem a lista de nomes de chaves configuradas. */
+      if (p === '/api/ai/estado' && method === 'GET') {
+        const e = estadoChavesOperador();
+        const modo = !e.activo ? 'nenhum' : (e.activo.keyless ? 'sem-chave' : 'operador');
+        const comChave = Object.values(e.providers).filter((x) => x.estado === 'ok').length;
+        return json(res, 200, {
+          ok: true, modo: modo,
+          fornecedor: e.activo ? e.activo.provider : null,
+          modelo: e.activo ? e.activo.modelo : null,
+          semChave: modo === 'sem-chave',
+          chavesDoOperador: comChave,
+          cofrePorUtilizador: vault.enabled,
+          aviso: modo === 'nenhum'
+            ? 'sem IA: nenhuma chave de operador e fornecedor sem chave desligado (AI_KEYLESS_FALLBACK=false)'
+            : (modo === 'sem-chave'
+              ? 'IA pelo fornecedor público sem chave: mais lenta e partilhada; uma chave gratuita em Chaves de IA resolve'
+              : null)
+        });
+      }
+
       /* ---------- meta ---------- */
       if (p === '/api/meta') {
         return json(res, 200, {

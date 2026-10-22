@@ -42,6 +42,24 @@ sem que a aplicação envie uma chave falsa para o fornecedor. O painel
 *Conta → Chaves de IA* mostra o estado de cada uma: `configurada`, `por preencher`
 ou `ausente`. **O valor nunca é mostrado**, nem a administradores.
 
+### Saber se a instância tem IA, sem entrar na conta
+
+`GET /api/ai/estado` (público) responde em três palavras: `modo`
+(`operador` · `sem-chave` · `nenhum`), o `fornecedor` e o `modelo` que seriam
+usados, e quantas chaves de operador estão preenchidas. **Não devolve valores
+nem a lista de nomes configurados** — só o que é preciso para responder a
+«a aplicação tem IA neste momento?». Exemplo:
+
+```bash
+curl -s https://conspiracy-aitracker.onrender.com/api/ai/estado
+{"ok":true,"modo":"sem-chave","fornecedor":"pollinations","modelo":"openai",
+ "semChave":true,"chavesDoOperador":0,"cofrePorUtilizador":true,
+ "aviso":"IA pelo fornecedor público sem chave: mais lenta e partilhada; ..."}
+```
+
+`modo:"nenhum"` é o único caso em que a análise por IA não corre de todo — e
+acontece só quando não há chave nenhuma **e** `AI_KEYLESS_FALLBACK=false`.
+
 ### Chave do utilizador vs. chave do operador
 
 | | onde fica | quem paga | quando é usada |

@@ -293,3 +293,11 @@ Formato: data · decisão · motivo · o que foi recusado.
     (incluindo `GET` e `POST /api/sources`) com sintaxe válida e todos os testes de fumo a passar.
     Motivo: um ficheiro de 4 000 linhas com rotas é precisamente onde uma remoção passa despercebida;
     o `node --check` não apanha ausência de código.
+
+49. **2026-10-23 · Diagnóstico de IA público — modo sim, chaves não.**
+    `GET /api/ai/estado` é público e devolve `modo`, `fornecedor`, `modelo`,
+    número de chaves preenchidas e um aviso quando se está no fornecedor sem chave. Não devolve
+    valores, nem a lista de nomes preenchidos, nem sequer quantas faltam.
+    Motivo: a pergunta «a instância em produção tem IA?» tinha de se responder sem a palavra-passe
+    do dono e sem abrir o painel do Render — e sem transformar um endpoint público num inventário
+    de infraestrutura. Há teste que verifica que o corpo não contém chaves.
