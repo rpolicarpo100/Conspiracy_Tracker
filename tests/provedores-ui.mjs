@@ -49,6 +49,13 @@ await p.evaluate((mail) => fetch('api/auth/login', {
 }).then((r) => r.json()), email);
 await p.reload({ waitUntil: 'networkidle' });
 await p.waitForTimeout(900);
+/* a aplicação abre no modo simples (fase 10); esta suite testa a vista
+   completa, por isso escolhe-a — como qualquer pessoa faria na barra */
+await p.evaluate(() => {
+  try { localStorage.setItem('vn.vista', 'avancada'); } catch (e) { /* sem armazenamento */ }
+  if (window.VN && window.VN.simples) VN.simples.mostrarVista('avancada');
+});
+await p.waitForTimeout(400);
 await p.click('#btnConsole');
 await p.waitForTimeout(500);
 await p.evaluate(() => [...document.querySelectorAll('.chips .btn')].find((b) => b.textContent.trim() === 'Fornecedores de IA').click());

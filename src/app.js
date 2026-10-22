@@ -621,6 +621,11 @@
       boot();
       const rotulo = document.getElementById('accLabel');
       if (rotulo) rotulo.textContent = me.email.split('@')[0];
+      /* Modo simples: a primeira coisa que se vê é uma pergunta e uma caixa de
+         pesquisa, não o mapa. A vista completa continua a um clique. */
+      if (VN.simples && typeof VN.simples.iniciar === 'function') {
+        VN.simples.iniciar().catch((e) => console.error('modo simples:', e));
+      }
       /* um 401 a meio do uso (sessão expirada noutro lado) devolve o
          utilizador à porta de entrada em vez de deixar o ecrã a mentir */
       if (VN.gate && typeof VN.gate.expirou === 'function') {

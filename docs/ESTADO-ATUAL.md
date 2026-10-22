@@ -12,12 +12,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase9**
+- versão da aplicação: **2.0.0-fase10**
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 102
-- ficheiros de teste: 47 · blocos de teste declarados (`await t`): 528 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 103
+- ficheiros de teste: 48 · blocos de teste declarados (`await t`): 542 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -69,11 +69,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/shot-search.mjs` | 0 | interface (Playwright) |
 | `tests/shots.mjs` | 0 | interface (Playwright) |
 | `tests/shots2.mjs` | 0 | interface (Playwright) |
+| `tests/simples-ui.mjs` | 14 | interface (Playwright) |
 | `tests/smoke.mjs` | 0 | interface (Playwright) |
 
 ### Registo
 
-- último commit: 8ac3d2f fase 9 em produção: porta de entrada obrigatória e retenção automática
+- último commit: 7092430 testes: a versão verifica o formato, não o número da fase
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 29 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md)

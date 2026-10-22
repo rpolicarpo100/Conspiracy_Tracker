@@ -50,7 +50,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase9';
+const APP_VERSION = '2.0.0-fase10';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -227,6 +227,17 @@ export async function fetchDocument(url) {
     return { ok: false, error: aborted ? 'tempo limite excedido (20 s)' : String(e.message || e).slice(0, 160) };
   } finally { clearTimeout(timer); }
 }
+/* Recorte à volta do termo encontrado, com reticências: a pesquisa mostra onde
+   casou em vez de despejar o excerto inteiro no ecrã. */
+function recorte(texto, alvoNorm) {
+  const t = String(texto || '');
+  const plano = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const i = plano.indexOf(alvoNorm);
+  if (i < 0) return t.slice(0, 160);
+  const ini = Math.max(0, i - 60), fim = Math.min(t.length, i + alvoNorm.length + 100);
+  return (ini > 0 ? '…' : '') + t.slice(ini, fim).trim() + (fim < t.length ? '…' : '');
+}
+
 export async function createApi(opts) {
   opts = opts || {};
   /* em produção não se passa nada: `fetchDoc` é sempre a recolha real.
@@ -1665,6 +1676,77 @@ export async function createApi(opts) {
             id: ad.id, label: ad.label, category: ad.category, jurisdiction: ad.jurisdiction,
             method: ad.method, limits: ad.limits, licence: ad.licence, version: ad.version
           }))
+        });
+      }
+
+      /* ---------- pesquisa do utilizador (fase 10) ----------
+         Porque existe: a pesquisa da interface só cobria o conjunto público
+         carregado no browser; os projectos, provas, conclusões e documentos
+         DO UTILIZADOR não eram pesquisáveis em lado nenhum. Esta rota procura
+         exactamente onde o trabalho dele está, no servidor, sempre limitada
+         ao que é dele (ou a todos, se for ADMIN com motivo escrito — e o
+         acesso fica na auditoria).
+         Não devolve texto de outro utilizador: os projectos alheios não
+         entram na lista, nem como sugestão. */
+      if (p === '/api/search' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const q = String(url.searchParams.get('q') || '').trim();
+        const soProjecto = String(url.searchParams.get('project') || '').trim();
+        const limite = Math.min(60, Math.max(1, Number(url.searchParams.get('limit') || 30)));
+        if (q.length < 2) return json(res, 400, { ok: false, error: { code: 400, message: 'escreve pelo menos 2 caracteres' } });
+        const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const alvo = norm(q);
+        const projectos = store.projectsOf(a.user.id).filter((prj) => !soProjecto || prj.id === soProjecto);
+        const ids = new Set(projectos.map((x) => x.id));
+        const tituloDe = new Map(projectos.map((x) => [x.id, x.title]));
+        const achados = [];
+        const add = (tipo, prj, campo, texto, extra) => {
+          const t = String(texto || '');
+          if (!t || norm(t).indexOf(alvo) < 0) return;
+          achados.push(Object.assign({ type: tipo, projectId: prj.id, projectTitle: prj.title,
+            field: campo, excerpt: recorte(t, alvo) }, extra || {}));
+        };
+        for (const prj of projectos) {
+          add('project', prj, 'pergunta', prj.title, { projectTitle: prj.title, where: 'título' });
+          add('project', prj, 'pergunta', prj.question, { where: 'pergunta' });
+          add('project', prj, 'pergunta', prj.description, { where: 'descrição' });
+          add('project', prj, 'pergunta', prj.objective, { where: 'objectivo' });
+          for (const ev of store.evidenceOf(prj.id)) {
+            if (ev.retractedAt) continue;
+            add('evidence', prj, 'prova', ev.title, { id: ev.id, where: 'título da prova' });
+            add('evidence', prj, 'prova', ev.excerpt, { id: ev.id, where: 'excerto' });
+            add('evidence', prj, 'prova', ev.originalUrl, { id: ev.id, where: 'URL' });
+            add('evidence', prj, 'prova', ev.author, { id: ev.id, where: 'autor' });
+          }
+          for (const c of store.claimsOf(prj.id)) {
+            add('claim', prj, 'conclusão', c.text, { id: c.id, where: 'afirmação', state: c.state });
+            add('claim', prj, 'conclusão', c.reasoning, { id: c.id, where: 'raciocínio', state: c.state });
+          }
+          for (const n of store.notesOf(prj.id)) {
+            if (n.archivedAt) continue;
+            add('memory', prj, 'memória', n.text, { id: n.id, where: n.kind || 'nota', state: n.kind });
+          }
+          for (const d of store.documentsOf(prj.id)) {
+            add('document', prj, 'documento', d.title, { id: d.id, where: 'título do documento', state: d.reviewed ? 'revisto' : 'por revisar' });
+            add('document', prj, 'documento', d.text, { id: d.id, where: 'texto extraído', state: d.reviewed ? 'revisto' : 'por revisar' });
+          }
+        }
+        /* ordem: projectos primeiro (é o que a pessoa procura), depois provas,
+           conclusões, documentos e memória; dentro de cada tipo, pelo mais
+           recente possível. Sem relevância inventada: a única coisa que se
+           calcula é onde está o termo. */
+        const ordem = { project: 0, evidence: 1, claim: 2, document: 3, memory: 4 };
+        achados.sort((x, y) => (ordem[x.type] - ordem[y.type]));
+        const porTipo = {};
+        achados.forEach((x) => { porTipo[x.type] = (porTipo[x.type] || 0) + 1; });
+        return json(res, 200, {
+          ok: true, q, scope: soProjecto || 'todos os meus projectos',
+          total: achados.length, counts: porTipo,
+          projects: projectos.length,
+          results: achados.slice(0, limite),
+          note: projectos.length === 0
+            ? 'ainda não tens investigações: a pesquisa só encontra o que existe'
+            : 'procura no teu próprio trabalho (projectos, provas, conclusões, documentos, memória); não inclui projectos de outras pessoas'
         });
       }
 

@@ -1550,3 +1550,68 @@ E. O que continua por fazer
    segredos, o risco é de arrumação, não de segurança. Se o repositório for
    público e isso incomodar, a via é apagar e recriar o repositório, ou pedir
    ao suporte do GitHub a limpeza de objectos.
+
+================================================================================
+§51  FASE 10 — MODO SIMPLES E PESQUISA DO UTILIZADOR (22 de outubro de 2026)
+================================================================================
+   O que o utilizador reportou, verificado antes de mexer em código
+   · «não consigo fazer qualquer pesquisa»: a pesquisa existente (paleta ⌘K e
+     página de resultados) só cobria o CONJUNTO PÚBLICO carregado no browser
+     (as 46 entidades de decisões judiciais). Não havia forma de procurar nos
+     projectos, provas, conclusões, documentos ou memória do próprio
+     utilizador. Confirmado por código: `GET /api/search` não existia (404).
+   · «o workflow de pesquisa de IA e atribuição não funciona»: os agentes de
+     IA respondem `status: "nao-executado"` com motivo escrito
+     («sem fornecedor de IA validado: configure e valide uma chave»). Não é uma
+     avaria escondida — é a ausência de chave. Os agentes LOCAIS correm, e
+     correm bem (verificação de datas em falta, contra-provas, auditor
+     adversário). O que faltava era a interface dizer isto em vez de deixar a
+     pessoa a adivinhar.
+   · «demasiado complexo»: a aplicação abria no mapa, com filtros, consola de
+     dez separadores, cronologia e painéis laterais. Nada disso foi apagado.
+
+   O que foi feito
+   1. GET /api/search (novo): procura no trabalho do próprio utilizador —
+      projectos (título, pergunta, descrição, objectivo), provas (título,
+      excerto, URL, autor), conclusões (texto, raciocínio), documentos (título
+      e texto extraído) e memória. Filtra sempre pelo dono; recusa termos com
+      menos de 2 caracteres; recorta o excerto à volta do termo; diz quantos
+      resultados há de cada tipo e nunca inventa relevância.
+   2. Modo simples (src/ui/simples.js + CSS): um ecrã, uma coluna.
+      · o que se vê ao entrar: uma pergunta («Começar investigação») e uma
+        caixa de pesquisa — não o mapa;
+      · a investigação mostra contagens reais, o PRÓXIMO PASSO concreto,
+        provas, documentos, verificação automática e últimas execuções;
+      · «Onde procurar» abre o plano de fontes determinístico com ligações
+        oficiais (target=_blank, rel=noopener), declarado como plano;
+      · o estado da IA aparece na barra: «IA pronta» ou «IA sem chave», e a
+        análise por IA só é oferecida quando há chave;
+      · a vista avançada continua a um clique («Vista avançada (mapa e
+        ferramentas)») e há um botão «Modo simples» para voltar. A escolha é
+        lembrada no browser.
+   3. Correcções de usabilidade encontradas ao testar:
+      · o botão «Começar investigação» ficava desactivado sem repintar (o
+        utilizador escrevia e não conseguia avançar) — passa a ligar/desligar
+        sem perder o cursor;
+      · um excerto inválido apagava o formulário e o texto escrito — agora o
+        aviso aparece dentro do formulário e nada se perde;
+      · as dicas flutuantes do mapa apareciam por cima do modo simples.
+
+   Testes novos: tests/simples-ui.mjs — 14/14
+      modo simples à frente do mapa · ida e volta entre vistas · estado da IA
+      declarado · criar investigação e abri-la · próximo passo · plano de
+      fontes (5 passos, 6 ligações oficiais, rel=noopener) · prova recusada
+      sem excerto e aceite com excerto · verificação automática sem IA com
+      execuções registadas · pesquisa no próprio trabalho · termo curto
+      recusado · resultado abre o projecto certo · outra conta vê 0 resultados ·
+      fim de sessão esconde o modo simples · sem erros de runtime
+
+   Suites completas: `npm run test:ui` 95 testes (9 suites), 0 falhas;
+   `npm test` 23 conjuntos, 0 falhas. As suites da vista completa passam a
+   pedir explicitamente `vista: 'avancada'` ao entrar (helper partilhado), em
+   vez de dependerem de qual é o ecrã inicial.
+
+   O que continua a exigir o utilizador: uma chave de IA (Groq, Gemini, etc.)
+   em Conta → Chaves de IA. Sem ela, os sete agentes de IA não correm — e o
+   sistema diz isso em vez de fingir. A verificação local e todo o trabalho de
+   provas funcionam sem chave nenhuma.

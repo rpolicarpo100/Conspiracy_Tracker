@@ -38,6 +38,25 @@ primeiro acesso.
 `store.json` fora do código. `ADMIN_EMAIL` já não cria administradores por si: com o registo fechado
 não há «primeiro registo» a promover — serve apenas para diagnóstico em `/api/meta`.
 
+### Como se usa (modo simples)
+
+Ao entrar, a aplicação abre num ecrã único:
+
+1. **Escrever a pergunta** («Quem financiou a fundação X entre 2015 e 2020?») → *Começar investigação*.
+2. **Recolher** — colar o link de um documento (página ou PDF): o servidor descarrega, extrai o texto e
+   obriga a confirmar o excerto antes de contar como prova. Ou *Registar prova à mão*.
+3. **Verificar** — *Verificar agora* corre as regras locais (datas em falta, confirmações da mesma
+   origem, linguagem de imputação sem prova) sem IA e sem custo. *Onde procurar* abre o plano de fontes
+   com ligações oficiais.
+
+A caixa **Procurar no que já tens** pesquisa nas tuas investigações, provas, conclusões, documentos e
+memória (`GET /api/search`) — e também na base real carregada. A **Vista avançada** (mapa, filtros,
+consola, cronologias, relatório) está a um clique, e volta-se ao modo simples com o botão
+*Modo simples*.
+
+Se não houver chave de IA, a barra diz **«IA sem chave»** e a análise por IA não é oferecida: os sete
+agentes de IA não correm e dizem porquê, em vez de simularem uma resposta.
+
 ### Porta de entrada e servidor local de testes
 
 A aplicação **não arranca sem sessão**: `index.html` mostra a porta (email, palavra-passe, segundo
@@ -50,7 +69,7 @@ produção (`REGISTER_OPEN=true` só aqui, dados em `.data-dev`, `APP_SECRET` ge
 
 ```bash
 bash tools/dev-server.sh                     # http://localhost:8080
-bash tools/ui-env.sh npm run test:ui         # 8 suites, 81 testes de interface
+bash tools/ui-env.sh npm run test:ui         # 9 suites, 95 testes de interface
 ```
 
 Ou, numa sessão Arena, abrir o `index.html` com o servidor de pré-visualização.
