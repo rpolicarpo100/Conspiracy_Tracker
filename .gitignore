@@ -13,6 +13,8 @@ tests/_*.mjs
 
 # dados locais de execução (contas, projectos, chaves)
 .data/
+.data-dev/          # servidor local de testes: contas descartáveis, nunca no repositório
+.data-*/
 
 # artefactos de execução locais
 .cache/
