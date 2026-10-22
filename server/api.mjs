@@ -96,6 +96,9 @@ async function readBody(req) {
 }
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+/* sondagem pública de IA: memória do processo (não é dado de utilizador) */
+let ultimaSondagemGlobal = 0;
+const estadoSondagem = new Map();
 const ipOf = (req) => ((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'desconhecido');
 
 /* =====================================================================
@@ -879,7 +882,7 @@ export async function createApi(opts) {
          sem entrar na conta e sem abrir o painel do Render, se a aplicação tem IA
          e por que via. Devolve só o modo, o fornecedor e o modelo — nunca a chave,
          nem a lista de nomes de chaves configuradas. */
-      if (p === '/api/ai/estado' && method === 'GET') {
+      if (p === '/api/ai/estado' && method === 'GET' && url.searchParams.get('probe') !== '1') {
         const e = estadoChavesOperador();
         const modo = !e.activo ? 'nenhum' : (e.activo.keyless ? 'sem-chave' : 'operador');
         const comChave = Object.values(e.providers).filter((x) => x.estado === 'ok').length;
@@ -894,8 +897,47 @@ export async function createApi(opts) {
             ? 'sem IA: nenhuma chave de operador e fornecedor sem chave desligado (AI_KEYLESS_FALLBACK=false)'
             : (modo === 'sem-chave'
               ? 'IA pelo fornecedor público sem chave: mais lenta e partilhada; uma chave gratuita em Chaves de IA resolve'
-              : null)
+              : null),
+          verificado: null
         });
+      }
+
+      /* Sondagem REAL, a pedido explícito (`?probe=1`), com limites apertados:
+         1 por minuto no servidor todo, 3 por hora por IP. O texto enviado é fixo e
+         público («responda apenas: ok»); nenhum documento do utilizador passa por
+         aqui. Sem `probe=1` este endereço não faz chamada externa nenhuma. */
+      if (p === '/api/ai/estado' && method === 'GET' && url.searchParams.get('probe') === '1') {
+        const e = estadoChavesOperador();
+        const modo = !e.activo ? 'nenhum' : (e.activo.keyless ? 'sem-chave' : 'operador');
+        const base = { ok: true, modo: modo, fornecedor: e.activo ? e.activo.provider : null,
+          modelo: e.activo ? e.activo.modelo : null, semChave: modo === 'sem-chave',
+          chavesDoOperador: Object.values(e.providers).filter((x) => x.estado === 'ok').length,
+          cofrePorUtilizador: vault.enabled };
+        if (!e.activo) return json(res, 200, Object.assign(base, { verificado: { ok: false, motivo: 'sem IA configurada' } }));
+        const agora = Date.now();
+        const ip = ipOf(req);
+        const porIp = (estadoSondagem.get(ip) || []).filter((t) => agora - t < 3600000);
+        if (agora - ultimaSondagemGlobal < 60000) {
+          return json(res, 429, Object.assign(base, { verificado: null,
+            error: { code: 429, message: 'sondagem recente: espera ' + Math.ceil((60000 - (agora - ultimaSondagemGlobal)) / 1000) + ' s' } }));
+        }
+        if (porIp.length >= 3) {
+          return json(res, 429, Object.assign(base, { verificado: null,
+            error: { code: 429, message: 'limite de sondagens por IP atingido (3/hora)' } }));
+        }
+        ultimaSondagemGlobal = agora;
+        estadoSondagem.set(ip, porIp.concat([agora]));
+        const t0 = Date.now();
+        const r = await complete({
+          provider: e.activo.provider, apiKey: null, model: e.activo.modelo,
+          messages: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000, retries: 1
+        }).catch((x) => ({ ok: false, error: String(x && x.message) }));
+        const ms = Date.now() - t0;
+        return json(res, 200, Object.assign(base, {
+          verificado: r.ok
+            ? { ok: true, ms: ms, amostra: String((r.text || '').trim()).slice(0, 40) }
+            : { ok: false, ms: ms, motivo: String(r.error || 'falhou') }
+        }));
       }
 
       /* ---------- meta ---------- */

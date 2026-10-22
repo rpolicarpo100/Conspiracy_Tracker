@@ -301,3 +301,8 @@ Formato: data · decisão · motivo · o que foi recusado.
     Motivo: a pergunta «a instância em produção tem IA?» tinha de se responder sem a palavra-passe
     do dono e sem abrir o painel do Render — e sem transformar um endpoint público num inventário
     de infraestrutura. Há teste que verifica que o corpo não contém chaves.
+
+    Segunda metade: `?probe=1` faz **uma** chamada real, com o texto fixo «Responda apenas: ok».
+    1 por minuto no servidor e 3 por hora por IP; sem o parâmetro não há chamada externa nenhuma
+    (o teste mede o tempo para provar que não houve). Motivo: «configurado» e «a responder» são
+    coisas diferentes — e a diferença entre as duas é exactamente onde se mente sem querer.

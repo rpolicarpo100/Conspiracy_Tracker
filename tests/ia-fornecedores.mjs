@@ -245,6 +245,23 @@ await t('diagnóstico público · /api/ai/estado diz o modo sem revelar chaves',
   return 'sem-chave → marcador não conta → nenhum, sem valores no corpo';
 });
 
+await t('sondagem real · só com ?probe=1, e com limites (nunca por acidente)', async () => {
+  /* sem probe: nenhuma chamada externa — o corpo tem de vir depressa e sem veredicto */
+  const t0 = Date.now();
+  const sem = await (await fetch(BASE + '/api/ai/estado')).json();
+  const ms = Date.now() - t0;
+  ok(sem.verificado === null, 'sem probe=1 devia ser null: ' + JSON.stringify(sem.verificado));
+  ok(ms < 800, 'sem probe=1 demorou ' + ms + ' ms (parece ter chamado o fornecedor)');
+  /* com probe: uma tentativa real; a segunda tem de bater no limite, com ou sem rede */
+  const p1 = await fetch(BASE + '/api/ai/estado?probe=1');
+  ok(p1.status === 200, 'primeira sondagem: HTTP ' + p1.status);
+  const j1 = await p1.json();
+  ok(j1.verificado && typeof j1.verificado.ok === 'boolean', 'sem veredicto: ' + JSON.stringify(j1.verificado));
+  const p2 = await fetch(BASE + '/api/ai/estado?probe=1');
+  ok(p2.status === 429, 'segunda sondagem não foi limitada: HTTP ' + p2.status);
+  return 'sem probe ' + ms + ' ms · sondagem ' + (j1.verificado.ok ? 'ok em ' + j1.verificado.ms + ' ms' : 'falhou: ' + j1.verificado.motivo) + ' · segunda 429';
+});
+
 srv.close();
 fs.rmSync(DIR, { recursive: true, force: true });
 

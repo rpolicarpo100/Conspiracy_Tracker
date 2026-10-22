@@ -60,6 +60,22 @@ curl -s https://conspiracy-aitracker.onrender.com/api/ai/estado
 `modo:"nenhum"` é o único caso em que a análise por IA não corre de todo — e
 acontece só quando não há chave nenhuma **e** `AI_KEYLESS_FALLBACK=false`.
 
+### Provar que a IA responde de facto (sondagem real)
+
+`modo:"sem-chave"` diz que há um caminho configurado — não diz que o fornecedor
+respondeu. Para ter a prova:
+
+```bash
+curl -s "https://conspiracy-aitracker.onrender.com/api/ai/estado?probe=1"
+# → "verificado":{"ok":true,"ms":2416,"amostra":"ok"}
+```
+
+O que é enviado é uma frase fixa e pública — `«Responda apenas: ok»` —, nenhum
+documento, nenhum excerto e nenhum dado de conta. Limites: **1 sondagem por
+minuto no servidor todo** e **3 por hora por IP**; a partir daí responde `429`
+com o tempo de espera. Sem `?probe=1` este endereço não faz chamada externa
+nenhuma (há teste que o confirma, medindo o tempo).
+
 ### Chave do utilizador vs. chave do operador
 
 | | onde fica | quem paga | quando é usada |
