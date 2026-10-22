@@ -88,16 +88,27 @@ DATABASE_URL=... npm run test:pg
 A conta tinha outros dois projectos (`GOD`, `aci-platform`); **não foram
 tocados** — este é isolado e pode ser apagado sem afectar nada.
 
-## 6. O que falta para ficar activo em produção
+## 6. Activo em produção (22-10-2026)
 
-1. Copiar a *connection string* em **Neon → projecto `conspiracy-tracker` →
-   Connect** (com `sslmode=require`; o código normaliza para `verify-full`).
-2. Colá-la no Render em **Environment → `DATABASE_URL`** e guardar.
-3. Confirmar `https://conspiracy-aitracker.onrender.com/ready` →
-   `checks.persistence.durableBetweenDeploys: true` e `mode: "postgres+ficheiro"`.
+Configurado pela API do Render no serviço `conspiracy-aitracker`
+(`srv-dbcefpmktt5c73f55h50`): `DATABASE_URL` escritas nas variáveis de
+ambiente, deploy `dep-dbd3clnavr4c739adbng` e seguintes.
 
-Sem o passo 2, a aplicação funciona exactamente como antes e `/ready` continua
-a dizer a verdade: `durableBetweenDeploys: false`.
+Provas recolhidas em produção, por esta ordem:
+
+| verificação | resultado |
+| --- | --- |
+| `/ready` | `ready` · `mode: postgres+ficheiro` · `durableBetweenDeploys: true` · latência 5 ms · 0 erros |
+| administrador criado por `POST /api/auth/bootstrap` | `rubenpolicarpo@hotmail.com` · papel `ADMIN` · `mustChangePassword: true` |
+| login com a palavra-passe temporária | 200 · todas as outras rotas → 403 `PASSWORD_CHANGE_REQUIRED` |
+| **deploy forçado com limpeza de cache** | o administrador continuou a existir (mesmo `id`), login 200 |
+| segundo e terceiro deploys | administrador intacto · versão da base a avançar 57 → 63 → 68 |
+| `ADMIN_BOOTSTRAP_TOKEN` removido do Render | `/api/meta` → `bootstrap.configured: false`; a rota de arranque deixou de existir |
+| registo público | 403 `REGISTRATION_CLOSED` |
+
+Antes desta configuração, cada deploy apagava tudo: o mesmo teste (deploy e
+voltar a entrar) falhava sempre. Agora passa. A prova não é a configuração
+existir — é o administrador sobreviver a três deploys seguidos.
 
 ## 7. Limitações que continuam a existir
 

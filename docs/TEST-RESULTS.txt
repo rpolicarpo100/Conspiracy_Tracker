@@ -1343,3 +1343,23 @@ E. O que continua por fazer
    · subcontratante adicional (Neon) tem de aparecer na política de privacidade
      publicada antes de o serviço ser usado por terceiros;
    · um documento por base: acima de alguns MB, normalizar colecções grandes.
+
+================================================================================
+§45  PERSISTÊNCIA ACTIVA EM PRODUÇÃO (22 de outubro de 2026, 16:19 UTC)
+================================================================================
+   Configuração feita pela API do Render (serviço srv-dbcefpmktt5c73f55h50):
+   DATABASE_URL escrito; três deploys seguidos; ADMIN_BOOTSTRAP_TOKEN retirado.
+
+   PASS /ready → ready · modo postgres+ficheiro · durableBetweenDeploys:true · 5 ms · 0 erros
+   PASS administrador rubenpolicarpo@hotmail.com criado por POST /api/auth/bootstrap (ADMIN)
+   PASS palavra-passe temporária: login 200 e todas as outras rotas 403 PASSWORD_CHANGE_REQUIRED
+   PASS deploy forçado com limpeza de cache → o administrador continuou a existir (mesmo id)
+   PASS segundo e terceiro deploys → administrador intacto; versão da base 57 → 63 → 68
+   PASS ADMIN_BOOTSTRAP_TOKEN removido → /api/meta bootstrap.configured:false
+   PASS registo público → 403 REGISTRATION_CLOSED
+
+   Antes desta configuração, o mesmo teste (deploy e voltar a entrar) falhava
+   sempre. Agora passa — a prova é o administrador sobreviver a três deploys.
+
+   PENDENTE DO UTILIZADOR: trocar a palavra-passe temporária no primeiro acesso
+   (Conta → Alterar palavra-passe) e revogar a API key do Render e a do Neon.
