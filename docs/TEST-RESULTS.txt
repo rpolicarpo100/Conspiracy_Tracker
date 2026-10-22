@@ -816,3 +816,28 @@ D. O que continua por fazer (declarado)
    · a revisão humana das 82 relações continua pendente: é esse o estado que os dados declaram;
    · `data/real/` cobre uma só temática e uma só jurisdição (EUA);
    · o armazenamento continua a ser ficheiro JSON (disco efémero no Render).
+
+== 36. BASELINE DA FASE 1 DO «PROVIDER OS» (2026-10-22, commit aa5cfc6, versão 2.0.0-fase3g)
+Contentor novo: node_modules e Chromium reconstruídos nesta sessão (npx playwright install +
+tools/setup-ui-env.sh). Medições feitas antes de qualquer alteração desta fase.
+
+· npm test            → 17 suites · 308 asserções · 0 falhas (49 s)
+    14/14 · 17/17 · 18/18 · 13/13 · 26/26 · 17/17 · 19/19 · 13/13 · 16/16 · 28 · 18 · 19 · 21 ·
+    15 · 25 · 7 · fontes 23/23
+· npm run test:ui     → 6 suites · 53 asserções · 0 falhas (84 s)  5/5 · 7/7 · 15/15 · 6/6 · 10/10 · 10/10
+· tools/status.mjs --check → «estado coerente: 2.0.0-fase3g · esquema v6 · 13 agentes · 76 rotas»
+
+Falha reproduzível corrigida nesta sessão:
+· tools/setup-ui-env.sh escrevia em tools/ui-env.sh e destruía o executor de testes. Sintoma:
+  `bash tools/ui-env.sh npm test` não imprimia nada e saía com código 0 (falso sucesso).
+  Correcção: o setup gera tools/ui-env.generated.sh; ui-env.sh carrega-o se existir.
+  Verificação: `bash tools/ui-env.sh node -e "console.log('runner ok')"` → runner ok, e a suite
+  completa voltou a correr (valores acima).
+
+Sondagens de rede feitas para saber o que é verificável sem chave (2026-10-22):
+· https://openrouter.ai/api/v1/models     → 200 · 468 modelos · 18 com preço 0 (`:free`)
+· https://huggingface.co/api/models       → 200 (catálogo público de modelos)
+· https://ai.google.dev/gemini-api/docs   → 200 (documentação)
+· https://console.groq.com/docs           → 307 (redireccionamento)
+· https://build.nvidia.com/               → 200 · https://opencode.ai/docs/ → 200
+· https://api.groq.com/openai/v1/models   → 401 (exige chave: documentação ≠ acesso)

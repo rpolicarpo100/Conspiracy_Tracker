@@ -38,12 +38,15 @@ for f in ./*.deb; do [ -e "$f" ] || continue; dpkg-deb -x "$f" "$DEST" 2>/dev/nu
 cd - >/dev/null || exit 1
 rm -rf "$TMP"
 
-cat > tools/ui-env.sh <<'EOF'
-# gerado por tools/setup-ui-env.sh — carregar com: source tools/ui-env.sh
+# Gera um ficheiro PRÓPRIO para o ambiente. Antes escrevia em tools/ui-env.sh e
+# destruía o executor dos testes (`bash tools/ui-env.sh npm test`) — o teste
+# deixava de correr e o script saía com código 0, o que é pior do que falhar.
+cat > tools/ui-env.generated.sh <<'EOF'
+# gerado por tools/setup-ui-env.sh — carregar com: source tools/ui-env.generated.sh
 export LD_LIBRARY_PATH="$HOME/.local/lib/usr/lib/x86_64-linux-gnu:$HOME/.local/lib/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
 EOF
 echo "[ui-env] bibliotecas em $DEST"
-echo "[ui-env] para esta sessão: source tools/ui-env.sh"
+echo "[ui-env] para esta sessão: source tools/ui-env.generated.sh"
 
 CHROME="$(node -e "try{const {chromium}=require('playwright');console.log(chromium.executablePath())}catch(e){console.log('')}" 2>/dev/null)"
 if [ -n "$CHROME" ] && [ -x "$CHROME" ]; then
