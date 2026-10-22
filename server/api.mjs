@@ -22,6 +22,11 @@ import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
 import { MFA, newSecret, otpauthUri, verifyTotp, newRecoveryCodes, consumeRecoveryCode, makeAttemptLimiter, maskSecret } from './mfa.mjs';
 import { buildSummary, summaryToMarkdown, summaryToCsv, summaryToPdf, summaryFilename } from './summary.mjs';
 import {
+  ACCESS_CLASSES, PROVIDER_STATES, EVIDENCE_STATUS, KINDS, CATEGORY, DISCOVERY_ADAPTERS,
+  SEED, validateEntry, evidenceSummary, publicEntry, fromOpenRouter, fromHuggingFace,
+  TASK_TYPES, EXCLUSION_RULES, scoreCandidate, bandOf, costOfTask
+} from './provider-catalog.mjs';
+import {
   SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
   parseUrl, canonicalUrl, dedupeKey as sourceDedupeKey, domainOf, stateFromCheck,
   rateSource, coverageFrom, ADAPTERS
@@ -31,7 +36,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase3g';
+const APP_VERSION = '2.0.0-fase4a';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -449,6 +454,7 @@ export async function createApi(opts) {
   const accessLimiter = makeLimiter(60);
   const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
   const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
+  const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
 
   function projectFor(a, pid) { return store.projectByIdFor(pid, a.user.id); }
   function claimFor(a, cid) {
@@ -1175,6 +1181,52 @@ export async function createApi(opts) {
         const updated = await store.setProjectStatus(pid, a.user.id, status);
         await store.audit({ type: 'project_status', actorId: a.user.id, subjectId: pid, action, detail: { status } });
         return json(res, 200, { ok: true, project: updated });
+      }
+
+      /* ---------- arquivo de trabalho: checkpoints profundos ---------- */
+      /* nome «work» e não «archive»: /archive já existe desde a fase 2 do projecto
+         (arquivar o projecto) e a primeira rota ganha — colidir aqui dava 200 com
+         o projecto arquivado em vez do checkpoint. */
+      if (p.match(/^\/api\/projects\/[^/]+\/work$/) && (method === 'GET' || method === 'POST')) {
+        const a = await requireUser(req, res); if (!a) return;
+        const pid = p.split('/')[3];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        if (method === 'GET') {
+          const list = store.checkpointsOf(pid).slice(-50);
+          return json(res, 200, { ok: true, count: list.length, checkpoints: list,
+            note: list.length ? null : 'sem checkpoints: nada a retomar' });
+        }
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const taskId = String(body.taskId || '').slice(0, 80) || 'principal';
+        const out = await store.saveCheckpoint({
+          projectId: pid, taskId, objective: body.objective, state: body.state,
+          context: body.context, decisions: body.decisions, artifacts: body.artifacts,
+          sources: body.sources, verified: body.verified, open: body.open,
+          nextAction: body.nextAction, doneCriteria: body.doneCriteria,
+          model: body.model || null, provider: body.provider || null, by: a.user.id
+        }, { ifVersion: body.ifVersion });
+        if (!out.ok && out.conflict) {
+          return err(res, 409, 'checkpoint alterado por outro processo: releia antes de gravar', { current: out.current });
+        }
+        await store.audit({ type: 'checkpoint_saved', actorId: a.user.id, subjectId: pid, action: 'checkpoint',
+          detail: { taskId, version: out.checkpoint.version, artifacts: out.checkpoint.artifacts.length } });
+        return json(res, 201, { ok: true, checkpoint: out.checkpoint });
+      }
+
+      if (p.match(/^\/api\/projects\/[^/]+\/work\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const parts = p.split('/');
+        const pid = parts[3], ver = parts[5];
+        const prj = projectFor(a, pid);
+        if (!prj) return err(res, 404, 'projecto não encontrado');
+        const all = store.checkpointsOf(pid);
+        const one = all.find((c) => String(c.version) === String(ver) && (!req.url.includes('task=') || c.taskId === new URL(req.url, 'http://x').searchParams.get('task')))
+          || all.filter((c) => String(c.version) === String(ver)).pop();
+        if (!one) return err(res, 404, 'versão de checkpoint não encontrada');
+        return json(res, 200, { ok: true, checkpoint: one,
+          note: 'checkpoint é imutável: retomar não altera versões anteriores' });
       }
 
       /* ---------- registo de provas ---------- */
@@ -2103,6 +2155,160 @@ export async function createApi(opts) {
           return res.end(md);
         }
         return json(res, 200, Object.assign({ ok: true }, rep, { sectionTitles: SECTION_TITLES }));
+      }
+
+      /* ---------- Provider OS: catálogo, testes e ranking (fase 2/3) ---------- */
+      if (p === '/api/provider-os/meta' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, {
+          ok: true,
+          accessClasses: Object.entries(ACCESS_CLASSES).map(([id, d]) => ({ id, description: d })),
+          states: Object.entries(PROVIDER_STATES).map(([id, d]) => ({ id, description: d })),
+          evidenceStatus: Object.entries(EVIDENCE_STATUS).map(([id, d]) => ({ id, description: d })),
+          kinds: Object.entries(KINDS).map(([id, d]) => ({ id, description: d })),
+          categories: Object.entries(CATEGORY).map(([id, d]) => ({ id, description: d })),
+          discoveryAdapters: Object.values(DISCOVERY_ADAPTERS).map((d) => ({ key: d.key, label: d.label, url: d.url, needsKey: d.needsKey, what: d.what })),
+          taskTypes: Object.entries(TASK_TYPES).map(([id, t]) => ({ id, label: t.label, weights: t.weights })),
+          exclusions: EXCLUSION_RULES.map((r) => ({ id: r.id, reason: r.reason })),
+          catalogueSize: store.catalogEntries().length,
+          note: 'só entra no catálogo o que tem evidência com URL e estado; DECLARED é o que o fornecedor afirma, MEASURED é o que esta aplicação mediu'
+        });
+      }
+
+      if (p === '/api/provider-os/catalog' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const url = new URL(req.url, 'http://x');
+        const kind = url.searchParams.get('kind');
+        const cls = url.searchParams.get('access');
+        const q = String(url.searchParams.get('q') || '').toLowerCase();
+        let list = store.catalogEntries();
+        if (kind) list = list.filter((e) => e.kind === kind);
+        if (cls) list = list.filter((e) => e.access && e.access.class === cls);
+        if (q) list = list.filter((e) => (e.name + ' ' + e.key).toLowerCase().includes(q));
+        return json(res, 200, {
+          ok: true, total: list.length,
+          entries: list.slice(0, 200).map((e) => publicEntry(e)),
+          note: list.length > 200 ? 'mostradas 200 de ' + list.length + ': use ?q= para procurar' : null
+        });
+      }
+
+      if (p === '/api/provider-os/seed' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        let created = 0, updated = 0, invalid = [];
+        for (const e of SEED) {
+          const v = validateEntry(e);
+          if (!v.ok) { invalid.push({ key: e.key, errors: v.errors.map((x) => x.msg) }); continue; }
+          const r = await store.upsertCatalogEntry(Object.assign({}, e, { state: e.state || (e.evidence.some((x) => x.status === 'MEASURED') ? 'DOCUMENTED' : 'DISCOVERED') }), a.user.id);
+          if (r.created) created++; else updated++;
+        }
+        await store.audit({ type: 'catalog_seeded', actorId: a.user.id, action: 'seed', detail: { created, updated, invalid: invalid.length } });
+        return json(res, 200, { ok: true, created, updated, invalid, note: 'a semente não afirma gratuitidade: cada linha traz a evidência que a sustenta' });
+      }
+
+      if (p === '/api/provider-os/discover' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!providerDiscoveryLimiter.allowed(a.user.id)) return err(res, 429, 'descobertas demasiado frequentes (10/hora): o catálogo externo não é nosso');
+        const body = await readBody(req);
+        const adapterId = String(body.adapter || '').trim();
+        const adapter = DISCOVERY_ADAPTERS[adapterId];
+        if (!adapter) return err(res, 400, 'adaptador de descoberta desconhecido', { known: Object.keys(DISCOVERY_ADAPTERS) });
+        if (adapter.needsKey) return err(res, 501, 'este adaptador exige chave e ainda não está implementado');
+        const t0 = Date.now();
+        let payload = null, httpStatus = null, failure = null;
+        try {
+          const res2 = await fetch(adapter.url, {
+            headers: { 'user-agent': 'ConspiracyTracker/2 (descoberta de modelos; ver docs/PROVIDER-OS.md)', accept: 'application/json' },
+            signal: AbortSignal.timeout(20000)
+          });
+          httpStatus = res2.status;
+          if (!res2.ok) failure = 'HTTP ' + res2.status + ' na consulta ao catálogo';
+          else payload = await res2.json();
+        } catch (e) {
+          failure = e.name === 'TimeoutError' ? 'timeout de 20 s' : String(e.message || e).slice(0, 200);
+        }
+        const ms = Date.now() - t0;
+        if (failure) {
+          await store.audit({ type: 'provider_discovery_failed', actorId: a.user.id, action: 'discover', detail: { adapter: adapterId, failure, ms } });
+          return json(res, 502, { ok: false, adapter: adapterId, httpStatus, failure, ms, note: 'nada foi gravado: uma falha de rede não cria candidatos' });
+        }
+        const out = adapterId === 'openrouter_models'
+          ? fromOpenRouter(payload, { at: new Date().toISOString(), url: adapter.url })
+          : fromHuggingFace(payload, { at: new Date().toISOString(), url: adapter.url });
+        /* um catálogo externo pode trazer centenas de modelos: entra um lote
+           limitado por execução, e o que ficou de fora é dito, não escondido */
+        const LIMIT = 120;
+        const considered = out.entries.slice(0, LIMIT);
+        let created = 0, updated = 0, rejected = 0;
+        for (const e of considered) {
+          const v = validateEntry(e);
+          if (!v.ok) { rejected++; continue; }
+          const r = await store.upsertCatalogEntry(Object.assign({}, e, { state: 'DISCOVERED' }), a.user.id);
+          if (r.created) created++; else updated++;
+        }
+        providerDiscoveryLimiter.hit(a.user.id);
+        await store.audit({ type: 'provider_discovered', actorId: a.user.id, action: 'discover',
+          detail: { adapter: adapterId, total: out.total, created, updated, rejected, ms, url: adapter.url } });
+        return json(res, 200, {
+          ok: true, adapter: adapterId, url: adapter.url, httpStatus, ms,
+          total: out.total, considered: considered.length, truncated: Math.max(0, out.entries.length - considered.length),
+          created, updated, rejected,
+          freeCount: out.freeCount == null ? null : out.freeCount,
+          sample: out.entries.slice(0, 5).map((e) => ({ key: e.key, access: e.access.class, pricing: e.pricing || null })),
+          note: 'os candidatos entram como DISCOVERED: nada disto prova que o modelo funcione'
+        });
+      }
+
+      if (p === '/api/provider-os/ranking' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const url = new URL(req.url, 'http://x');
+        const task = url.searchParams.get('task') || 'conversa';
+        if (!TASK_TYPES[task]) return err(res, 400, 'tipo de tarefa desconhecido', { known: Object.keys(TASK_TYPES) });
+        const entries = store.catalogEntries();
+        const rows = entries.map((e) => {
+          const tests = store.providerTestsOf(e.key);
+          const gen = tests.filter((t) => t.level >= 4);
+          const okGen = gen.filter((t) => t.result === 'PASS');
+          const lat = okGen.map((t) => t.latencyMs).filter((x) => x != null).sort((x, y) => x - y);
+          const metrics = {
+            successRate: tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null,
+            latencyP50Ms: lat.length ? lat[Math.floor(lat.length / 2)] : null,
+            uptime: null, qualityScore: null, securityScore: null,
+            integrationScore: null, maintenanceScore: null,
+            costPerTaskUsd: null
+          };
+          const cand = {
+            key: e.key, name: e.name, kind: e.kind, state: e.state,
+            risk: (e.security && e.security.risk) || null,
+            tested: { link: tests.some((t) => t.level <= 3 && t.result === 'PASS'), generation: okGen.length > 0 },
+            freshnessDays: evidenceSummary(e).freshnessDays,
+            metrics
+          };
+          return Object.assign({ key: e.key, name: e.name, kind: e.kind, state: e.state, tests: tests.length }, scoreCandidate(cand, task));
+        }).sort((x, y) => (y.score == null ? -1 : y.score) - (x.score == null ? -1 : x.score));
+        const ranking = await store.addProviderRanking({ task, rows: rows.length, computed: rows.filter((r) => r.score != null).length });
+        return json(res, 200, {
+          ok: true, task, taskLabel: TASK_TYPES[task].label, rankingId: ranking.id,
+          computed: rows.filter((r) => r.score != null).length, total: rows.length,
+          rows,
+          note: 'a nota usa apenas métricas medidas; sem testes de geração todos aparecem com «Classificação provisória — evidência insuficiente». Não há média que esconda falta de prova.'
+        });
+      }
+
+      if (p === '/api/provider-os/cost' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const e = store.catalogEntry(String(body.key || ''));
+        if (!e) return err(res, 404, 'entrada de catálogo não encontrada');
+        const out = costOfTask({
+          promptTokens: body.promptTokens == null ? null : Number(body.promptTokens),
+          completionTokens: body.completionTokens == null ? null : Number(body.completionTokens),
+          pricing: e.pricing
+        });
+        return json(res, 200, { ok: true, key: e.key, pricing: e.pricing || null, cost: out,
+          note: out.usd == null ? 'sem base para calcular: ' + out.reason : 'custo calculado, não estimado' });
       }
 
       /* ---------- fornecedores de IA ---------- */

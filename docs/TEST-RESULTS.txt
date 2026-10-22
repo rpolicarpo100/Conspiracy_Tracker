@@ -841,3 +841,72 @@ Sondagens de rede feitas para saber o que é verificável sem chave (2026-10-22)
 · https://console.groq.com/docs           → 307 (redireccionamento)
 · https://build.nvidia.com/               → 200 · https://opencode.ai/docs/ → 200
 · https://api.groq.com/openai/v1/models   → 401 (exige chave: documentação ≠ acesso)
+
+== 37. FASE 2 DO «PROVIDER OS» — CATÁLOGO COM EVIDÊNCIA, RANKING E ARQUIVO (2026-10-22, 2.0.0-fase4a)
+Esquema v6 → v7 (migração aditiva) · 84 rotas · versão 2.0.0-fase4a.
+
+A. tests/provider-os.mjs — 25 asserções · 0 falhas · 0 sem execução
+   Módulo (13):
+     · 7 classes de acesso e 10 estados (sem classe «FREE» genérica)
+     · entrada sem evidência recusada; MEASURED sem data/método recusada; ANONYMOUS_PUBLIC sem
+       medição recusada; cadeia parecida com chave recusada
+     · semente inteira válida · 11 evidências MEASURED em 8 entradas · nenhuma gratuitidade inventada
+     · OpenRouter: 0.0000003 USD/token → 0,3 USD por 1M · modelo de preço 0 classificado
+       FREE_API_KEY (não ANONYMOUS_PUBLIC) e marcado como promoção
+     · Hugging Face: kind=weights, acesso UNKNOWN_ACCESS
+     · ranking sem testes → score null, 8 dimensões em falta, «Classificação provisória»
+     · pesos por tarefa mudam a nota: codigo 80(B) ≠ ferramentas 79(B)
+     · risco crítico: nota 100 mas excluído da produção
+     · evidência de 294 dias → STALE e excluída da recomendação
+     · custo: sem preço → null com motivo; sem tokens → null com motivo; 1M+0,5M a 0,30/1,20 → 0,90 USD
+   Base de dados (4):
+     · migração v7 cria 5 colecções e preserva projectos/utilizadores
+     · upsert idempotente (o mesmo modelo não duplica)
+     · teste persistido continua legível depois de fechar e reabrir a base
+     · checkpoint v1→v2 herda objectivo/decisões; gravar com ifVersion velho → conflito
+   Servidor HTTP real (8):
+     · /meta: 7 classes · 6 tipos de tarefa · 2 adaptadores · catálogo começa vazio
+     · semente: 8 entradas, Groq com 2 medições
+     · ranking: 8 linhas, 0 notas, todas provisórias (não há testes de geração ainda)
+     · custo sem preço → null com motivo
+     · arquivo: v1→v2, conflito 409, histórico com 2 versões, v1 relido intacto
+     · descoberta real: 468 modelos · 21 com preço 0 · 120 gravados · ~100 ms
+     · regressão: /api/meta schemaVersion 7 e /api/providers continua com 8 adaptadores
+     · nenhuma chave em 165 KB de resposta do catálogo
+
+B. Suite completa depois da fase 2
+   · npm test      → 18 suites · 334 asserções · 0 falhas
+   · npm run test:ui → 6 suites · 53 asserções · 0 falhas
+
+C. Sondagens medidas nesta fase (sem chave, um pedido por serviço)
+   · https://api.groq.com/openai/v1/models                → 401
+   · https://api.groq.com/openai/v1/chat/completions      → 404 «Unknown request URL» (GET errado)
+   · https://generativelanguage.googleapis.com/v1beta/models → 403 «unregistered callers»
+   · https://api.cerebras.ai/v1/models                    → 403 «Not authenticated»
+   · https://api.mistral.ai/v1/models                     → 401 «Invalid API Key»
+   · https://router.huggingface.co/v1/models              → 200 (lista pública; inferência não testada)
+   · https://openrouter.ai/api/v1/models                  → 200 · 468 modelos · 21 com preço 0
+   · https://opencode.ai/docs/                            → 200 · 99 209 B
+
+D. Defeitos encontrados e corrigidos durante a fase
+   1. colisão de rotas: `/api/projects/:id/archive` já existia; a rota nova foi renomeada para
+      `/work` (a colisão devolvia o projecto arquivado em vez do checkpoint);
+   2. o registo de migrações dizia «nada mudou» em 5→6 e 6→7 porque o loader materializa as
+      colecções antes da migração correr — passou a olhar também para a lista `missing`;
+   3. `/api/provider-os/discover` gravava 468 entradas por execução — passou a lote de 120 com
+      contagem de truncados declarada.
+
+E. Actualizações de testes antigos justificadas (esquema e versão, não lógica)
+   · tests/evidence.mjs: v7 e cadeia 2,3,4,5,6,7 + colecções novas
+   · tests/agents-p3.mjs, tests/fontes.mjs: schemaVersion 7
+   · tests/fontes.mjs: testa a migração com uma base v5 verdadeira (antes só via base fresca)
+   · tests/fase3c.mjs, tests/fase3d.mjs: aceitam version «2.0.0-fase3|fase4»
+   · tests/fontes.mjs: falhas por 429/timeout do serviço externo passam a SKIP com motivo
+     (falha nossa continua FAIL)
+
+F. Continua por fazer (não implementado)
+   · testes de geração (níveis 4–5): BLOQUEADO por falta de chave própria nesta sessão;
+   · selector automático com justificação e fallback (fase 4);
+   · interface de dashboard/descoberta/benchmarks (fase 7);
+   · scheduler de reavaliação e terceiro olho por IA;
+   · integração real de ferramentas externas (opencode está catalogado, não integrado).

@@ -11,13 +11,14 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
   users: [], sessions: [], mfaChallenges: [], projects: [], credentials: [], usage: [],
   evidence: [], claims: [], runs: [], relations: [], agentRuns: [], notes: [], entityLinks: [],
   sources: [], sourceChecks: [], sourceRatings: [], sourceDecisions: [], discoveryRuns: [],
+  providerCatalog: [], providerTests: [], providerRankings: [], selectionDecisions: [], checkpoints: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -61,14 +62,36 @@ const MIGRATIONS = {
   },
   6: (db, missing) => {
     const changes = [];
+    /* O loader faz Object.assign(EMPTY(), parsed): uma colecção que faltava no
+       ficheiro já existe (vazia) quando a migração corre. Sem olhar também para
+       `missing`, o registo dizia «nada mudou» sobre uma base que ganhou cinco
+       colecções — um changelog que mente por omissão. */
     const add = (name, why) => {
-      if (!Array.isArray(db[name])) { db[name] = []; changes.push('criada a colecção ' + name + (why ? ' (' + why + ')' : '')); }
+      if (!Array.isArray(db[name]) || (missing || []).indexOf(name) >= 0) {
+        if (!Array.isArray(db[name])) db[name] = [];
+        changes.push('colecção ' + name + (why ? ' (' + why + ')' : ''));
+      } else if (!Array.isArray(db[name])) { db[name] = []; changes.push('criada a colecção ' + name); }
     };
     add('sources', 'registo de fontes: identidade, estado e proveniência da descoberta');
     add('sourceChecks', 'verificações técnicas datadas de cada fonte');
     add('sourceRatings', 'classificações por dimensão, com justificação e o que faltou');
     add('sourceDecisions', 'decisões de aprovação, rejeição ou revisão, com autor e motivo');
     add('discoveryRuns', 'execuções de descoberta: consulta, resultados e limites encontrados');
+    return changes;
+  },
+  7: (db, missing) => {
+    const changes = [];
+    const add = (name, why) => {
+      if (!Array.isArray(db[name]) || (missing || []).indexOf(name) >= 0) {
+        if (!Array.isArray(db[name])) db[name] = [];
+        changes.push('colecção ' + name + (why ? ' (' + why + ')' : ''));
+      }
+    };
+    add('providerCatalog', 'catálogo de fornecedores e modelos de IA com evidência datada');
+    add('providerTests', 'resultados de testes por camada (existência, ligação, geração, capacidades)');
+    add('providerRankings', 'classificações calculadas, com pesos, métricas usadas e o que faltou');
+    add('selectionDecisions', 'decisões do selector: tarefa, escolha, alternativas e razão');
+    add('checkpoints', 'arquivo de trabalho: contexto recuperável, decisões, artefactos e versão');
     return changes;
   },
   5: (db, missing) => {
@@ -771,6 +794,143 @@ export function createStore(dir) {
         if (u.ok === false) byProvider[k].errors++;
       });
       return byProvider;
+    },
+
+    /* --- catálogo de fornecedores de IA (fase 2 do Provider OS) ---
+       Um registo, três regras: (1) nada entra sem evidência datada; (2) o mesmo
+       recurso não entra duas vezes (chave canónica); (3) o estado nunca sobe
+       sozinho — só um teste ou uma decisão o mudam. */
+    async upsertCatalogEntry(entry, by) {
+      const at = new Date().toISOString();
+      const key = entry.key;
+      let cur = db.providerCatalog.find((x) => x.key === key);
+      if (!cur) {
+        cur = Object.assign({ key, createdAt: at, createdBy: by || null, state: 'DISCOVERED',
+          evidence: [], models: [], tests: [], notes: [] }, entry, { updatedAt: at });
+        cur.id = cur.id || id('pcat');
+        db.providerCatalog.push(cur);
+        await persist();
+        return { entry: cur, created: true };
+      }
+      const antes = cur.state;
+      Object.assign(cur, entry, { updatedAt: at });
+      db.providerCatalog[db.providerCatalog.indexOf(cur)] = cur;
+      await persist();
+      return { entry: cur, created: false, previousState: antes };
+    },
+    catalogEntries() { return db.providerCatalog.slice(); },
+    catalogEntry(key) { return db.providerCatalog.find((x) => x.key === key || x.id === key) || null; },
+    async setCatalogState(key, state, reason, by) {
+      const cur = db.providerCatalog.find((x) => x.key === key || x.id === key);
+      if (!cur) return null;
+      cur.history = cur.history || [];
+      cur.history.push({ at: new Date().toISOString(), from: cur.state, to: state, reason: reason || null, by: by || null });
+      cur.state = state;
+      cur.updatedAt = new Date().toISOString();
+      await persist(); return cur;
+    },
+    async addCatalogEvidence(key, evidence) {
+      const cur = db.providerCatalog.find((x) => x.key === key || x.id === key);
+      if (!cur) return null;
+      const ev = Object.assign({ id: id('pev'), at: new Date().toISOString() }, evidence);
+      cur.evidence.push(ev);
+      cur.updatedAt = ev.at;
+      await persist(); return ev;
+    },
+
+    /* --- testes de fornecedor (por camada, imutáveis) --- */
+    async addProviderTest(t) {
+      const rec = Object.assign({ id: id('ptest'), at: new Date().toISOString() }, t);
+      db.providerTests.push(rec);
+      if (db.providerTests.length > 5000) db.providerTests = db.providerTests.slice(-5000);
+      const cur = db.providerCatalog.find((x) => x.key === rec.key || x.id === rec.key);
+      if (cur) {
+        cur.tests = (cur.tests || []).concat([{ id: rec.id, at: rec.at, level: rec.level, result: rec.result, latencyMs: rec.latencyMs == null ? null : rec.latencyMs }]).slice(-50);
+        cur.updatedAt = rec.at;
+      }
+      await persist(); return rec;
+    },
+    providerTestsOf(key, level) {
+      return db.providerTests.filter((t) => t.key === key && (level == null || t.level === level));
+    },
+    latestProviderTest(key, level) {
+      const list = db.providerTests.filter((t) => t.key === key && (level == null || t.level === level));
+      return list.length ? list[list.length - 1] : null;
+    },
+
+    /* --- classificações --- */
+    async addProviderRanking(ranking) {
+      const rec = Object.assign({ id: id('prank'), at: new Date().toISOString() }, ranking);
+      db.providerRankings.push(rec);
+      if (db.providerRankings.length > 2000) db.providerRankings = db.providerRankings.slice(-2000);
+      await persist(); return rec;
+    },
+    providerRankingsOf(task) {
+      return db.providerRankings.filter((r) => task == null || r.task === task);
+    },
+    latestProviderRanking(task) {
+      const list = db.providerRankings.filter((r) => r.task === task);
+      return list.length ? list[list.length - 1] : null;
+    },
+
+    /* --- decisões do selector --- */
+    async addSelectionDecision(d) {
+      const rec = Object.assign({ id: id('sel'), at: new Date().toISOString() }, d);
+      db.selectionDecisions.push(rec);
+      if (db.selectionDecisions.length > 5000) db.selectionDecisions = db.selectionDecisions.slice(-5000);
+      await persist(); return rec;
+    },
+    selectionDecisionsOf(userId) {
+      return db.selectionDecisions.filter((d) => !userId || d.userId === userId);
+    },
+
+    /* --- arquivo de trabalho (checkpoints profundos, com concorrência optimista) --- */
+    async saveCheckpoint(cp, opts) {
+      opts = opts || {};
+      const key = cp.projectId + '|' + cp.taskId;
+      const list = db.checkpoints.filter((x) => x.key === key);
+      const cur = list.length ? list[list.length - 1] : null;
+      /* controlo de concorrência: se o cliente diz em que versão trabalhou e a
+         versão já mudou, não se grava por cima do trabalho de outro agente */
+      if (cur && opts.ifVersion != null && Number(opts.ifVersion) !== Number(cur.version)) {
+        return { ok: false, conflict: true, current: { version: cur.version, updatedAt: cur.updatedAt, by: cur.by } };
+      }
+      const at = new Date().toISOString();
+      const rec = {
+        id: id('ckpt'), key, projectId: cp.projectId, taskId: cp.taskId,
+        version: cur ? Number(cur.version) + 1 : 1,
+        parentVersion: cur ? cur.version : null,
+        objective: cp.objective == null ? (cur ? cur.objective : null) : String(cp.objective).slice(0, 2000),
+        state: cp.state || (cur ? cur.state : 'in-progress'),
+        context: Array.isArray(cp.context) ? cp.context.slice(0, 50).map((c) => String(c).slice(0, 500)) : (cur ? cur.context : []),
+        decisions: Array.isArray(cp.decisions) ? cp.decisions.slice(0, 50).map((d) => ({ text: String(d.text || d).slice(0, 500), at: d.at || at, by: d.by || null })) : (cur ? cur.decisions : []),
+        artifacts: Array.isArray(cp.artifacts) ? cp.artifacts.slice(0, 100).map((a) => ({ path: String(a.path || a).slice(0, 300), hash: a.hash || null, note: a.note || null })) : (cur ? cur.artifacts : []),
+        sources: Array.isArray(cp.sources) ? cp.sources.slice(0, 100).map((s) => String(s).slice(0, 500)) : (cur ? cur.sources : []),
+        verified: Array.isArray(cp.verified) ? cp.verified.slice(0, 100).map((s) => String(s).slice(0, 500)) : (cur ? cur.verified : []),
+        open: Array.isArray(cp.open) ? cp.open.slice(0, 50).map((s) => String(s).slice(0, 500)) : (cur ? cur.open : []),
+        nextAction: cp.nextAction == null ? (cur ? cur.nextAction : null) : String(cp.nextAction).slice(0, 1000),
+        doneCriteria: Array.isArray(cp.doneCriteria) ? cp.doneCriteria.slice(0, 20).map((s) => String(s).slice(0, 300)) : (cur ? cur.doneCriteria : []),
+        model: cp.model || null, provider: cp.provider || null,
+        createdAt: cur ? cur.createdAt : at, updatedAt: at, by: cp.by || null
+      };
+      db.checkpoints.push(rec);
+      if (db.checkpoints.length > 10000) db.checkpoints = db.checkpoints.slice(-10000);
+      /* espelha o essencial no projecto, para a interface antiga continuar a funcionar */
+      const p = db.projects.find((x) => x.id === rec.projectId);
+      if (p) {
+        p.checkpoints = Array.isArray(p.checkpoints) ? p.checkpoints : [];
+        p.checkpoints.push({ id: rec.id, at: rec.updatedAt, label: rec.taskId + ' v' + rec.version, by: rec.by });
+        p.updatedAt = rec.updatedAt;
+      }
+      await persist();
+      return { ok: true, checkpoint: rec };
+    },
+    checkpointsOf(projectId) {
+      return db.checkpoints.filter((x) => x.projectId === projectId);
+    },
+    latestCheckpoint(projectId, taskId) {
+      const list = db.checkpoints.filter((x) => x.projectId === projectId && (!taskId || x.taskId === taskId));
+      return list.length ? list[list.length - 1] : null;
     },
 
     /* --- auditoria --- */

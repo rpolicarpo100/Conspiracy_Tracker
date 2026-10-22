@@ -12,18 +12,17 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase3g**
-- esquema de dados: **v6** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, audit, migrations
+- versão da aplicação: **2.0.0-fase4a**
+- esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 76
-- ficheiros de teste: 35 · blocos de teste declarados (`await t`): 347 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 84
+- ficheiros de teste: 35 · blocos de teste declarados (`await t`): 372 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
 | ficheiro | asserções | tipo |
 | --- | --- | --- |
-| `tests/_vb.mjs` | 0 | servidor/módulo |
 | `tests/account-ui.mjs` | 15 | interface (Playwright) |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
@@ -47,6 +46,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/ocr.mjs` | 15 | servidor/módulo |
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
 | `tests/perf.mjs` | 0 | interface (Playwright) |
+| `tests/provider-os.mjs` | 25 | servidor/módulo |
 | `tests/real-fetch.mjs` | 0 | interface (Playwright) |
 | `tests/realdata-bundle.mjs` | 0 | servidor/módulo |
 | `tests/research.mjs` | 19 | servidor/módulo |
@@ -61,10 +61,10 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 3cfa48e testes ao vivo do OCR e do MFA no serviço público (13/13 e 15/15) + §33
+- último commit: e1df1b6 fase 1 do provider OS: auditoria do existente, baseline medida e correcção do executor de testes
 - árvore de trabalho: com alterações locais
-- último bloco de resultados: §35 — RETIRAR A FICÇÃO — O QUE MUDOU E COMO FOI VERIFICADO (2026-10-21)
-- documentação: 24 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, SCHEMA.md, SEGURANCA.md)
+- último bloco de resultados: §37 — FASE 2 DO «PROVIDER OS» — CATÁLOGO COM EVIDÊNCIA, RANKING E ARQUIVO (2026-10-22,
+- documentação: 27 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md)
 
 ### Coerência
 
