@@ -1701,3 +1701,31 @@ E. O que continua por fazer
    · texto completo do SSRN (403; não se contorna);
    · geração sem chave fora do fornecedor público (0 em 12 candidatos);
    · limites do fornecedor público partilhados com o IP do servidor.
+
+--------------------------------------------------------------------------------
+§53.1  PUBLICACAO DA FASE 11 — BLOQUEADA (22 de outubro de 2026, 21:55 UTC)
+--------------------------------------------------------------------------------
+   Estado real, verificado agora:
+
+   PASS commit local 8280e48 ("fase 11: …") criado no ramo main
+   FAIL push para origin — o sandbox desta sessão não tem o remoto nem
+        credenciais: `git remote -v` está vazio e não existe token no ambiente.
+        (O repositório e o token usados nas fases anteriores não estão neste
+        ambiente; não se inventa acesso.)
+   FAIL deploy — não houve push, logo o Render não reconstruiu nada.
+
+   Produção continua na fase 10, e é isso que /health diz:
+     commit ef3dfdd · versão 2.0.0-fase10 · /api/providers → 401 sem sessão ·
+     /api/ssrn/4461514 → 404 (a rota ainda não existe em produção, como esperado)
+
+   Para publicar (na máquina que tem acesso ao repositório):
+     git push origin main            # o Render reconstrói sozinho
+     curl -s https://conspiracy-aitracker.onrender.com/health
+       → tem de mostrar 8280e48 e 2.0.0-fase11
+     # depois: Render → Environment → colar AI_KEY_<FORNECEDOR> (ver
+     # docs/IA-FORNECEDORES.md); sem chave nenhuma, a aplicação usa o
+     # fornecedor público sem chave e a barra diz «IA sem chave».
+
+   ROLLBACK (se for preciso, depois do push):
+     git revert 8280e48 && git push origin main
+   Sem alterações de esquema: nada a desfazer na base de dados.
