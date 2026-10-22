@@ -27,6 +27,20 @@ services:
       # do Render (sync: false) — nunca no repositório.
       - key: ADMIN_EMAIL
         sync: false
+      # Registo público: FECHADO quando esta variável não existe. Só abre com o
+      # valor `true` escrito de propósito. Não definir por omissão.
+      - key: REGISTER_OPEN
+        sync: false
+      # Arranque do primeiro administrador por HTTPS (POST /api/auth/bootstrap).
+      # Sem esta variável a rota responde 503 e nada acontece. Valor longo e
+      # aleatório, definido no painel; retirar depois de haver persistência
+      # durável (enquanto o disco for efémero, um deploy apaga as contas).
+      - key: ADMIN_BOOTSTRAP_TOKEN
+        sync: false
+      # Persistência durável (Neon/Supabase). Enquanto não existir, /ready
+      # declara durableBetweenDeploys:false e os dados morrem em cada deploy.
+      - key: DATABASE_URL
+        sync: false
       # Pasta de dados. No plano gratuito não há disco: os dados não sobrevivem a
       # um deploy e /api/meta declara-o (durableBetweenDeploys: false).
       - key: DATA_DIR
