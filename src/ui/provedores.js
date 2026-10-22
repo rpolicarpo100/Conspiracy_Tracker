@@ -18,7 +18,7 @@
   const S = {
     meta: null, entries: null, ranking: null, decisions: null,
     decision: null, plan: null, schedule: null, health: null,
-    disc: null, discResult: null, filterCat: '',
+    disc: null, discResult: null, filterCat: '', bench: null, suite: null,
     task: 'conversa', busy: '', msg: null, open: null
   };
 
@@ -35,14 +35,16 @@
     const wrap = el('div', { id: 'provedoresroot' });
 
     async function load() {
-      const [meta, cat, rank, dec, sch, hea, disc] = await Promise.all([
+      const [meta, cat, rank, dec, sch, hea, disc, bench, suite] = await Promise.all([
         api('/api/provider-os/meta'),
         api('/api/provider-os/catalog' + (S.filterCat ? '?category=' + S.filterCat : '')),
         api('/api/provider-os/ranking?task=' + encodeURIComponent(S.task)),
         api('/api/provider-os/decisions'),
         api('/api/provider-os/schedule'),
         api('/api/provider-os/health'),
-        api('/api/provider-os/discovery/categories')
+        api('/api/provider-os/discovery/categories'),
+        api('/api/provider-os/benchmarks'),
+        api('/api/provider-os/benchmark/suite')
       ]);
       if (meta.ok) S.meta = meta.json;
       if (cat.ok) S.entries = cat.json.entries;
@@ -51,6 +53,8 @@
       if (sch.ok) S.schedule = sch.json;
       if (hea.ok) S.health = hea.json;
       if (disc.ok) S.disc = disc.json;
+      if (bench.ok) S.bench = bench.json;
+      if (suite.ok) S.suite = suite.json;
     }
 
     function chip(res) {
@@ -294,6 +298,62 @@
         wrap.appendChild(el('div', { class: 'infobox', id: 'healthBox', style: 'margin-top:8px;font-size:11px', html:
           '<b>Sonda de saúde:</b> ' + Object.entries(st).map(([k, v]) => v + ' ' + k.toLowerCase().replace('sem-dados', 'sem dados')).join(' · ') +
           '. <i>Health check não é teste de qualidade:</i> só diz se o serviço responde — não cria testes, não promove estados e não entra na nota.' }));
+      }
+
+      /* ---- benchmarks (fase 7) ---- */
+      if (S.bench) {
+        const box = el('div', { style: 'margin:10px 0;padding:8px;border:1px solid var(--line)', id: 'benchmarkBox' });
+        box.appendChild(el('h4', { style: 'font-size:12px;margin:0 0 4px', text:
+          'Benchmarks — mesmas perguntas, verificação objectiva (' + (S.suite ? S.suite.tasks.length : 5) + ' tarefas)' }));
+        box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted)', text:
+          (S.suite ? S.suite.tasks.map((t2) => t2.id).join(' · ') : '') }));
+        const acoesB = el('div', { class: 'actions', style: 'margin:6px 0' });
+        acoesB.appendChild(el('button', { class: 'btn sm', type: 'button', id: 'btnBenchAll', text: 'Correr benchmark nos fornecedores com chave (gasta créditos)', onclick: async () => {
+          if (!confirm('O benchmark faz 5 pedidos reais por fornecedor, com a SUA chave guardada. Continuar?')) return;
+          S.busy = 'bench'; paint();
+          const alvos = (S.entries || []).filter((e) => e.kind !== 'tool' && e.endpoints && e.endpoints.length).slice(0, 4);
+          const feitos = [];
+          for (const e of alvos) {
+            const r = await api('/api/provider-os/benchmark', { method: 'POST', body: { key: e.key, confirmCost: true } });
+            if (!r.ok) { feitos.push(e.key + ': ' + reasonOf(r)); continue; }
+            feitos.push(e.key + ': ' + (r.json.ok ? r.json.summary.qualityScore + '/100' : r.json.status));
+          }
+          S.busy = '';
+          S.msg = { text: 'Benchmark: ' + feitos.join(' · ') };
+          await load(); paint();
+        } }));
+        box.appendChild(acoesB);
+        if (!S.bench.ran) {
+          box.appendChild(el('div', { class: 'warnbox', id: 'benchEmpty', text:
+            'Nenhum benchmark executado: sem chave guardada não há como medir qualidade. A matriz fica vazia em vez de preenchida com estimativas.' }));
+        } else {
+          /* uma linha por fornecedor; uma célula por tarefa (com o motivo no title) */
+          const cabecalho = ['Fornecedor', 'Nota', 'Tarefas', 'Custo medido']
+            .concat((S.bench.tasks || []).map((x) => x.id));
+          const linhas = S.bench.rows.map((r) => {
+            const celulas = [
+              el('td', {}, [el('b', { text: r.key }), el('div', { class: 'muted', style: 'font-size:10px', text: r.model || '—' })]),
+              el('td', { class: 'mono', text: r.qualityScore == null ? '—' : String(r.qualityScore) }),
+              el('td', { class: 'mono', text: r.passRate == null ? '—' : Math.round(r.passRate) + ' %' }),
+              el('td', { class: 'mono', text: r.costUsd == null ? '—' : r.costUsd.toFixed(6) + ' USD' })
+            ];
+            (S.bench.tasks || []).forEach((x) => {
+              const cell = (r.cells || {})[x.id];
+              if (!cell) { celulas.push(el('td', {}, [el('span', { class: 'muted', text: '—' })])); return; }
+              const cls = cell.result === 'PASS' ? 'ok' : cell.result === 'FAIL' ? 'bad' : 'muted';
+              celulas.push(el('td', {}, [el('span', { class: 'scorepill ' + cls, title: cell.why || '', text: cell.result })]));
+            });
+            return el('tr', {}, celulas);
+          });
+          box.appendChild(el('table', { class: 'listtable', id: 'benchTable' }, [
+            el('thead', {}, [el('tr', {}, cabecalho.map((h) => el('th', { text: h })))]),
+            el('tbody', {}, linhas)
+          ]));
+          box.appendChild(el('div', { style: 'font-size:10.5px;color:var(--muted);margin-top:4px', text:
+            'A nota de qualidade é a taxa de tarefas passadas (exclui a tarefa de segurança, que tem dimensão própria). ' +
+            'É esta nota que o ranking passa a usar — antes era sempre «não medida».' }));
+        }
+        wrap.appendChild(box);
       }
 
       /* ---- ranking ---- */

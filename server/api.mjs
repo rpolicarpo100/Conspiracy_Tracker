@@ -34,6 +34,9 @@ import {
   REEVAL_POLICY, reevaluationState, planReevaluation, runReevaluation, healthVerdict
 } from './scheduler.mjs';
 import {
+  BENCHMARK_SUITE, BENCHMARK_VERSION, runBenchmark, compareBenchmarks
+} from './benchmark.mjs';
+import {
   ACCESS_DETAIL_FIELDS, DISCOVERY_CATEGORY_LABELS, ADAPTERS as DISCOVERY_IMPL,
   categoryOf, categorySummary, accessDetailCoverage, validateAccessDetails, mergeDiscovered
 } from './discovery.mjs';
@@ -47,7 +50,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase6';
+const APP_VERSION = '2.0.0-fase7';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -467,6 +470,7 @@ export async function createApi(opts) {
   const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
   const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
   const providerScheduleLimiter = makeLimiter(20);   // lotes de reavaliação: 20/h por utilizador
+  const cronLimiter = makeLimiter(2);                // cron de serviço: 2/h (uma execução por hora, no máximo)
 
   /* Executa níveis e grava um registo POR NÍVEL. Uma só implementação para o
      teste manual (`/test`) e para a reavaliação automática (`/schedule/run`):
@@ -543,6 +547,10 @@ export async function createApi(opts) {
         else if (!capabilities[cap]) capabilities[cap] = res;
       }
     }
+    /* qualidade e custo vêm do benchmark (nível 7), quando existe: são as duas
+       dimensões que até à fase 7 nunca tinham sido medidas */
+    const bench = tests.filter((t) => t.level === 7 && t.result === 'PASS');
+    const ultimoBench = bench.length ? bench[bench.length - 1] : null;
     const providerId = String(entry.key).startsWith('providers/') ? String(entry.key).slice('providers/'.length) : null;
     const cred = providerId && userId ? store.credentialFor(userId, providerId) : null;
     const meta = entry.metadata || {};
@@ -560,9 +568,14 @@ export async function createApi(opts) {
         successRate: relLast && relLast.successRate != null ? relLast.successRate
           : (tests.length ? tests.filter((t) => t.result === 'PASS').length / tests.length : null),
         latencyP50Ms: lat.length ? lat[Math.floor(lat.length / 2)] : null,
-        uptime: null, qualityScore: null, securityScore: null,
-        integrationScore: null, maintenanceScore: null, costPerTaskUsd: null
+        uptakeMs: ultimoBench && ultimoBench.latencyMs != null ? ultimoBench.latencyMs : null,
+        uptime: null,
+        qualityScore: ultimoBench && ultimoBench.qualityScore != null ? ultimoBench.qualityScore : null,
+        securityScore: ultimoBench && ultimoBench.safetyPass === true ? 70 : (ultimoBench && ultimoBench.safetyPass === false ? 20 : null),
+        integrationScore: null, maintenanceScore: null,
+        costPerTaskUsd: ultimoBench && ultimoBench.costUsd != null ? ultimoBench.costUsd : null
       },
+      benchmark: ultimoBench ? { at: ultimoBench.at, qualityScore: ultimoBench.qualityScore, passRate: ultimoBench.passRate, costUsd: ultimoBench.costUsd } : null,
       evidence: { tests: tests.length, generationPasses: okGen.length }
     };
   }
@@ -2675,12 +2688,140 @@ export async function createApi(opts) {
         });
       }
 
+      /* ---------- cron de serviço (fase 7) ----------
+         Um cron externo (GitHub Actions, cron-job.org) pode accionar a
+         reavaliação sem sessão de utilizador, mas só com CRON_TOKEN definido
+         no ambiente do servidor. Sem CRON_TOKEN a rota existe e recusa — um
+         cron que «funciona» sem segredo seria um endpoint aberto. */
+      if (p === '/api/provider-os/cron/run' && method === 'POST') {
+        const esperado = process.env.CRON_TOKEN || '';
+        if (!esperado) {
+          return json(res, 503, { ok: false, configured: false,
+            reason: 'CRON_TOKEN não está definido no servidor: a reavaliação agendada está desligada',
+            how: 'definir a variável CRON_TOKEN no Render e usar o mesmo valor no segredo do workflow' });
+        }
+        const recebido = String(req.headers['x-cron-token'] || '');
+        const a1 = Buffer.from(esperado), b1 = Buffer.from(recebido.padEnd(esperado.length, '\0').slice(0, esperado.length));
+        const igual = a1.length === b1.length && crypto.timingSafeEqual(a1, b1) && recebido.length === esperado.length;
+        if (!igual) {
+          await store.audit({ type: 'cron_refused', actorId: null, action: 'cron_run', detail: { reason: 'token inválido' } });
+          return err(res, 401, 'token de serviço inválido');
+        }
+        if (!cronLimiter.allowed('cron')) return err(res, 429, 'reavaliação agendada já correu nesta hora');
+        const plano = planoReavaliacao(Number(process.env.CRON_BATCH || 6));
+        if (!plano.counts.due) {
+          return json(res, 200, { ok: true, cron: true, executed: 0, counts: plano.counts,
+            note: 'nada em atraso: o cron não testa só para produzir números' });
+        }
+        const run = await runReevaluation(plano, {
+          maxRequests: Math.min(12, Math.max(2, plano.queue.length * 2)),
+          runTest: async (key) => {
+            const e = store.catalogEntry(key);
+            if (!e) return { requestsUsed: 0, results: {} };
+            const { out } = await executarTestes(e, { userId: null, levels: [1, 2], apiKey: null, model: null,
+              maxRequests: 2, allowInsecure: false });
+            await promoverEstado(e, out, 'reavaliação agendada (cron, níveis 1–2)', null);
+            return out;
+          }
+        });
+        cronLimiter.hit('cron');
+        await store.audit({ type: 'provider_reevaluated', actorId: null, action: 'cron_run',
+          detail: { executed: run.executed, skipped: run.skipped, keys: run.results.map((r) => r.key), requests: run.requestsUsed, via: 'cron' } });
+        return json(res, 200, Object.assign({}, run, { cron: true, at: new Date().toISOString(), counts: plano.counts,
+          note: 'execução agendada: níveis 1–2 apenas, sem chave e sem custo' }));
+      }
+
       if (p === '/api/provider-os/health' && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
         return json(res, 200, { ok: true,
           providers: store.catalogEntries().slice(0, 40).map((e) => Object.assign({ key: e.key, name: e.name },
             healthVerdict(store.auditList({ type: 'provider_health', subjectId: e.key, limit: 50 }).map((x) => x.detail || {})))),
           note: 'prova de vida apenas; a classificação de qualidade continua a exigir testes de níveis 4–6' });
+      }
+
+      /* ---------- benchmarks (fase 7) ---------- */
+      if (p === '/api/provider-os/benchmark/suite' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, { ok: true, version: BENCHMARK_VERSION,
+          tasks: Object.entries(BENCHMARK_SUITE).map(([id, t]) => ({ id, label: t.label, maxTokens: t.maxTokens,
+            verifier: 'objectivo (sem juiz humano nem LLM)', hasSystemPrompt: !!t.system })),
+          note: 'as mesmas perguntas para todos; cada tarefa tem um verificador determinístico' });
+      }
+
+      if (p === '/api/provider-os/benchmark' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const body = await readBody(req);
+        const entry = store.catalogEntry(String(body.key || ''));
+        if (!entry) return err(res, 404, 'entrada de catálogo não encontrada');
+        if (body.confirmCost !== true) {
+          return err(res, 400, 'um benchmark faz pedidos pagos com a sua chave (5 tarefas × amostras): confirme com confirmCost=true',
+            { estimatedRequests: (body.samples ? Math.min(3, Math.max(1, Number(body.samples))) : 1) * Object.keys(BENCHMARK_SUITE).length });
+        }
+        const providerId = String(entry.key).startsWith('providers/') ? String(entry.key).slice('providers/'.length) : null;
+        const cred = providerId ? store.credentialFor(a.user.id, providerId) : null;
+        let apiKey = null;
+        if (cred && vault.enabled) { try { apiKey = vault.open(cred.keyCipher); } catch { apiKey = null; } }
+        const model = String(body.model || (cred && cred.model) || (entry.metadata && entry.metadata.defaultModel) || '').slice(0, 120) || null;
+        const t0 = Date.now();
+        const out = await runBenchmark(entry, { apiKey, model, samples: body.samples,
+          suite: Array.isArray(body.suite) ? body.suite.slice(0, 8) : null,
+          allowInsecure: process.env.VN_TEST_PROVIDERS === '1' });
+        if (!out.ok) {
+          return json(res, 200, { ok: false, key: entry.key, hadKey: !!apiKey, model, status: out.status, reason: out.reason,
+            tasks: out.tasks, ms: Date.now() - t0,
+            note: out.status === 'BLOCKED' && !apiKey ? 'guarde uma chave própria em «Chaves de IA» para medir qualidade' : out.reason });
+        }
+        /* um benchmark medido entra na MESMA história de testes (nível 7) */
+        const rec = await store.addProviderTest({
+          key: entry.key, level: 7, levelId: 'qualidade', result: out.summary.qualityScore >= 60 ? 'PASS' : 'FAIL',
+          reason: out.summary.passRate + ' % de tarefas passadas (' + out.summary.passed + '/' + out.summary.of + ')',
+          detail: out.tasks.map((x) => x.task + '=' + x.result).join(' · '),
+          diagnosis: null, httpStatus: null, latencyMs: out.summary ? null : null,
+          method: 'benchmark v' + BENCHMARK_VERSION + ' · ' + Object.keys(BENCHMARK_SUITE).length + ' tarefas',
+          samples: out.samples, successRate: out.summary.passRate / 100,
+          qualityScore: out.summary.qualityScore, safetyPass: out.summary.safetyPass,
+          costUsd: out.summary.costUsd, tokens: out.summary.tokens,
+          testedBy: a.user.id, synthetic: false
+        });
+        await store.addUsage({ userId: a.user.id, provider: providerId || entry.vendor || 'desconhecido', model,
+          kind: 'benchmark', ok: true,
+          promptTokens: out.summary.tokens.prompt, completionTokens: out.summary.tokens.completion,
+          cost: out.summary.costUsd, latencyMs: null });
+        const novoEstado = out.summary.qualityScore != null && entry.state !== 'GENERATION_TESTED' && entry.state !== 'RANKED' && entry.state !== 'APPROVED'
+          ? 'GENERATION_TESTED' : null;
+        if (novoEstado) await store.setCatalogState(entry.key, novoEstado, 'benchmark medido', a.user.id);
+        await store.audit({ type: 'provider_benchmarked', actorId: a.user.id, subjectId: entry.key, action: 'benchmark',
+          detail: { model, samples: out.samples, quality: out.summary.qualityScore, passRate: out.summary.passRate,
+            costUsd: out.summary.costUsd, requests: out.requestsUsed, ms: Date.now() - t0, testId: rec.id } });
+        return json(res, 200, { ok: true, key: entry.key, hadKey: true, model, status: out.status,
+          summary: out.summary, tasks: out.tasks, requestsUsed: out.requestsUsed, stored: rec.id, ms: Date.now() - t0,
+          note: 'resultado medido: entra no ranking como dimensão de qualidade e de custo' });
+      }
+
+      if (p === '/api/provider-os/benchmarks' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const runs = store.catalogEntries()
+          .map((e) => {
+            const t = store.providerTestsOf(e.key).filter((x) => x.level === 7 && !x.synthetic);
+            if (!t.length) return null;
+            const last = t[t.length - 1];
+            return { key: e.key, model: last.model || null, at: last.at, ok: last.result !== 'BLOCKED',
+              summary: { qualityScore: last.qualityScore == null ? null : last.qualityScore,
+                passRate: last.successRate == null ? null : last.successRate * 100,
+                passed: null, of: null, costUsd: last.costUsd == null ? null : last.costUsd,
+                safetyPass: last.safetyPass == null ? null : last.safetyPass },
+              tasks: (last.detail || '').split(' · ').filter(Boolean).map((x) => {
+                const [id, result] = x.split('=');
+                return { task: id, result, passed: result === 'PASS' ? 1 : 0, of: 1, why: null, latencyP50Ms: null };
+              }),
+              note: last.reason };
+          })
+          .filter(Boolean);
+        return json(res, 200, Object.assign({ ok: true }, compareBenchmarks(runs), {
+          history: store.auditList({ type: 'provider_benchmarked', limit: 20 }).map((x) => ({ at: x.at, ...x.detail })),
+          note: 'matriz derivada dos registos medidos (nível 7); quem não correu não aparece'
+        }));
       }
 
       if (p === '/api/provider-os/cost' && method === 'POST') {

@@ -28,7 +28,11 @@ export const TEST_LEVELS = {
   3: { id: 'ligacao', label: 'ligação real com credencial' },
   4: { id: 'geracao', label: 'geração válida' },
   5: { id: 'capacidades', label: 'capacidades declaradas' },
-  6: { id: 'fiabilidade', label: 'fiabilidade por amostras' }
+  6: { id: 'fiabilidade', label: 'fiabilidade por amostras' },
+  /* o nível 7 NÃO é executado por este motor: é produzido pelo módulo de
+     benchmarks (server/benchmark.mjs) e gravado na mesma história. Declarado
+     aqui para que a numeração seja uma só em todo o sistema. */
+  7: { id: 'qualidade', label: 'qualidade medida por benchmark (ver server/benchmark.mjs)', engine: 'benchmark' }
 };
 
 export const RESULTS = ['PASS', 'FAIL', 'BLOCKED', 'NOT_TESTED', 'STALE'];

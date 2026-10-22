@@ -28,8 +28,11 @@ const skip = (why) => { const e = new Error('SKIP: ' + why); e.skip = true; thro
 
 /* ------------------------------------------------------- 1. módulo */
 
-await t('módulo · 6 níveis nomeados e 5 resultados possíveis', async () => {
-  ok(Object.keys(TEST_LEVELS).length === 6, 'níveis: ' + Object.keys(TEST_LEVELS).length);
+await t('módulo · níveis nomeados (1–6 neste motor, 7 no benchmark) e 5 resultados', async () => {
+  /* o nível 7 é declarado aqui mas produzido pelo módulo de benchmarks: a
+     numeração é uma só em todo o sistema */
+  ok(Object.keys(TEST_LEVELS).length === 7, 'níveis: ' + Object.keys(TEST_LEVELS).length);
+  ok(TEST_LEVELS[7].engine === 'benchmark', 'nível 7 sem motor declarado');
   ok(RESULTS.join(',') === 'PASS,FAIL,BLOCKED,NOT_TESTED,STALE', RESULTS.join(','));
   return Object.values(TEST_LEVELS).map((l) => l.id).join(' · ');
 });

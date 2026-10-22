@@ -206,6 +206,20 @@ await t('descoberta: filtrar por categoria D mostra só ferramentas (e o filtro 
   return total + ' ferramentas na categoria D · filtro reposto';
 });
 
+await t('benchmarks: a matriz fica vazia (sem estimativas) enquanto não houver chave', async () => {
+  const s = await p.evaluate(() => VN.provedoresUI.getState());
+  if (!s.bench) throw new Error('painel de benchmarks não carregou');
+  const txt = await body();
+  if (!/Benchmarks — mesmas perguntas/.test(txt)) throw new Error('sem secção de benchmarks');
+  if (s.bench.ran === 0) {
+    if (!/Nenhum benchmark executado/.test(txt)) throw new Error('sem aviso de matriz vazia');
+    const linhas = await p.evaluate(() => document.querySelectorAll('#benchTable tbody tr').length);
+    if (linhas !== 0) throw new Error('desenhou linhas sem dados');
+  }
+  if (!s.suite || s.suite.tasks.length !== 5) throw new Error('suite: ' + JSON.stringify(s.suite && s.suite.tasks && s.suite.tasks.length));
+  return (s.bench.ran === 0 ? 'matriz vazia' : s.bench.ran + ' linha(s)') + ' · ' + s.suite.tasks.length + ' tarefas com verificador objectivo';
+});
+
 await t('a decisão fica no histórico do servidor (não só no ecrã)', async () => {
   const hist = await p.evaluate(async () => (await fetch('api/provider-os/decisions').then((r) => r.json())));
   if (!hist.total) throw new Error('sem decisões registadas');
