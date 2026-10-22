@@ -613,12 +613,35 @@
   /* ---------------- legenda rápida ---------------- */
   function buildLegendBar() { VN.panels.renderLegendBar(); }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    try { boot(); }
-    catch (e) {
+  /* Arranque condicionado à sessão: o grafo, os painéis e o motor só são
+     criados depois de /api/auth/me devolver um utilizador. Sem sessão existe
+     apenas a porta de entrada — nenhum dado é pedido nem desenhado antes. */
+  function arrancarDepoisDaAutenticacao(me) {
+    try {
+      boot();
+      const rotulo = document.getElementById('accLabel');
+      if (rotulo) rotulo.textContent = me.email.split('@')[0];
+      /* um 401 a meio do uso (sessão expirada noutro lado) devolve o
+         utilizador à porta de entrada em vez de deixar o ecrã a mentir */
+      if (VN.gate && typeof VN.gate.expirou === 'function') {
+        g.VNSESSAO = { expirou: VN.gate.expirou };
+      }
+    } catch (e) {
       console.error(e);
       document.body.insertAdjacentHTML('afterbegin', '<div style="padding:16px;color:#fda4af;font:14px system-ui">Erro ao iniciar: ' + D.esc(e.message) + '</div>');
     }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (VN.gate && typeof VN.gate.iniciar === 'function') {
+      VN.gate.iniciar(arrancarDepoisDaAutenticacao);
+      return;
+    }
+    /* sem a porta de entrada não se arranca: falhar aberto seria mostrar dados */
+    console.error('porta de entrada ausente (src/ui/login.js): a aplicação não arranca sem autenticação');
+    document.documentElement.setAttribute('data-vn-auth', 'erro');
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:16px;color:#fda4af;font:14px system-ui">A aplicação não arrancou: falta a camada de autenticação.</div>');
   });
   g.VNBOOT = boot;
 })(typeof window !== 'undefined' ? window : globalThis);

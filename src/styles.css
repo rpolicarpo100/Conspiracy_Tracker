@@ -439,3 +439,40 @@ html[data-theme="light"] .warnbox{color:#92400e;background:rgba(180,83,9,.07);bo
 .listtable li.dim{opacity:.72}
 #apisroot h4{font-size:12px;letter-spacing:.02em}
 #apisroot .listtable td{vertical-align:top}
+
+/* ---------------------------------------------------------------------
+   PORTA DE ENTRADA (autenticação obrigatória)
+   Minimalista de propósito: uma caixa, um campo de cada vez, zero decoração.
+   Cobre todo o ecrã para que nenhum dado apareça antes da sessão existir.
+   --------------------------------------------------------------------- */
+html[data-vn-auth="verificando"] body > *:not(#vnGate),
+html[data-vn-auth="por-autenticar"] body > *:not(#vnGate) { display: none !important; }
+#vnGate{
+  position:fixed; inset:0; z-index:9999; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px; padding:24px;
+  background:radial-gradient(120% 90% at 50% 0%, #12202e 0%, #0b1219 55%, #080d13 100%);
+  font:13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink);
+}
+.gate-card{ width:min(360px, 92vw); display:flex; flex-direction:column; gap:6px; }
+.gate-logo{ color:var(--accent,#37d0a0); display:flex; justify-content:center; margin-bottom:2px; }
+.gate-title{ margin:0; font-size:17px; font-weight:600; letter-spacing:.2px; text-align:center; }
+.gate-sub{ font-size:11px; color:var(--muted); text-align:center; margin-bottom:10px; }
+.gate-form{ display:flex; flex-direction:column; gap:10px; width:min(360px,92vw);
+  background:rgba(20,31,44,.72); border:1px solid var(--line2); border-radius:10px; padding:16px; }
+.gate-field{ display:flex; flex-direction:column; gap:4px; font-size:10.5px; color:var(--muted); }
+.gate-input{ background:#0d1620; border:1px solid var(--line2); color:var(--ink); border-radius:7px;
+  padding:9px 10px; font-size:13px; outline:none; }
+.gate-input:focus{ border-color:var(--accent,#37d0a0); box-shadow:0 0 0 2px rgba(55,208,160,.14); }
+.gate-btn{ margin-top:2px; background:var(--accent,#37d0a0); color:#062018; border:0; border-radius:7px;
+  padding:10px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.gate-btn:disabled{ opacity:.45; cursor:not-allowed; }
+.gate-link{ background:none; border:0; color:var(--muted); font-size:11px; text-decoration:underline;
+  cursor:pointer; align-self:center; padding:4px; }
+.gate-link:hover{ color:var(--ink2); }
+.gate-msg{ font-size:11px; border-radius:7px; padding:8px 10px; }
+.gate-msg.erro{ background:rgba(190,60,80,.16); border:1px solid rgba(220,90,110,.45); color:#ffd0d8; }
+.gate-msg.info{ background:rgba(55,140,208,.14); border:1px solid rgba(90,160,220,.4); color:#cfe6fb; }
+.gate-note{ font-size:10.5px; color:var(--muted); text-align:center; margin-top:8px; line-height:1.5; }
+.gate-foot{ font-size:10px; color:var(--muted); text-align:center; max-width:420px; }
+@media (prefers-reduced-motion: no-preference){ #vnGate .gate-card{ animation:gatefade .18s ease-out; } }
+@keyframes gatefade{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:none;} }

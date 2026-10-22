@@ -1024,6 +1024,56 @@ export function createStore(dir) {
       if (filter && filter.subjectId) list = list.filter((e) => e.subjectId === filter.subjectId);
       return filter && filter.limit ? list.slice(0, filter.limit) : list;
     },
+    /* --- retenção (RGPD art. 5.º, 1.º e): o que fica guardado durante quanto tempo ---
+       Purga selectiva, com relatório do que foi removido e do que ficou. Nunca
+       toca em contas, projectos, provas nem no evento de eliminação de conta.
+       Um evento `retention_purged` é escrito ANTES da purga da auditoria, para
+       que a própria purga fique registada. */
+    retentionPolicy() {
+      return {
+        auditDays: Number(process.env.RETENTION_AUDIT_DAYS || 180),
+        sessionDays: Number(process.env.RETENTION_SESSION_DAYS || 30),
+        usageDays: Number(process.env.RETENTION_USAGE_DAYS || 90),
+        note: 'aplica-se só a registos operacionais: auditoria, sessões terminadas/expiradas e uso de IA. Contas, projectos, provas e conclusões são do titular e só saem com a conta.'
+      };
+    },
+    async purgeRetention(opts) {
+      const dryRun = !!(opts && opts.dryRun);
+      const pol = Object.assign(this.retentionPolicy(), (opts && opts.policy) || {});
+      const limite = (dias) => Date.now() - dias * 24 * 3600e3;
+      const velho = (iso, dias) => { const t = Date.parse(iso || ''); return Number.isFinite(t) && t < limite(dias); };
+      const antes = {
+        audit: db.audit.length, sessions: db.sessions.length, usage: db.usage.length
+      };
+      /* auditoria: mantém sempre o que seja prova de eliminação de conta e a
+         própria purga anterior (nunca apagamos o rasto de que apagámos) */
+      const auditMantidos = ['account_deleted', 'retention_purged'];
+      const auditRemover = dryRun ? [] : db.audit.filter((e) => velho(e.at, pol.auditDays) && auditMantidos.indexOf(e.type) < 0);
+      const sessionsRemover = dryRun ? [] : db.sessions.filter((s) =>
+        (s.revokedAt || new Date(s.expiresAt).getTime() < Date.now()) && velho(s.revokedAt || s.expiresAt, pol.sessionDays));
+      const usageRemover = dryRun ? [] : db.usage.filter((u) => velho(u.at, pol.usageDays));
+      const contarAudit = dryRun ? db.audit.filter((e) => velho(e.at, pol.auditDays) && auditMantidos.indexOf(e.type) < 0).length : auditRemover.length;
+      const contarSessions = dryRun ? db.sessions.filter((s) => (s.revokedAt || new Date(s.expiresAt).getTime() < Date.now()) && velho(s.revokedAt || s.expiresAt, pol.sessionDays)).length : sessionsRemover.length;
+      const contarUsage = dryRun ? db.usage.filter((u) => velho(u.at, pol.usageDays)).length : usageRemover.length;
+      if (!dryRun) {
+        await this.audit({ type: 'retention_purged', actorId: null, action: 'retention',
+          detail: { policy: pol, before: antes, removed: { audit: contarAudit, sessions: contarSessions, usage: contarUsage } } });
+        const foraA = new Set(auditRemover.map((e) => e.id));
+        const foraS = new Set(sessionsRemover.map((s) => s.id));
+        const foraU = new Set(usageRemover.map((u) => u.id));
+        db.audit = db.audit.filter((e) => !foraA.has(e.id));
+        db.sessions = db.sessions.filter((s) => !foraS.has(s.id));
+        db.usage = db.usage.filter((u) => !foraU.has(u.id));
+        await persist();
+      }
+      return {
+        dryRun, policy: pol,
+        removed: { audit: contarAudit, sessions: contarSessions, usage: contarUsage },
+        before: antes,
+        after: { audit: db.audit.length, sessions: db.sessions.length, usage: db.usage.length },
+        keptAlways: auditMantidos
+      };
+    },
     async count(name, n) {
       db.metrics.counters[name] = (db.metrics.counters[name] || 0) + (n == null ? 1 : n);
       persist();

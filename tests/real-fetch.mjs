@@ -2,6 +2,19 @@
    Prova: pedido efectuado, estado HTTP, tipo, tamanho, SHA-256 confirmado dos dois lados.
    Nada é inserido no grafo. */
 import { chromium } from 'playwright';
+import { entrarNaAplicacao, semearConta, CONTA_TESTE } from './_ui-entrada.mjs';
+
+/* Desde a fase 9 a aplicação não arranca sem sessão: estes scripts entram pela
+   porta, como qualquer pessoa, no servidor de desenvolvimento. Nunca produção. */
+const BASE = process.env.VN_BASE || 'http://127.0.0.1:8080';
+let contaSemeada = false;
+async function abrir(pg) {
+  if (!contaSemeada) { await semearConta(BASE, CONTA_TESTE.email, CONTA_TESTE.password); contaSemeada = true; }
+  await pg.goto(BASE + '/index.html', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(900);
+  await entrarNaAplicacao(pg, BASE, CONTA_TESTE.email, CONTA_TESTE.password);
+}
+
 
 /* a CSP da app proíbe eval; esperas são feitas por sondagem com page.evaluate */
 async function waitFor(page, fn, timeout) {
@@ -19,7 +32,7 @@ const p = await B.newPage({ viewport: { width: 1560, height: 980 } });
 const errs = [];
 p.on('pageerror', (e) => errs.push(e.message));
 p.on('dialog', (d) => d.accept());
-await p.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'networkidle' });
+await abrir(p);
 await p.waitForTimeout(1200);
 await p.click('#btnConsole');
 await p.waitForTimeout(400);
