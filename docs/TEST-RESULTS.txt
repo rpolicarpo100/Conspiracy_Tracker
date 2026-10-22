@@ -1458,3 +1458,36 @@ E. O que continua por fazer
 
    Suites completas nesta data: `npm test` 23 conjuntos, 0 falhas (inclui os
    10 novos); `npm run test:ui` 81 testes, 0 falhas.
+
+================================================================================
+§48  FASE 9 PUBLICADA EM PRODUÇÃO (22 de outubro de 2026, 19:0x UTC)
+================================================================================
+   Push `17a84e3..8ac3d2f` em main → deploy automático do Render. Verificação
+   feita sobre a instância publicada, não sobre logs locais:
+
+   PASS /health → commit 8ac3d2f56c3be856715148bcd75a7fec23aa83fc (o deploy correu)
+   PASS /ready  → ready · storage ok/writable · checksumVerified:true
+                · modo postgres+ficheiro · durableBetweenDeploys:true · versão 72
+   PASS /api/meta → retention publicado (180/30/90 dias) · registration.open:false
+   PASS /api/projects sem sessão → 401
+   PASS /api/service/maintenance sem token → 503 (declara-se desligada)
+   PASS index.html publicado contém a porta (vnGate + login.js)
+   PASS Chromium sobre a produção: data-vn-auth=por-autenticar · grafo não
+        visível · nota «Sem conta nem auto-registo…» presente
+        → docs/shot-36-producao-entrada.png
+
+   Estado da base em produção depois do deploy: o administrador
+   (rubenpolicarpo@hotmail.com) manteve-se; continua com palavra-passe
+   temporária, por isso o primeiro acesso passa pelo ecrã de troca
+   obrigatória da porta.
+
+   ROLLBACK (se for preciso, em minutos):
+     git revert -m 1 8ac3d2f && git push origin main
+     → o Render volta a publicar o código de 17a84e3 (fase 8); a base de dados
+       não muda (o esquema é o mesmo, versão 7/72), portanto não há migração a
+       desfazer. Alternativa sem git: Render → Deploys → escolher 17a84e3 →
+       «Redeploy».
+
+   Continua pendente e NÃO foi feito: CRON_TOKEN no Render (a chave da API do
+   Render não está disponível nesta sessão), pelo que a purga automática ainda
+   não corre em produção — /api/meta diz `automated:false`.
