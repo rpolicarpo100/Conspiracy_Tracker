@@ -76,8 +76,21 @@
     pintar();
   }
 
+  /* Haverá análise por IA quando: (1) o utilizador tem chave validada, ou
+     (2) o operador configurou uma chave no ambiente, ou (3) existe o fornecedor
+     sem chave. O estado vem todo do servidor — a interface não o inventa. */
+  function estadoIA() {
+    const op = (S.keys && S.keys.operador) || null;
+    const minha = !!(S.keys && S.keys.any);
+    const doOperador = !!(op && op.activo && op.activo.provider);
+    const semChave = !!(doOperador && op.activo.keyless);
+    if (minha) return { tem: true, via: 'utilizador', rotulo: 'IA pronta', detalhe: 'chave da tua conta, validada' };
+    if (semChave) return { tem: true, via: 'sem-chave', rotulo: 'IA sem chave', detalhe: 'fornecedor público sem chave (' + op.activo.provider + '): não envies dados pessoais' };
+    if (doOperador) return { tem: true, via: 'operador', rotulo: 'IA pronta', detalhe: 'chave do operador (' + op.activo.provider + ' · ' + (op.activo.modelo || 'modelo por omissão') + ')' };
+    return { tem: false, via: 'nenhuma', rotulo: 'IA sem chave', detalhe: 'sem chave: a análise automática por IA não corre' };
+  }
   function temChave() {
-    return !!(S.keys && S.keys.any);
+    return estadoIA().tem;
   }
 
   function contar(itens) {
@@ -353,7 +366,10 @@
   async function analisarComIA() {
     const d = S.aberto;
     if (!d) return;
-    if (!temChave()) { aviso('Sem chave de IA: a análise por IA não corre. Adiciona uma chave na conta.'); return; }
+    if (!temChave()) {
+      aviso('Sem chave de IA: a análise por IA não corre. Podes pôr a tua chave em Conta → Chaves de IA, ou o operador configura uma no servidor.');
+      return;
+    }
     S.ocupado = true; S.msg = { text: 'A pedir análise à IA (pode demorar)…', cls: 'info' };
     pintar();
     const pedidos = ['research-planner', 'relationship-mapper'];
@@ -660,8 +676,8 @@
     if (S.me) {
       dir.appendChild(el('button', {
         class: 'sm-badge ' + (temChave() ? 'ok' : 'warn'), type: 'button', id: 'smIaBadge',
-        title: temChave() ? 'há uma chave de IA guardada e validada' : 'sem chave de IA: a análise automática por IA não corre',
-        text: temChave() ? 'IA pronta' : 'IA sem chave',
+        title: estadoIA().detalhe,
+        text: estadoIA().rotulo,
         onclick: () => irParaChaves()
       }));
       dir.appendChild(el('span', { class: 'sm-user', id: 'smUser', text: S.me.email }));
@@ -715,7 +731,11 @@
     const [meta, keys] = await Promise.all([api('/api/meta'), api('/api/providers')]);
     S.meta = (meta.ok && meta.json) || null;
     const provs = (keys.ok && keys.json && (keys.json.providers || keys.json.items)) || [];
-    S.keys = { any: provs.some((p) => p && (p.hasKey || p.saved || p.configured)), list: provs };
+    S.keys = {
+      any: provs.some((p) => p && (p.hasKey || p.saved || p.configured)),
+      list: provs,
+      operador: (keys.ok && keys.json && keys.json.operatorKeys) || null
+    };
     await carregarProjectos();
     /* o botão da vista avançada que traz de volta ao modo simples */
     const voltar = document.getElementById('btnSimples');

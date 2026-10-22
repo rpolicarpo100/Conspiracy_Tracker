@@ -66,7 +66,7 @@
       if (pr.ok) S.projects = pr.json.projects;
       else S.projects = [];
       const pv = await api('/api/providers');
-      if (pv.ok) S.providers = pv.json.providers;
+      if (pv.ok) { S.providers = pv.json.providers; S.operatorKeys = pv.json.operatorKeys || null; }
       const se = await api('/api/auth/sessions');
       if (se.ok) S.sessions = se.json.sessions;
       const mf = await api('/api/auth/mfa');
@@ -79,7 +79,7 @@
         if (a.ok) S.audit = a.json.events;
       }
     } else {
-      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null;
+      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null; S.operatorKeys = null;
       S.detail = null;
     }
     if (my !== gen) return;
@@ -1522,6 +1522,35 @@
     ]));
     root.appendChild(el('p', { style: 'font-size:11px;color:var(--muted)', text: 'Cada chave é validada com pedidos reais: lista de modelos e uma geração mínima. Sem validação o estado fica «não verificado» e as chamadas são recusadas pelo servidor.' }));
 
+    /* ---- chaves do operador: o que existe no ambiente do servidor (Render) ---- */
+    const op = S.operatorKeys;
+    if (op) {
+      const ativo = op.activo;
+      root.appendChild(el('div', { class: 'warnbox', style: 'margin:8px 0', 'data-vn': 'chaves-operador' }, [
+        el('b', { text: 'Chaves do operador (servidor): ' }),
+        el('span', { text: ativo
+          ? 'activa — ' + ativo.provider + (ativo.modelo ? ' · ' + ativo.modelo : '') + (ativo.keyless ? ' (sem chave, serviço público)' : '')
+          : 'nenhuma chave de servidor e fallback sem chave desligado. Sem chave tua, a análise por IA não corre.' }),
+        el('div', { style: 'font-size:10px;color:var(--muted);margin-top:4px', text: 'As chaves do servidor são variáveis de ambiente (Render → Environment). Uma por fornecedor; o valor nunca é mostrado aqui, só o estado. Um valor começado por «SUBSTITUIR» conta como não configurado.' })
+      ]));
+      const linhas = Object.keys(op.providers || {}).map((id) => {
+        const v = op.providers[id];
+        const est = v.keyless ? 'sem chave' : v.estado === 'ok' ? 'configurada' : v.estado === 'marcador' ? 'por preencher' : 'ausente';
+        return el('tr', {}, [
+          el('td', { style: 'font-size:11px' }, [el('b', { text: v.label || id }), el('div', { style: 'color:var(--muted);font-size:10px', text: v.freeTier || '' })]),
+          el('td', { style: 'font-family:monospace;font-size:10px', text: v.env || '—' }),
+          el('td', {}, [el('span', { class: 'tag ' + (v.estado === 'ok' || v.keyless ? 'ok' : v.estado === 'marcador' ? 'warn' : 'muted'), text: est })]),
+          el('td', { style: 'font-size:10px' }, [v.keyUrl
+            ? el('a', { href: v.keyUrl, target: '_blank', rel: 'noopener noreferrer', style: 'color:var(--accent)', text: 'obter chave ↗' })
+            : el('span', { style: 'color:var(--muted)', text: 'não precisa' })])
+        ]);
+      });
+      root.appendChild(el('table', { class: 'listtable', 'data-vn': 'tabela-operador' }, [
+        el('thead', {}, [el('tr', {}, ['Fornecedor', 'variável no Render', 'estado', 'chave'].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, linhas)
+      ]));
+    }
+
     const f = DRAFT.key;
     if (!f.provider) f.provider = (S.providers[0] || {}).id || 'groq';
     const sel = el('select', {
@@ -1552,7 +1581,8 @@
     root.appendChild(el('table', { class: 'listtable', style: 'margin-top:10px' }, [
       el('thead', {}, [el('tr', {}, ['Fornecedor', 'máscara', 'modelo', 'estado', 'último erro', ''].map((h) => el('th', { text: h })))]),
       el('tbody', {}, (S.providers || []).map((p) => el('tr', {}, [
-        el('td', { style: 'font-size:11px' }, [el('b', { text: p.label }), el('div', { style: 'color:var(--muted);font-size:10px', text: p.freeTier || '' })]),
+        el('td', { style: 'font-size:11px' }, [el('b', { text: p.label }), el('div', { style: 'color:var(--muted);font-size:10px', text: p.freeTier || '' }),
+          p.keyUrl ? el('a', { href: p.keyUrl, target: '_blank', rel: 'noopener noreferrer', style: 'font-size:10px;color:var(--accent)', text: 'obter chave ↗' }) : null].filter(Boolean)),
         el('td', { style: 'font-family:monospace;font-size:10px', text: p.mask || '—' }),
         el('td', { style: 'font-size:10px', text: p.model || '—' }),
         el('td', {}, [el('span', { class: 'tag ' + (p.status === 'operational' ? 'ok' : p.status === 'error' ? 'bad' : 'muted'), text: p.status })]),

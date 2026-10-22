@@ -168,6 +168,29 @@ await t('cobertura e lacunas vêm do que está registado', async () => {
 
 await p.screenshot({ path: '/home/user/docs/shot-29-fontes.png' });
 
+await t('caixa SSRN declara que o texto completo não é acessível (sem prometer o que não há)', async () => {
+  const box = await p.evaluate(() => {
+    const b = document.getElementById('ssrnBox');
+    return b ? { texto: b.textContent, campo: !!document.getElementById('ssrnId'), botao: !!document.getElementById('btnSsrnLookup') } : null;
+  });
+  if (!box) throw new Error('sem caixa SSRN no registo de fontes');
+  if (!box.campo || !box.botao) throw new Error('sem campo/botão de leitura');
+  if (!/bloqueia a página e o PDF/.test(box.texto) || !/HTTP 403/.test(box.texto)) {
+    throw new Error('não declara o bloqueio real: ' + box.texto.slice(0, 160));
+  }
+  if (!/Crossref/.test(box.texto)) throw new Error('não diz de onde vêm os metadados');
+  return 'declara bloqueio 403 · metadados por Crossref';
+});
+
+await t('caixa SSRN recusa identificador inválido sem pedido externo', async () => {
+  await p.fill('#ssrnId', 'nao-e-um-id');
+  await p.click('#btnSsrnLookup');
+  await p.waitForFunction(() => /Não foi possível ler/.test(document.getElementById('ssrnBox').textContent), { timeout: 15000 });
+  const t2 = await p.evaluate(() => document.getElementById('ssrnBox').textContent);
+  if (!/identificador SSRN/.test(t2)) throw new Error('sem motivo legível: ' + t2.slice(-160));
+  return 'erro explicado na própria caixa';
+});
+
 await t('sem erros de runtime', async () => {
   if (errs.length) throw new Error(errs.slice(0, 3).join(' | '));
   return 'nenhum';

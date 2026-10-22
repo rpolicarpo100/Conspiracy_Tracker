@@ -18,7 +18,8 @@
 
   const S = {
     sources: null, stats: null, meta: null, coverage: null, runs: null,
-    selected: null, detail: null, busy: '', msg: null, filter: { state: '', category: '', jurisdiction: '', q: '' }
+    selected: null, detail: null, busy: '', msg: null, filter: { state: '', category: '', jurisdiction: '', q: '' },
+    ssrn: null          /* resultado da leitura SSRN (Crossref) */
   };
 
   let ctxDeps = null;      /* {el, clear, toast, api} injectado pela consola */
@@ -62,6 +63,58 @@
     const { el, clear, toast, api } = deps;
     const wrap = el('div', {});
 
+    /* Caixa SSRN. A leitura usa /api/ssrn/:id (metadados do Crossref). O texto
+       completo não vem — e diz-se porquê, em vez de deixar o campo vazio. */
+    function ssrnBox() {
+      const box = el('div', { class: 'warnbox', style: 'margin:8px 0', id: 'ssrnBox' }, [
+        el('b', { text: 'SSRN (metadados por Crossref): ' }),
+        el('span', { style: 'font-size:11px;color:var(--muted)', text: 'o SSRN bloqueia a página e o PDF (HTTP 403), por isso não se lê o texto completo. A ficha (título, autores, data, resumo do autor) está depositada no Crossref e é isso que se importa.' })
+      ]);
+      const campo = el('input', { class: 'input', id: 'ssrnId', placeholder: 'ex.: 4461514 ou 10.2139/ssrn.4461514', style: 'max-width:320px' });
+      const btn = el('button', {
+        class: 'btn sm', type: 'button', id: 'btnSsrnLookup', text: S.busy === 'ssrn' ? 'A ler…' : 'Ler metadados',
+        onclick: async () => {
+          const v = (campo.value || '').trim();
+          if (!v) { toast('Indique o identificador SSRN', 'warn'); return; }
+          S.busy = 'ssrn'; S.ssrn = null; paint();
+          const r = await api('/api/ssrn/' + encodeURIComponent(v) + '?sonda=1');
+          S.busy = '';
+          S.ssrn = r.ok ? { ok: true, dados: r.json } : { ok: false, erro: reasonOf(r) };
+          paint();
+        }
+      });
+      box.appendChild(el('div', { class: 'chips', style: 'margin-top:6px' }, [campo, btn]));
+      if (S.ssrn && !S.ssrn.ok) box.appendChild(el('div', { style: 'color:var(--bad);font-size:11px;margin-top:6px', text: 'Não foi possível ler: ' + S.ssrn.erro }));
+      if (S.ssrn && S.ssrn.ok) {
+        const d = S.ssrn.dados; const m = d.ssrn;
+        const linhas = [
+          ['Título', m.titulo || '—'],
+          ['Autores', (m.autores || []).map((a) => a.nome + (a.afiliacao ? ' (' + a.afiliacao + ')' : '')).join(' · ') || 'não declarados'],
+          ['Data', m.data || 'não declarada'],
+          ['DOI', m.doiUrl],
+          ['Resumo (autor)', m.resumo || 'não publicado no Crossref'],
+          ['Texto completo', (m.textoCompleto && m.textoCompleto.disponivel ? 'acessível' : 'NÃO acessível — ' + (m.textoCompleto ? m.textoCompleto.motivo : 'sem informação'))],
+          ['Sonda à página', d.sonda ? (d.sonda.conclusao + ' (HTTP ' + d.sonda.status + ')') : 'não pedida']
+        ];
+        box.appendChild(el('table', { class: 'listtable', style: 'margin-top:6px', id: 'ssrnFicha' },
+          linhas.map(([k, v]) => el('tr', {}, [el('th', { style: 'text-align:left;width:120px;font-size:10px', text: k }), el('td', { style: 'font-size:11px', text: String(v).slice(0, 600) })]))));
+        box.appendChild(el('div', { class: 'chips', style: 'margin-top:6px' }, [
+          el('button', {
+            class: 'btn sm primary', type: 'button', id: 'btnSsrnImport', text: 'Registar como fonte',
+            onclick: async () => {
+              const cat = (S.filter.category || 'universidades');
+              const r2 = await api('/api/ssrn/' + encodeURIComponent((campo.value || '').trim()) + '/import', { method: 'POST', body: { category: cat } });
+              if (!r2.ok) { toast('Não registada: ' + reasonOf(r2), 'warn'); return; }
+              toast('Fonte registada como descoberta (categoria ' + cat + ')', 'ok');
+              S.ssrn = null; await refresh();
+            }
+          }),
+          el('span', { style: 'font-size:10px;color:var(--muted)', text: 'entra como «descoberta»: ainda tem de ser verificada' })
+        ]));
+      }
+      return box;
+    }
+
     function paint() {
       clear(wrap);
       if (S.msg) wrap.appendChild(el('div', { class: 'warnbox', text: S.msg.text }));
@@ -89,6 +142,9 @@
         el('button', { class: 'btn sm', type: 'button', text: 'Actualizar', onclick: () => refresh() })
       ]);
       wrap.appendChild(actions);
+
+      /* ---- SSRN: metadados por Crossref; texto completo declarado inacessível ---- */
+      wrap.appendChild(ssrnBox());
 
       /* ---- filtros ---- */
       const filt = el('div', { class: 'chips', style: 'margin:6px 0' }, [

@@ -212,3 +212,40 @@ Formato: data · decisão · motivo · o que foi recusado.
     6/hora por utilizador.
     Motivo: um motor de expansão que se comporta como um rastreador abusivo destrói a possibilidade
     de usar as fontes que encontra.
+
+38. **2026-10-22 · Chaves de IA: do utilizador primeiro, do operador depois, sem chave por último.**
+    Ordem: cofre da conta → variável do operador (`AI_KEY_*`) → fornecedor público sem chave.
+    Uma chave de operador começada por `SUBSTITUIR`/`<`/`COLA` conta como ausente, para se poderem
+    criar os nomes no Render antes de ter os valores. O valor nunca sai do servidor: a API devolve
+    apenas `estado` e `env`, e há um teste que verifica que o corpo da resposta não contém a chave.
+    Motivo: a instância tem de ter IA sem obrigar cada pessoa a criar contas em cinco sítios, mas
+    sem transformar o painel numa lista de segredos.
+
+39. **2026-10-22 · Se a chave do operador falhar, cai-se para o sem chave — e diz-se que se caiu.**
+    `401`/`403` do fornecedor com chave → uma tentativa no fornecedor sem chave, com
+    `fallbackFrom` e um aviso de qualidade na resposta e na utilização registada. `400` não cai
+    (é erro do nosso pedido, repetir noutro lado não ajuda).
+    Motivo: uma chave colada mal não pode deixar a aplicação sem IA em silêncio, nem pode passar por
+    «está tudo bem» — quem lê a execução tem de ver de onde veio a resposta.
+
+40. **2026-10-22 · Fornecedor sem chave: com fila e com o limite do fornecedor respeitado.**
+    O serviço público impõe «1 resposta por 30 s por IP». Os pedidos sem chave são serializados e,
+    em `429`, espera-se o tempo pedido (máximo 35 s, uma vez). Declara-se o custo real: execuções
+    mais lentas, limite partilhado pelo IP do servidor. Para uso sério recomenda-se chave gratuita.
+    Motivo: sem isto, um motor de 20 passos falhava com `falha-de-ia` a meio — um erro nosso
+    disfarçado de avaria externa.
+
+41. **2026-10-22 · «Lista de modelos pública» não é «gera sem chave».**
+    A sonda `tools/keyless-scan.mjs` tem duas etapas: `GET /models` (prova que o catálogo é público)
+    e `POST /chat/completions` com `max_tokens:1` (prova que a geração é aberta). Dos 12 candidatos
+    com catálogo público, **0** aceitaram gerar sem chave. Há sempre um controlo positivo na lista —
+    se o controlo não for detectado, o «0» não vale.
+    Motivo: a diferença entre as duas coisas é exactamente onde nasceriam resultados inventados.
+
+42. **2026-10-22 · SSRN: metadados sim (Crossref), texto completo não.**
+    A página e o PDF do SSRN devolvem `403` (bloqueio técnico). Não se contorna. A ficha vem do
+    Crossref (`10.2139/ssrn.<id>`), é registada como fonte `DISCOVERED` com adaptador
+    `ssrn-crossref` e uma nota que diz, por palavras, que o texto completo não foi obtido e que o
+    resumo é do autor.
+    Motivo: era a única forma de responder «é possível extrair informação do SSRN?» com um sim e um
+    não ao mesmo tempo — e ambos verdadeiros.

@@ -54,8 +54,17 @@ memória (`GET /api/search`) — e também na base real carregada. A **Vista ava
 consola, cronologias, relatório) está a um clique, e volta-se ao modo simples com o botão
 *Modo simples*.
 
-Se não houver chave de IA, a barra diz **«IA sem chave»** e a análise por IA não é oferecida: os sete
-agentes de IA não correm e dizem porquê, em vez de simularem uma resposta.
+O estado da IA aparece na barra, e é sempre o estado real:
+
+* **«IA pronta · chave da tua conta»** — há uma chave tua guardada e validada no cofre;
+* **«IA pronta · chave do operador»** — não tens chave, mas a instância tem uma (`AI_KEY_*`);
+* **«IA sem chave»** — a instância usa um fornecedor público sem chave (mais lento, com aviso de
+  privacidade), ou não há IA nenhuma e os agentes dizem porquê em vez de simularem uma resposta.
+
+As chaves do operador colocam-se no Render (`AI_KEY_GROQ`, `AI_KEY_GEMINI`, …): ver
+[`docs/IA-FORNECEDORES.md`](docs/IA-FORNECEDORES.md) — onde obter cada uma, o nível gratuito e o que
+foi medido. Para artigos do SSRN há uma caixa própria em *Consola → Fontes*: os metadados vêm do
+Crossref e o texto completo é declarado inacessível (`docs/SSRN.md`).
 
 ### Porta de entrada e servidor local de testes
 

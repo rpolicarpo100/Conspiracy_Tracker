@@ -264,7 +264,12 @@ const srv = spawn(process.execPath, ['tools/serve.mjs'], {
   cwd: process.cwd(),
   env: Object.assign({}, process.env, {
     PORT: String(PORT), DATA_DIR: DATA, APP_SECRET: 'segredo-de-teste-motor-1234567890',
-    REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '200'
+    REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '200',
+    /* Fase 11: o servidor passou a ter, por omissão, um fornecedor SEM CHAVE.
+       Esta suite testa o comportamento quando NÃO há IA nenhuma (o motor tem de
+       parar e dizer porquê) por isso desliga essa via aqui. A via sem chave é
+       testada em tests/ia-fornecedores.mjs, com transporte falso e sem rede. */
+    AI_KEYLESS_FALLBACK: 'false'
   }),
   stdio: 'ignore'
 });
@@ -288,10 +293,14 @@ try {
   await call('POST', '/api/auth/register', { email: 'motor' + Date.now().toString(36) + '@ex.pt', password: 'SenhaForte123', acceptTerms: true });
   const prj = (await call('POST', '/api/projects', { title: 'Projecto HTTP', question: 'A transferência ocorreu?', referenceDate: '2024-12-31' })).json.project;
 
+  /* Fase 11: sem chave do utilizador, o servidor usa a chave do operador ou o
+     fornecedor sem chave. O que NÃO pode acontecer é dizer «usei IA» quando não
+     há nenhuma via. Aqui desligam-se as duas vias e prova-se que o motor pára.
+     (A via sem chave em si é testada em tests/ia-fornecedores.mjs.) */
   await t('POST /runs sem chave de IA valida e pára com motivo declarado (HTTP)', async () => {
     const r = await call('POST', '/api/projects/' + prj.id + '/runs', { profile: 'normal', urls: [FIX + '/relatorio'] });
     ok(r.status === 201, 'status ' + r.status + ' ' + JSON.stringify(r.json));
-    ok(r.json.aiUsed === false, 'disse ter usado IA sem credencial');
+    ok(r.json.aiUsed === false, 'disse ter usado IA sem via nenhuma');
     ok(r.json.run.stopReason === 'sem-fornecedor-de-ia-validado', 'motivo: ' + r.json.run.stopReason);
     return 'run criada · parou em «' + r.json.run.stopReason + '» (nada inventado)';
   });

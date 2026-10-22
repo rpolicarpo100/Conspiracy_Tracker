@@ -12,12 +12,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.0.0-fase10**
+- versão da aplicação: **2.0.0-fase11**
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 103
-- ficheiros de teste: 48 · blocos de teste declarados (`await t`): 542 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 105
+- ficheiros de teste: 50 · blocos de teste declarados (`await t`): 578 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -25,7 +25,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | --- | --- | --- |
 | `tests/_env.mjs` | 0 | servidor/módulo |
 | `tests/_ui-entrada.mjs` | 0 | servidor/módulo |
-| `tests/account-ui.mjs` | 17 | interface (Playwright) |
+| `tests/account-ui.mjs` | 18 | interface (Playwright) |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
 | `tests/agents.mjs` | 18 | servidor/módulo |
@@ -43,9 +43,10 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/fase3d.mjs` | 18 | servidor/módulo |
 | `tests/fase3e.mjs` | 21 | servidor/módulo |
 | `tests/flow.mjs` | 0 | interface (Playwright) |
-| `tests/fontes-ui.mjs` | 10 | interface (Playwright) |
+| `tests/fontes-ui.mjs` | 12 | interface (Playwright) |
 | `tests/fontes.mjs` | 23 | servidor/módulo |
 | `tests/graph.mjs` | 13 | servidor/módulo |
+| `tests/ia-fornecedores.mjs` | 15 | servidor/módulo |
 | `tests/mfa-publico.mjs` | 0 | servidor/módulo |
 | `tests/mfa-ui.mjs` | 10 | interface (Playwright) |
 | `tests/ocr-publico.mjs` | 0 | servidor/módulo |
@@ -71,13 +72,14 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/shots2.mjs` | 0 | interface (Playwright) |
 | `tests/simples-ui.mjs` | 14 | interface (Playwright) |
 | `tests/smoke.mjs` | 0 | interface (Playwright) |
+| `tests/ssrn.mjs` | 18 | servidor/módulo |
 
 ### Registo
 
-- último commit: 7092430 testes: a versão verifica o formato, não o número da fase
+- último commit: ef3dfdd docs: fase 10 publicada e capturas do modo simples
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
-- documentação: 29 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md)
+- documentação: 32 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)
 
 ### Coerência
 

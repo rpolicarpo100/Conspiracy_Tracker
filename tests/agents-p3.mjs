@@ -29,7 +29,11 @@ const srv = spawn(process.execPath, ['tools/serve.mjs'], {
   cwd: process.cwd(),
   env: Object.assign({}, process.env, {
     PORT: String(PORT), DATA_DIR: DATA, APP_SECRET: 'segredo-de-teste-agentes-1234567',
-    REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '200'
+    REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '200',
+    /* Fase 11: por omissão o servidor tem um fornecedor SEM CHAVE. Esta suite
+       testa o contrato «sem IA válida, nao-executado», por isso desliga essa via.
+       A via sem chave tem suite própria (tests/ia-fornecedores.mjs). */
+    AI_KEYLESS_FALLBACK: 'false'
   }),
   stdio: 'ignore'
 });

@@ -49,3 +49,49 @@ services:
       # usa a cópia versionada em vendor/ocr (não precisa de rede).
       - key: OCR_LANG_PATH
         value: /opt/render/project/src/vendor/ocr
+
+      # ---------------- chaves de IA do operador (fase 11) ----------------
+      # Cada uma é OPCIONAL. `sync: false` = a variável aparece no painel do Render
+      # com o nome certo e o valor é colado lá (nunca no repositório). Só a primeira
+      # preenchida é usada; a ordem está em AI_OPERATOR_ORDER.
+      # Onde obter cada chave: docs/IA-FORNECEDORES.md
+      - key: AI_KEY_GROQ
+        sync: false
+      - key: AI_KEY_GEMINI
+        sync: false
+      - key: AI_KEY_CEREBRAS
+        sync: false
+      - key: AI_KEY_OPENROUTER
+        sync: false
+      - key: AI_KEY_MISTRAL
+        sync: false
+      - key: AI_KEY_GITHUB
+        sync: false
+      - key: AI_KEY_NVIDIA
+        sync: false
+      - key: AI_KEY_SAMBANOVA
+        sync: false
+      - key: AI_KEY_HUGGINGFACE
+        sync: false
+      - key: AI_KEY_COHERE
+        sync: false
+      - key: AI_KEY_CLOUDFLARE
+        sync: false
+      # Modelo a usar por fornecedor (opcional; sem isto usa-se o primeiro modelo
+      # declarado no catálogo, ver docs/IA-FORNECEDORES.md).
+      - key: AI_MODEL_GROQ
+        sync: false
+      - key: AI_MODEL_GEMINI
+        sync: false
+      - key: AI_MODEL_OPENROUTER
+        sync: false
+      # Ordem de preferência das chaves do operador.
+      - key: AI_OPERATOR_ORDER
+        value: groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare
+      # Fornecedor SEM CHAVE (Pollinations): dá IA à aplicação sem o utilizador
+      # criar conta em lado nenhum. Serviço público de terceiros — não enviar
+      # dados pessoais. Pôr `false` desliga-o.
+      - key: AI_KEYLESS_FALLBACK
+        value: "true"
+      - key: AI_MODEL_POLLINATIONS
+        sync: false

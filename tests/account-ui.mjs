@@ -13,7 +13,11 @@ const srv = spawn(process.execPath, ['tools/serve.mjs'], {
   cwd: process.cwd(),
   env: Object.assign({}, process.env, {
     PORT: String(PORT), DATA_DIR: DATA, APP_SECRET: 'segredo-de-teste-ui-1234567890',
-    ADMIN_EMAIL: 'admin@meridiano.test', REGISTER_OPEN: 'true', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100'
+    ADMIN_EMAIL: 'admin@meridiano.test', REGISTER_OPEN: 'true', REGISTER_MAX: '200', LOGIN_MAX_ATTEMPTS: '100',
+    /* Fase 11: o servidor tem, por omissão, um fornecedor SEM CHAVE. Esta suite
+       verifica o contrato «sem IA, a pesquisa pára e escreve porquê», por isso
+       desliga essa via; a via sem chave tem suite própria (tests/ia-fornecedores.mjs). */
+    AI_KEYLESS_FALLBACK: 'false'
   }),
   stdio: 'ignore'
 });
@@ -184,7 +188,7 @@ await t('chave de IA: guardada com máscara e validada contra o fornecedor real'
   await clickText('#accroot .btn', 'Guardar chave');
   await waitFor(() => /Chave guardada/.test(document.getElementById('accroot').textContent), 20000);
   await waitFor(() => {
-    const tr = [...document.querySelectorAll('#accroot table tbody tr')].find((r) => /Groq/.test(r.textContent));
+    const tr = [...document.querySelectorAll('#accroot table:not([data-vn="tabela-operador"]) tbody tr')].find((r) => /Groq/.test(r.textContent));
     return !!(tr && [...tr.querySelectorAll('button')].some((b) => /Testar/.test(b.textContent)));
   }, 20000);
   const txt = await p.textContent('#accroot');
@@ -192,7 +196,7 @@ await t('chave de IA: guardada com máscara e validada contra o fornecedor real'
   if (!/chav…/.test(txt)) throw new Error('sem máscara');
   // testar contra o fornecedor real (Groq) — deve devolver erro de autenticação honesto
   const row = await p.evaluate(() => {
-    const tr = [...document.querySelectorAll('#accroot table tbody tr')].find((r) => /Groq/.test(r.textContent));
+    const tr = [...document.querySelectorAll('#accroot table:not([data-vn="tabela-operador"]) tbody tr')].find((r) => /Groq/.test(r.textContent));
     const b = [...tr.querySelectorAll('button')].find((x) => /Testar/.test(x.textContent));
     if (b) b.click();
     return !!b;
@@ -701,6 +705,26 @@ await p.evaluate(() => {
 await p.waitForTimeout(300);
 await p.screenshot({ path: '/home/user/docs/shot-22-agentes.png' });
 await p.screenshot({ path: '/home/user/docs/shot-17-conta.png' });
+await t('chaves do operador: estado visível, variável nomeada e link para obter a chave', async () => {
+  /* corre no fim de propósito: muda de separador */
+  await clickText('#accroot .btn', 'Chaves de IA');
+  await p.waitForTimeout(400);
+  const info = await p.evaluate(() => {
+    const box = document.querySelector('[data-vn="chaves-operador"]');
+    const tab = document.querySelector('table[data-vn="tabela-operador"]');
+    if (!box || !tab) return null;
+    const linhas = [...tab.querySelectorAll('tbody tr')].map((tr) => tr.textContent);
+    const links = [...tab.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    return { texto: box.textContent, linhas, links, header: tab.querySelector('thead').textContent };
+  });
+  if (!info) throw new Error('sem painel de chaves do operador');
+  if (!/AI_KEY_GROQ/.test(info.header + info.linhas.join(' '))) throw new Error('não nomeia a variável de ambiente');
+  if (!/Chaves do operador/.test(info.texto)) throw new Error('sem título');
+  if (!info.links.some((h) => /^https:\/\//.test(h || ''))) throw new Error('sem ligação para obter chave');
+  if (!/sem chave/.test(info.linhas.join(' '))) throw new Error('não declara o fornecedor sem chave');
+  return info.linhas.length + ' fornecedores · ' + info.links.length + ' ligações';
+});
+
 }   // fim das capturas (ver capturasOk)
 await B.close();
 srv.kill('SIGTERM');

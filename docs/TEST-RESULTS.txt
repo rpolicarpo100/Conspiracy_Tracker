@@ -1635,3 +1635,69 @@ E. O que continua por fazer
    ROLLBACK: `git revert 6e2f618 && git push origin main` devolve a fase 9
    (o modo avançado continua a ser o ecrã inicial e /api/search desaparece).
    Sem alterações de esquema: nada a desfazer na base.
+
+================================================================================
+§53  FASE 11 — CHAVES DE IA NO RENDER, FORNECEDOR SEM CHAVE, SSRN
+     (22 de outubro de 2026, 21:0x–21:45 UTC)
+================================================================================
+   Pedido: (a) várias APIs de IA free/free-tier para colar chaves no Render;
+   (b) validar o workflow que descobre APIs de IA «sem chave»; (c) verificar se
+   é possível extrair informação de ssrn.com; (d) instalar ferramentas
+   auditadas se necessário.
+
+   (a) CATÁLOGO E CHAVES DO OPERADOR
+   PASS 13 fornecedores, um adaptador por fornecedor, todos com keyUrl, envVar e
+        nível gratuito declarado (só «custom» não tem, por definição)
+   PASS AI_KEY_* (11) + AI_MODEL_* + AI_OPERATOR_ORDER + AI_KEYLESS_FALLBACK nos
+        envVars do render.yaml com sync:false (26 variáveis na blueprint)
+   PASS GET /api/providers devolve operatorKeys com estado por fornecedor e
+        «activo»; o corpo (11 352 bytes) NÃO contém a chave colada
+   PASS marcador «SUBSTITUIR…» conta como ausente → activo passa a pollinations
+   PASS AI_KEYLESS_FALLBACK=false → activo null · AI_MODEL_GROQ respeitado
+   PASS execução real: research-planner com AI_KEY_GROQ inválida → fallback
+        para pollinations, provider registado «pollinations», 19,1 s, saída JSON
+        real (5 subperguntas sobre o financiamento da Fundação Gulbenkian)
+
+   (b) WORKFLOW «SEM CHAVE»
+   PASS tools/keyless-scan.mjs: etapa 1 GET /models (13/46 com 200) e etapa 2
+        POST /chat/completions max_tokens:1 → 0 dos 12 candidatos reais gerou
+        sem chave (401/403/429); o controlo Pollinations gerou (1 de 13) —
+        a sonda não dá falsos negativos
+   PASS sonda recusa http:// e 127.0.0.1/10.0.0.5 sem fazer um único pedido
+   PASS limite real do fornecedor sem chave descoberto e tratado: «Free limit
+        reached: 1 reply every 30 seconds per IP» → fila + espera ≤35 s uma vez;
+        execução «rapida» passou de «falha-de-ia» a «aguarda-revisao-humana»
+
+   (c) SSRN
+   PASS robots.txt 200 (Disallow só GPTBot/ChatGPT-User e /admin|/tasks|/config)
+   PASS página de resumo e PDF → 403 (Content Blocked / Just a moment)
+   PASS doi.org → 302 → ssrn.com/abstract=… → 403
+   PASS Crossref 10.2139/ssrn.4461514 → 200 com título, 3 autores, data e resumo
+   PASS OpenAlex (S4210172589) → 200, 1 375 448 obras, sem resumo
+   PASS Unpaywall → «OA» circular para a própria DOI: não há cópia aberta
+   PASS GET /api/ssrn/4461514?sonda=1 → ficha + «texto completo NÃO acessível»
+   PASS POST /api/ssrn/4461514/import → fonte DISCOVERED · adaptador
+        ssrn-crossref · segunda vez 409 · sem CSRF 403 · sem sessão 401
+
+   (d) FERRAMENTAS
+   PASS nenhuma dependência nova: só Node 20 (fetch/AbortController). A sonda e
+        o leitor SSRN são código do repositório, auditáveis, sem pacotes.
+
+   TESTES
+   PASS tests/ssrn.mjs .................. 18/18 (rede: 3 asserções reais)
+   PASS tests/ia-fornecedores.mjs ....... 14/14 + 1 SKIP (chamada real opt-in;
+        com VN_KEYLESS_REAL=1 → 15/15, resposta real em 7,4 s)
+   PASS npm test ........................ 28 suites, 0 falhas, 485 PASS
+   PASS npm run test:ui ................. 9 suites, 98 testes, 0 falhas
+   PASS node tools/status.mjs --check ... 2.0.0-fase11 · 105 rotas
+
+   CORRECÇÕES EM SUITES EXISTENTES (comportamento mudou de propósito)
+   · tests/research.mjs, tests/agents-p3.mjs e tests/account-ui.mjs lançam o
+     servidor com AI_KEYLESS_FALLBACK=false: testam «sem IA, o motor pára».
+   · tests/account-ui.mjs passou a distinguir a tabela das chaves do utilizador
+     da nova tabela do operador (ambas contêm «Groq»).
+
+   O QUE CONTINUA A NÃO SER POSSÍVEL
+   · texto completo do SSRN (403; não se contorna);
+   · geração sem chave fora do fornecedor público (0 em 12 candidatos);
+   · limites do fornecedor público partilhados com o IP do servidor.

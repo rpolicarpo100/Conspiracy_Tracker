@@ -16,6 +16,7 @@ import { graphToSvg, graphToDot, graphExportPayload } from './graph-export.mjs';
 import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_REDIRECTS } from './access.mjs';
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
 import { validateEntityLink } from './graph.mjs';
+import { extrairIdSSRN, lerMetadadosSSRN, sondarBloqueioSSRN, SSRN } from './ssrn.mjs';
 import { MEMORY_KINDS, MEMORY_LIMITS, validateMemory, memoryToMarkdown } from './memory.mjs';
 import { extractPdfText, PDF_LIMITS } from './pdftext.mjs';
 import { ocrPdf, ocrStatus, OCR_LIMITS } from './ocr.mjs';
@@ -50,7 +51,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase10';
+const APP_VERSION = '2.0.0-fase11';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -412,11 +413,116 @@ export async function createApi(opts) {
     };
   }
 
+  /* ================= chaves do operador (variáveis do Render) =================
+     O operador (dono da instância) pode pôr chaves no ambiente do servidor, uma por
+     fornecedor: AI_KEY_GROQ, AI_KEY_GEMINI, … e o modelo em AI_MODEL_GROQ, etc.
+     Ordem de precedência: (1) chave do próprio utilizador no cofre; (2) chave do
+     operador; (3) fornecedor SEM CHAVE (Pollinations), se AI_KEYLESS_FALLBACK não
+     estiver a 'false'.
+
+     Marcador: um valor que comece por «SUBSTITUIR» (ou «<» ou «COLA») é tratado como
+     NÃO configurado. É o que permite criar as variáveis no Render já com o nome
+     certo e a pessoa só substituir o valor, sem que a aplicação envie uma chave
+     falsa para o fornecedor em lado nenhum. */
+  const MARCADOR = /^(substituir|<|cola)/i;
+  function chaveDoOperador(provider) {
+    const spec = PROVIDERS[provider];
+    if (!spec) return { estado: 'desconhecido' };
+    if (spec.keyless) return { estado: 'sem-chave', keyless: true, modelo: spec.modelsHint[0] || null };
+    const env = spec.envVar || ('AI_KEY_' + String(provider).toUpperCase());
+    const bruto = String(process.env[env] || '').trim();
+    if (!bruto) return { estado: 'ausente', env };
+    if (MARCADOR.test(bruto)) return { estado: 'marcador', env };
+    const modelo = String(process.env['AI_MODEL_' + String(provider).toUpperCase()] || '').trim() || spec.modelsHint[0] || null;
+    return { estado: 'ok', env, apiKey: bruto, modelo };
+  }
+  function operadorPadrao() {
+    /* quem tem chave de operador válida, por esta ordem; o sem-chave fica em último */
+    const ordem = String(process.env.AI_OPERATOR_ORDER || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare');
+    for (const p of ordem.split(',').map((x) => x.trim()).filter(Boolean)) {
+      const k = chaveDoOperador(p);
+      if (k.estado === 'ok') return { provider: p, apiKey: k.apiKey, modelo: k.modelo };
+    }
+    if (String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false') {
+      const pol = PROVIDERS.pollinations;
+      if (pol) return { provider: 'pollinations', apiKey: null, modelo: (process.env.AI_MODEL_POLLINATIONS || pol.modelsHint[0]), keyless: true };
+    }
+    return null;
+  }
+  /* estado público (sem valores) para a interface poder dizer o que existe */
+  function estadoChavesOperador() {
+    const out = {};
+    Object.keys(PROVIDERS).forEach((p) => {
+      const spec = PROVIDERS[p];
+      if (!spec.envVar && !spec.keyless) return;
+      const k = chaveDoOperador(p);
+      out[p] = { label: spec.label, keyless: !!spec.keyless, estado: k.estado || (spec.keyless ? 'sem-chave' : 'ausente'),
+        env: spec.envVar || null, freeTier: spec.freeTier || null, keyUrl: spec.keyUrl || null };
+    });
+    const p = operadorPadrao();
+    return { providers: out, activo: p ? { provider: p.provider, modelo: p.modelo, keyless: !!p.keyless } : null,
+      keylessFallback: String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false' };
+  }
+
+  /* Executor com a chave do operador (ou sem chave). A utilização fica registada
+     com o fornecedor e o modelo reais, e com `viaOperador` para se saber de quem é
+     a chave que pagou a chamada. */
+  function runnerDoOperador(user, tipo) {
+    const p = operadorPadrao();
+    if (!p) return null;
+    /* Cadeia: chave do operador → fornecedor sem chave. Se a chave do operador estiver
+       inválida (401/403), a aplicação não fica sem IA: cai para o sem-chave e diz que
+       caiu — nunca finge que usou a chave do operador. */
+    const cadeia = [p];
+    if (!p.keyless && String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false' && PROVIDERS.pollinations) {
+      cadeia.push({ provider: 'pollinations', apiKey: null,
+        modelo: (process.env.AI_MODEL_POLLINATIONS || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
+    }
+    return async function ai(req) {
+      const messages = tipo === 'research' ? promptFor(req.step && req.step.id, req.project, req.candidates) : req.messages;
+      let r = null; let usado = null;
+      for (const c of cadeia) {
+        r = await complete({ provider: c.provider, apiKey: c.apiKey, model: c.modelo, messages, timeoutMs: (req && req.timeoutMs) || 30000 });
+        usado = c;
+        if (r.ok) break;
+        /* 400 é erro do nosso pedido: repetir noutro fornecedor não ajuda */
+        if (r.status === 400) break;
+      }
+      const caiu = !!(usado && p.provider !== usado.provider);
+      let parsed = null;
+      if (r && r.ok) { const pa = parseAiJson(r.text); parsed = pa.ok ? pa.parsed : null; }
+      await store.addUsage({
+        userId: user.id, provider: usado.provider, model: usado.modelo,
+        kind: (tipo === 'research' ? 'research:' + (req.step && req.step.id) : 'agent'),
+        ok: !!r.ok, viaOperador: true, semChave: !!usado.keyless,
+        promptTokens: r.usage ? r.usage.promptTokens : null,
+        completionTokens: r.usage ? r.usage.completionTokens : null,
+        cost: null, latencyMs: r.latencyMs != null ? r.latencyMs : null
+      }).catch(() => {});
+      if (!r || !r.ok) return { ok: false, error: 'fornecedor recusou: ' + String((r && r.error) || 'sem resposta').slice(0, 160), provider: usado && usado.provider };
+      return aplicarResposta(r, parsed, usado, p, caiu, tipo);
+    };
+  }
+  /* resposta normalizada, igual para o caminho do operador e o do utilizador */
+  function aplicarResposta(r, parsed, usado, p, caiu, tipo) {
+      const nota = parsed ? null : 'a resposta não era JSON válido';
+      const base = {
+        ok: true, provider: usado.provider, model: usado.modelo, latencyMs: r.latencyMs, usage: r.usage,
+        keyless: !!usado.keyless, fallbackFrom: caiu ? p.provider : null,
+        aviso: usado.keyless ? 'resposta de um serviço público sem chave: não tem garantia de qualidade' : null,
+        parsed, note: nota
+      };
+      if (tipo === 'research') return Object.assign({ expectsJson: true }, base);
+      return base;
+  }
+
   /* Executor de IA do utilizador: só com credencial VALIDADA e cofre activo.
-     Sem isso devolve erro explícito — o motor pára e diz porquê. */
+     Sem isso devolve erro explícito — o motor pára e diz porquê.
+     Se o utilizador não tiver chave, usa-se a do operador; se também não houver,
+     o fornecedor sem chave (declarado). */
   function aiRunner(user) {
     const cred = store.credentialsOf(user.id).find((c) => c.status === 'operational') || null;
-    if (!cred) return null;
+    if (!cred) return runnerDoOperador(user, 'research');
     if (!vault.enabled) return null;
     let apiKey = null;
     try { apiKey = vault.open(cred.keyCipher); } catch { return null; }
@@ -446,7 +552,7 @@ export async function createApi(opts) {
   /* Executor genérico para os agentes de IA: mesmo cofre, mesma credencial validada. */
   function agentAiRunner(user) {
     const cred = store.credentialsOf(user.id).find((c) => c.status === 'operational') || null;
-    if (!cred || !vault.enabled) return null;
+    if (!cred || !vault.enabled) return runnerDoOperador(user, 'agent');
     let apiKey = null;
     try { apiKey = vault.open(cred.keyCipher); } catch { return null; }
     return async function ai({ messages, timeoutMs }) {
@@ -701,6 +807,7 @@ export async function createApi(opts) {
     };
   };
   const srcLimiter = limiter(30, 3600 * 1000);
+  const ssrnLimiter = limiter(20, 3600 * 1000);   // pedidos ao Crossref por utilizador/hora
   const checkLimiter = limiter(6, 60 * 60 * 1000);
   const discoveryLimiter = limiter(6, 60 * 60 * 1000);
 
@@ -1813,6 +1920,61 @@ export async function createApi(opts) {
         await store.audit({ type: 'source_discovered', actorId: a.user.id, ip: ipOf(req), subjectId: src.id,
           action: 'source_create', detail: { url: src.canonicalUrl, category } });
         return json(res, 201, { ok: true, source: src, nota: 'registada como DISCOVERED: ainda não foi verificada nem aprovada' });
+      }
+
+      /* ---- SSRN: metadados reais por Crossref; texto completo declarado inacessível ---- */
+      if (p.match(/^\/api\/ssrn\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!ssrnLimiter.allowed(a.user.id)) return err(res, 429, 'demasiados pedidos ao SSRN nesta hora (limite de cortesia do Crossref)');
+        const entrada = decodeURIComponent(p.split('/')[3]);
+        const id = extrairIdSSRN(entrada);
+        if (!id.ok) return err(res, 400, id.reason);
+        const meta = await lerMetadadosSSRN(id.id);
+        if (!meta.ok) return err(res, 502, 'não foi possível ler os metadados: ' + meta.reason, { fonte: 'Crossref', id: id.id });
+        const comSonda = String(req.url || '').indexOf('sonda=1') >= 0;
+        const sonda = comSonda ? await sondarBloqueioSSRN(id.id) : null;
+        return json(res, 200, {
+          ok: true, ssrn: meta, sonda,
+          medido: SSRN.bloqueioMedido,
+          nota: 'metadados via Crossref (o SSRN deposita lá a ficha). O texto completo NÃO é acessível: a página e o PDF devolvem 403 e não se contorna. O resumo do autor não é o artigo.'
+        });
+      }
+
+      if (p.match(/^\/api\/ssrn\/[^/]+\/import$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        if (!ssrnLimiter.allowed(a.user.id)) return err(res, 429, 'demasiados pedidos ao SSRN nesta hora');
+        const body = await readBody(req);
+        const id = extrairIdSSRN(decodeURIComponent(p.split('/')[3]));
+        if (!id.ok) return err(res, 400, id.reason);
+        const categoria = String(body.category || 'universidades');
+        if (!SOURCE_CATEGORIES[categoria]) return err(res, 400, 'categoria desconhecida (ver /api/sources/meta)');
+        const meta = await lerMetadadosSSRN(id.id);
+        if (!meta.ok) return err(res, 502, 'não foi possível ler os metadados: ' + meta.reason);
+        const url = 'https://doi.org/' + meta.doi;
+        const key = sourceDedupeKey(url);
+        const existente = store.sourceByKey(key);
+        if (existente) {
+          return json(res, 409, { ok: false, error: 'esta fonte já está registada', existing: { id: existente.id, name: existente.name, state: existente.state }, nota: 'duplicados não entram no catálogo' });
+        }
+        const src = await store.createSource({
+          name: String(meta.titulo || ('SSRN ' + id.id)).slice(0, 200),
+          url: new URL(url).toString(), canonicalUrl: canonicalUrl(url), dedupeKey: key,
+          domain: 'doi.org', category: categoria,
+          institution: meta.editora ? String(meta.editora).slice(0, 200) : null,
+          notes: ('Autores: ' + (meta.autores.map((x) => x.nome).join(', ') || 'não declarados') +
+            '. Data: ' + (meta.data || 'não declarada') + '. DOI: ' + meta.doi +
+            '. Texto completo NÃO acessível (SSRN devolve 403; não se contorna). ' +
+            (meta.resumo ? 'Resumo do autor (Crossref): ' + meta.resumo.slice(0, 900) : 'Sem resumo publicado.')).slice(0, 2000),
+          discoveredVia: { adapter: 'ssrn-crossref', ssrnId: id.id, doi: meta.doi, by: a.user.id, at: new Date().toISOString() },
+          state: 'DISCOVERED'
+        }, a.user.id);
+        await store.audit({ type: 'source_discovered', actorId: a.user.id, ip: ipOf(req), subjectId: src.id,
+          action: 'source_create', detail: { url: src.canonicalUrl, category: categoria, via: 'ssrn-crossref' } });
+        return json(res, 201, {
+          ok: true, source: src, metadados: { titulo: meta.titulo, autores: meta.autores, data: meta.data, doi: meta.doi, resumo: meta.resumo },
+          nota: 'registada como DISCOVERED com metadados do Crossref. O texto completo não foi obtido — a ficha diz isso e não finge o contrário.'
+        });
       }
 
       if (p.match(/^\/api\/sources\/[^/]+$/) && method === 'GET') {
@@ -3117,9 +3279,15 @@ export async function createApi(opts) {
               status: c ? c.status : 'not_configured',
               lastError: c ? c.lastError : null,
               lastValidatedAt: c ? c.lastValidatedAt : null,
-              breakerOpen: br.open
+              breakerOpen: br.open,
+              /* chave do operador (do ambiente do Render): só o estado, nunca o valor */
+              operador: (() => {
+                const k = chaveDoOperador(pr.id);
+                return { estado: k.estado || 'ausente', env: pr.envVar || null };
+              })()
             });
-          })
+          }),
+          operatorKeys: estadoChavesOperador()
         });
       }
 

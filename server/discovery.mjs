@@ -20,6 +20,7 @@
    ===================================================================== */
 
 import { CATEGORY, DISCOVERY_ADAPTERS, fromOpenRouter, fromHuggingFace } from './provider-catalog.mjs';
+import { isPrivateHost } from './providers.mjs';
 
 /* ------------------------------------------------------------------ campos */
 
@@ -328,4 +329,108 @@ export function categorySummary(entries) {
     totals: { entries: (entries || []).length, measured: all.reduce((n, c) => n + c.measured, 0) },
     note: 'as categorias são derivadas por regra (access.class + kind + category), não escolhidas à mão em cada entrada'
   };
+}
+
+/* =====================================================================
+   SONDAGEM «SEM CHAVE» (fase 11) — descobre, por medição, que APIs de IA
+   respondem SEM credencial. Não substitui o juízo humano nem infere
+   gratuitidade: um 200 sem Authorization prova apenas «não pediu chave
+   neste pedido GET /models». Um 401/403 prova que pede.
+
+   Regras rígidas:
+     · só https e só endereços públicos (isPrivateHost de providers.mjs);
+     · GET /models, sem Authorization, sem cookies, um pedido por endpoint;
+     · 8 s de limite, resposta máxima lida 256 KB;
+     · nunca se contorna CAPTCHA, paywall ou aviso legal.
+   ===================================================================== */
+export const KEYLESS_VERDICTS = {
+  semChave: 'sem-chave', geraSemChave: 'gera-sem-chave',
+  exigeChave: 'exige-chave', indeterminado: 'indeterminado'
+};
+
+export async function probeSemChave(candidato, opts) {
+  const o = opts || {};
+  const fetchImpl = o.fetchImpl || fetch;
+  const base = String((candidato && candidato.base) || '').replace(/\/+$/, '');
+  const out = { id: candidato && candidato.id, base, at: new Date().toISOString(), verdict: KEYLESS_VERDICTS.indeterminado };
+  if (!base) return Object.assign(out, { porque: 'sem URL base' });
+  let u = null;
+  try { u = new URL(base); } catch { return Object.assign(out, { porque: 'URL inválida' }); }
+  if (u.protocol !== 'https:') return Object.assign(out, { porque: 'só https' });
+  if (isPrivateHost(u.hostname)) return Object.assign(out, { porque: 'endereço privado/local proibido (SSRF)' });
+  const url = base + '/models';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), o.timeoutMs || 8000);
+  const t0 = Date.now();
+  try {
+    const res = await fetchImpl(url, { method: 'GET', signal: ctrl.signal, headers: { accept: 'application/json' } });
+    const txt = (await res.text()).slice(0, 262144);
+    let json = null; try { json = JSON.parse(txt); } catch { /* não JSON */ }
+    const lista = json ? (Array.isArray(json) ? json : Array.isArray(json.data) ? json.data : Array.isArray(json.models) ? json.models : []) : [];
+    const modelos = json ? (Array.isArray(json) ? json.length : Array.isArray(json.data) ? json.data.length : Array.isArray(json.models) ? json.models.length : null) : null;
+    out.firstModel = lista.length ? (typeof lista[0] === 'string' ? lista[0] : lista[0].id || lista[0].name || null) : null;
+    out.status = res.status; out.ms = Date.now() - t0; out.modelsCount = modelos;
+    if (res.status === 401 || res.status === 403) {
+      out.verdict = KEYLESS_VERDICTS.exigeChave;
+      out.porque = 'HTTP ' + res.status + ' sem Authorization: a API pede credencial';
+    } else if (res.ok && json) {
+      out.verdict = KEYLESS_VERDICTS.semChave;
+      out.porque = 'HTTP 200 sem Authorization e sem cookies';
+    } else {
+      out.verdict = KEYLESS_VERDICTS.indeterminado;
+      out.porque = 'HTTP ' + res.status + (json ? ' (JSON)' : ' (sem JSON): não se conclui nada');
+    }
+  } catch (e) {
+    out.ms = Date.now() - t0;
+    out.verdict = KEYLESS_VERDICTS.indeterminado;
+    out.porque = 'sem resposta: ' + String(e.message || e).slice(0, 120);
+  } finally { clearTimeout(timer); }
+  return out;
+}
+
+/* Segunda etapa: um catálogo público de modelos NÃO prova que a geração seja
+   aberta. Só um pedido mínimo de geração prova. Custa 1 token ao fornecedor;
+   por isso é opt-in (--confirmar) e limitado a max_tokens:1. */
+export async function probeGeracaoSemChave(candidato, opts) {
+  const o = opts || {};
+  const fetchImpl = o.fetchImpl || fetch;
+  const base = String((candidato && candidato.base) || '').replace(/\/+$/, '');
+  const model = o.model || candidato.firstModel || null;
+  const out = { id: candidato && candidato.id, base, model, at: new Date().toISOString(), verdict: KEYLESS_VERDICTS.indeterminado };
+  if (!base || !model) return Object.assign(out, { porque: base ? 'sem nome de modelo para testar' : 'sem URL base' });
+  let u = null;
+  try { u = new URL(base); } catch { return Object.assign(out, { porque: 'URL inválida' }); }
+  if (u.protocol !== 'https:') return Object.assign(out, { porque: 'só https' });
+  if (isPrivateHost(u.hostname)) return Object.assign(out, { porque: 'endereço privado/local proibido (SSRF)' });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), o.timeoutMs || 20000);
+  const t0 = Date.now();
+  try {
+    const res = await fetchImpl(base + '/chat/completions', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'oi' }], max_tokens: 1 })
+    });
+    const txt = (await res.text()).slice(0, 4096);
+    out.status = res.status; out.ms = Date.now() - t0;
+    let json = null; try { json = JSON.parse(txt); } catch { /* não JSON */ }
+    out.excerpt = txt.slice(0, 160);
+    if (res.ok && json && json.choices) {
+      out.verdict = KEYLESS_VERDICTS.geraSemChave;
+      out.porque = 'HTTP 200 com max_tokens:1 e sem Authorization';
+    } else if (res.status === 401 || res.status === 403) {
+      out.verdict = KEYLESS_VERDICTS.exigeChave;
+      out.porque = 'HTTP ' + res.status + ' sem Authorization: a geração exige credencial';
+    } else if (res.status === 402) {
+      out.verdict = KEYLESS_VERDICTS.exigeChave;
+      out.porque = 'HTTP 402: exige pagamento/créditos';
+    } else {
+      out.verdict = KEYLESS_VERDICTS.indeterminado;
+      out.porque = 'HTTP ' + res.status + ': não se conclui que seja aberto' + (res.status === 429 ? ' (limite de pedidos)' : '');
+    }
+  } catch (e) {
+    out.ms = Date.now() - t0;
+    out.porque = 'sem resposta: ' + String(e.message || e).slice(0, 120);
+  } finally { clearTimeout(timer); }
+  return out;
 }
