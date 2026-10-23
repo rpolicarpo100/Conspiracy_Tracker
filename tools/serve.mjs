@@ -32,15 +32,21 @@ createServer(async (req, res) => {
     if (!st.isFile()) throw new Error('not file');
     if (/[\\/]\.[^.]/.test(p)) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('404'); }
     const buf = await readFile(file);
+    /* Embutir a aplicação num site alheio é clickjacking: com acções destrutivas
+       (apagar conta, apagar chaves) o valor por omissão tem de ser 'self'. Quem
+       precisar de pré-visualização embutida liga ALLOW_EMBED=1 e sabe o que faz. */
+    const embutivel = String(process.env.ALLOW_EMBED || process.env.VN_ALLOW_EMBED || '') === '1';
     res.writeHead(200, {
       'content-type': types[extname(file)] || 'application/octet-stream',
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
-      // sem X-Frame-Options: a aplicação é feita para ser embutida (pré-visualizações)
-
+      'strict-transport-security': 'max-age=31536000; includeSubDomains',
       'permissions-policy': 'geolocation=(), camera=(), microphone=()',
-      'content-security-policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors *"
+      /* script-src sem 'unsafe-inline': não há scripts embutidos no HTML nem
+         handlers onclick= (verificado) — todo o JS vem de ficheiros com src. */
+      'content-security-policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors " + (embutivel ? '*' : "'self'"),
+      ...(embutivel ? {} : { 'x-frame-options': 'SAMEORIGIN' })
     });
     res.end(buf);
   } catch { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('404'); }

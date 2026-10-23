@@ -420,7 +420,7 @@ await t('projecto aberto mostra provas, origens independentes e estado sugerido'
   return 'prova primária registada · origem src:exemplo.pt · duplicado recusado · 1 origem → sugerido «insuficiente»';
 });
 
-await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declara o que falta', async () => {
+await t('pesquisa sem chave de IA conclui com lacunas escritas e o relatório declara o que falta', async () => {
   await p.evaluate(() => {
     const inp = [...document.querySelectorAll('#accroot input')].find((i) => /URLs candidatas/.test(i.placeholder || ''));
     if (!inp) throw new Error('campo de URLs ausente');
@@ -428,7 +428,12 @@ await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declar
     inp.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await clickText('#accroot .btn', 'Iniciar pesquisa');
-  await waitText(/parou: sem-fornecedor-de-ia-validado/, 'execução não declarou o motivo de paragem');
+  /* fase B1: sem IA a execução já não «pára» — conclui e DECLARA as lacunas.
+     A interface tem de mostrar a contagem e a lista de lacunas, não um silêncio. */
+  await waitText(/lacunas: [1-9]/, 'execução não declarou as lacunas');
+  const painel = await p.textContent('#accroot');
+  if (!/concluido-com-lacunas/.test(painel)) throw new Error('estado da execução não visível: ' + painel.slice(0, 300));
+  if (!/lacunas declaradas: passo 1 interpretar/.test(painel)) throw new Error('lista de lacunas não visível');
   await clickText('#accroot .btn', 'Relatório');
   await waitText(/secções com dados/, 'relatório não abriu');
   await p.waitForTimeout(300);
@@ -437,7 +442,7 @@ await t('pesquisa sem chave de IA pára com motivo escrito e o relatório declar
   if (!/1\. Pergunta/.test(txt) || !/18\. Conclusões proporcionais/.test(txt)) throw new Error('secções do relatório em falta');
   if (!/Não disponível/.test(txt)) throw new Error('relatório não declara o que falta');
   if (!/Relações/.test(txt)) throw new Error('secção de relações ausente');
-  return 'execução parou com motivo declarado · relatório com 18 secções e ausências assinaladas';
+  return 'execução concluiu com lacunas declaradas · relatório com 18 secções e ausências assinaladas';
 });
 
 await t('grafo das provas desenha entidades, relações e proveniência sem tratar co-ocorrência como relação', async () => {

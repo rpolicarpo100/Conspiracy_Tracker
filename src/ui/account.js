@@ -1254,12 +1254,32 @@
         class: 'btn sm primary', type: 'button', text: 'Iniciar pesquisa', style: 'margin-top:4px',
         onclick: async () => {
           const urls = String(rf.urls || '').split('\n').map((x) => x.trim()).filter(Boolean);
-          const r = await api('/api/projects/' + p.id + '/runs', { method: 'POST', body: { profile: rf.profile, urls } });
+          /* em fundo: o pedido responde já (202) e a execução corre fora dele.
+             Sem isto, um perfil de 30–60 minutos perde-se quando o proxy corta. */
+          const r = await api('/api/projects/' + p.id + '/runs', { method: 'POST', body: { profile: rf.profile, urls, background: true } });
           if (!r.ok) return note('Falhou: ' + (r.error && r.error.message), 'bad');
           const run = r.json.run;
-          note('Execução ' + run.status + (run.stopReason ? ' — parou: ' + run.stopReason : '') +
-            ' · passos registados: ' + (run.steps || []).length +
-            ' · fontes consultadas: ' + (run.sourcesConsulted || []).length, run.stopReason ? 'warn' : 'ok');
+          note('Execução iniciada em fundo (' + run.profile + '). A acompanhar…', 'ok');
+          await reloadDetail();
+          /* acompanhamento: lê o estado até sair de «running», com tecto de tempo */
+          const fim = Date.now() + 5 * 60 * 1000;
+          let ultimo = run.status;
+          while (Date.now() < fim) {
+            await new Promise((res2) => setTimeout(res2, 1500));
+            const um = await api('/api/runs/' + run.id);
+            if (!um.ok) break;
+            ultimo = um.json.run.status;
+            if (ultimo !== 'running' && ultimo !== 'pending') break;
+          }
+          const fm = await api('/api/runs/' + run.id);
+          if (fm.ok) {
+            const f = fm.json.run;
+            note('Execução ' + f.status + (f.stopReason ? ' — parou: ' + f.stopReason : '') +
+              ' · passos: ' + (f.steps || []).length +
+              ' · documentos: ' + ((f.sourcesConsulted || []).filter((x) => x.ok).length) +
+              ' · lacunas: ' + ((f.lacunas || []).length),
+              f.lacunas && f.lacunas.length ? 'warn' : 'ok');
+          }
           await reloadDetail();
         }
       })
@@ -1284,8 +1304,8 @@
               await reloadDetail();
             }
           }) : null,
-          run.status === 'stopped' ? el('button', {
-            class: 'btn sm', type: 'button', text: 'Retomar',
+          (run.status === 'stopped' || run.status === 'concluido-com-lacunas') ? el('button', {
+            class: 'btn sm', type: 'button', text: 'Retomar' + ((run.lacunas || []).length ? ' (' + run.lacunas.length + ')' : ''),
             onclick: async () => {
               const r = await api('/api/runs/' + run.id + '/resume', { method: 'POST', body: {} });
               if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
@@ -1295,6 +1315,8 @@
           }) : null
         ].filter(Boolean)),
         run.stopDetail ? el('div', { style: 'font-size:10px;color:var(--muted)', text: run.stopDetail }) : null,
+        (run.lacunas || []).length ? el('div', { style: 'font-size:10px;color:var(--warn,#a60)', text:
+          'lacunas declaradas: ' + run.lacunas.map((l) => 'passo ' + l.passo + ' ' + l.id).join(' · ') }) : null,
         el('div', { style: 'font-size:10px;color:var(--muted);margin-top:2px', text:
           (run.steps || []).map((x) => x.n + '.' + x.id + (x.status === 'concluido' ? '✓' : x.status === 'ignorado-pelo-perfil' ? '·' : x.status === 'nao-executado' ? '∅' : '✗')).join(' ') })
       ].filter(Boolean)));
