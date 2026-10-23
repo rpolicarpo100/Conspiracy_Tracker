@@ -2444,3 +2444,25 @@ E. O que continua por fazer
      sonda substituída e o registo diz «ensaio». Com sonda real só depois de
      autorização para tocar a rede aberta.
    · sem migração de dados: a v9 só cria a colecção apiCatalog vazia.
+
+§60.7  P R O D U Ç Ã O   (leitura apenas, depois do deploy automático do Render)
+   PASS GET /health → 2.4.0-faseE · commit d85fe5d1b993b17ca1994a9ffb26a6164bd31279
+        · alive · uptime 108 s
+   PASS GET /api/meta → version 2.4.0-faseE · schemaVersion 9 · apiCatalog com 6
+        estados · router r1 com 4 perfis · migrações registadas [7, 8, 9]
+   PASS GET /ready → ready · postgres+ficheiro · durável entre deploy true ·
+        postgres activo (versão 1082) · writes 1 · errors 0 · integridade por
+        checksum verificada
+   PASS GET /api/apis/catalogo sem sessão → 401 · GET /api/ia/rotas sem sessão → 401
+        (as rotas existem em produção e exigem sessão; não se leu conteúdo
+        autenticado — isso exigiria credenciais)
+   PASS GET /api/ai/estado → modo «operador» (há chaves de operador em produção)
+        · emRota: ordem [groq, gemini, openrouter, mistral, cohere] · exigeJson true
+        · excluídos: pollinations «produção medida em texto livre (sem JSON)» com a
+        prova de 2026-10-23
+   NOTA a exclusão de pollinations não deixa produção sem IA: há chaves de
+        operador, e são elas que servem os passos que exigem JSON. A exclusão
+        protege o caso em que só existisse o fornecedor sem chave.
+   NOTA o deploy foi o automático do Render (push 8165dca..d85fe5d). A migração
+        v9 em produção criou a colecção apiCatalog vazia; nenhum dado de produção
+        foi escrito por esta fase.

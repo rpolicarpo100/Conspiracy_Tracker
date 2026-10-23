@@ -86,7 +86,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 8165dca docs: §59.7 — o que a produção devolveu depois do deploy da fase D
+- último commit: d85fe5d fase E: catálogo de APIs sem chave com estados e prova, e router de fornecedores por perfil
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 40 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, AUDITORIA-INTEGRAL.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE-B.md, ENTREGA-FASE-C.md, ENTREGA-FASE-D.md, ENTREGA-FASE-E.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, ESTADO-FUNCIONALIDADES.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MATRIZ-TESTES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PLANO-MELHORIA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)

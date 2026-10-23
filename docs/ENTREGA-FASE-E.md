@@ -117,6 +117,7 @@ Testes existentes ajustados por mudança de contrato (não desactivados):
 | validar e usar são operações de utilizador autenticado | exigem sessão + CSRF; a confirmação para `em-uso` é explícita |
 | o router não decide nada hoje em produção (sem medições na aplicação) | é a resposta honesta: mostra o que falta (correr os testes de fornecedor) em vez de escolher por analogia |
 | migração v9 | só cria a colecção `apiCatalog` vazia: não inventa APIs nem converte dados |
+| produção sem IA por causa da exclusão | **não acontece em produção**: há chaves de operador (modo «operador», ordem groq→gemini→openrouter→mistral→cohere) e é essa cadeia que serve os passos JSON (ver §60.7) |
 
 ---
 
