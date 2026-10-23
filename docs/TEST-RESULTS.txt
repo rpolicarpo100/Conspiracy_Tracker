@@ -2264,3 +2264,13 @@ E. O que continua por fazer
    · tests/caso-socrates.mjs com documentos reais — fase H
    · orçamento/retry/cancelamento por agente — fase D
    · catálogo de APIs com máquina de estados e validação na UI — fase E
+
+§58.10  P R O D U Ç Ã O   (depois do push da fase C — leitura apenas)
+   PASS GET /health → 2.2.0-faseC · commit 72cdee9a7f39 · alive
+   PASS GET /api/meta → esquema 8 · 9 claimStates exigidos · 11 evidenceStates
+        (estados de fonte à parte) · 9 nomes antigos no stateMigration
+   PASS GET /ready → ready · postgres+ficheiro · durável true · writes 1 · errors 0
+   NOTA migração v8 em produção → «nenhum valor antigo de estado encontrado»:
+        não havia dados com os nomes antigos, por isso não houve conversão a
+        fazer. O caminho de conversão foi provado em tests/afirmacoes.mjs com
+        uma base v7 real.
