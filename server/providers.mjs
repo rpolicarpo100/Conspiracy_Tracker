@@ -33,14 +33,18 @@ export { isPrivateHost };
 export const PROVIDERS = {
   gemini: {
     label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    modelsHint: ['gemini-2.0-flash', 'gemini-1.5-flash'], authStyle: 'bearer',
+    /* nomes verificados em 2026-10-23 com uma chave real: o 2.0-flash respondeu
+       «no longer available» e o próprio Google indicou o 3.8-flash */
+    modelsHint: ['gemini-3.8-flash', 'gemini-2.5-flash'], authStyle: 'bearer',
     docs: 'https://ai.google.dev/gemini-api/docs/openai', freeTier: 'sim (com limites)',
     keyUrl: 'https://aistudio.google.com/apikey', envVar: 'AI_KEY_GEMINI',
     probe: { url: 'https://generativelanguage.googleapis.com/v1beta/models', verificado: '403 sem chave em 2026-10-22 (endpoint existe)' }
   },
   groq: {
     label: 'Groq', base: 'https://api.groq.com/openai/v1',
-    modelsHint: ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b'], authStyle: 'bearer',
+    /* o llama-3.3-70b-versatile deixou de existir; o gpt-oss-120b respondeu em
+       2026-10-23 com uma chave real */
+    modelsHint: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], authStyle: 'bearer',
     docs: 'https://console.groq.com/docs/openai', freeTier: 'sim (com limites)',
     keyUrl: 'https://console.groq.com/keys', envVar: 'AI_KEY_GROQ',
     probe: { url: 'https://api.groq.com/openai/v1/models', verificado: '401 sem chave em 2026-10-22 (endpoint existe)' }
