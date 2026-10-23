@@ -180,7 +180,22 @@ export async function runResearch(deps, runId, opts) {
             : { ok: false, error: 'sem fornecedor de IA validado: configure e valide uma chave em «Chaves de IA» para este passo poder correr' };
           if (!ai.ok) {
             /* NÃO se pára a execução: regista-se a lacuna e segue-se. Os passos
-               locais e a recolha não dependem de IA para serem úteis. */
+               locais e a recolha não dependem de IA para serem úteis.
+               Alguns passos marcados «ia» têm cálculo local equivalente
+               (contraprovas): nesse caso corre-se o cálculo e diz-se que foi
+               sem IA, em vez de deixar o passo vazio. */
+            const local = localStep(step.id, project, candidates, deps);
+            if (local !== null) {
+              rec.status = 'concluido';
+              rec.output = local;
+              rec.counts = summarise(local);
+              rec.reason = 'calculado sem IA (o passo não depende dela): ' + (ai.error || 'sem fornecedor de IA validado')
+                + ' (passo ' + step.n + ')';
+              await registarLacuna(rec, 'calculado-sem-ia', rec.reason);
+              guardarPasso(rec);
+              await store.updateRun(runId, { steps: steps.map(cleanStep), step: step.n });
+              continue;
+            }
             rec.status = 'nao-executado';
             rec.reason = ai.error || 'sem fornecedor de IA validado';
             const slug = /^sem fornecedor de IA validado/.test(rec.reason) ? 'sem-fornecedor-de-ia-validado' : 'falha-de-ia';
@@ -391,6 +406,20 @@ export function localStep(id, project, candidates, deps) {
         porEstado: claims.reduce((a, c) => { a[c.state] = (a[c.state] || 0) + 1; return a; }, {}),
         nota: 'a corroboração conta origens independentes (syndicationOf/domínio), nunca ficheiros'
       };
+    case 'contraprovas': {
+      /* C4/D: a procura de contraprova NÃO precisa de IA para começar. O que se
+         pode calcular localmente é o que falta: afirmações sem contraprova
+         procurada, e contraprova registada com resultado «encontrada». */
+      const semProcura = claims.filter((c) => !(c.contraprova && c.contraprova.procuradaEm))
+        .map((c) => ({ conclusao: c.id, texto: c.text, estado: c.state, falta: 'sem procura de contraprova registada' }));
+      const comContra = claims.filter((c) => c.contraprova && c.contraprova.resultado === 'encontrada')
+        .map((c) => ({ conclusao: c.id, texto: c.text, provas: (c.contraprova.evidenceIds || []).length }));
+      return {
+        semProcura, comContra, totalAaProcurar: semProcura.length,
+        nota: 'a ausência de contraprova é uma lacuna declarada, nunca uma confirmação; '
+          + 'a procura registada faz-se em «Conclusões → Registar contraprova»'
+      };
+    }
     case 'lacunas':
       return {
         semProvas: claims.filter((c) => !(c.evidenceIds || []).length).map((c) => c.text),

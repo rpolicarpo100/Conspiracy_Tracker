@@ -12,12 +12,12 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 <!-- GERADO:AUTO -->
 ## Versão
 
-- versão da aplicação: **2.2.0-faseC**
+- versão da aplicação: **2.3.0-faseD**
 - esquema de dados: **v8** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (facto-documentado, alegacao-atribuida, inferencia, hipotese, contraditoria, refutada, nao-verificada, insuficiente, desactualizada)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 113
-- ficheiros de teste: 56 · blocos de teste declarados (`await t`): 659 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 115
+- ficheiros de teste: 58 · blocos de teste declarados (`await t`): 679 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -27,6 +27,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/_ui-entrada.mjs` | 0 | servidor/módulo |
 | `tests/account-ui.mjs` | 19 | interface (Playwright) |
 | `tests/afirmacoes.mjs` | 14 | servidor/módulo |
+| `tests/agentes-contrato.mjs` | 10 | servidor/módulo |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
 | `tests/agents.mjs` | 18 | servidor/módulo |
@@ -79,13 +80,14 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/simples-ui.mjs` | 15 | interface (Playwright) |
 | `tests/smoke.mjs` | 0 | interface (Playwright) |
 | `tests/ssrn.mjs` | 18 | servidor/módulo |
+| `tests/workflows-investigacao.mjs` | 10 | servidor/módulo |
 
 ### Registo
 
 - último commit: ebc874f docs: §55 (rotação por tokens), §8 em IA-FORNECEDORES e decisões 54-55
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
-- documentação: 38 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, AUDITORIA-INTEGRAL.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE-B.md, ENTREGA-FASE-C.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, ESTADO-FUNCIONALIDADES.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MATRIZ-TESTES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PLANO-MELHORIA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)
+- documentação: 39 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, AUDITORIA-INTEGRAL.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE-B.md, ENTREGA-FASE-C.md, ENTREGA-FASE-D.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, ESTADO-FUNCIONALIDADES.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MATRIZ-TESTES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PLANO-MELHORIA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)
 
 ### Coerência
 

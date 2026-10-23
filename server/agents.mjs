@@ -19,81 +19,81 @@ export const AGENT_PROMPT_VERSION = 'a1';
 export const AGENTS = [
   {
     id: 'orchestrator', name: 'Orquestrador', phase: 'coordenação', kind: 'local',
-    contract: { in: ['projecto', 'provas', 'alegações', 'relações', 'execuções'], out: ['estado do trabalho', 'próximos passos sugeridos'] },
+    contract: { in: ['projecto', 'provas', 'alegações', 'relações', 'execuções'], out: ['estado do trabalho', 'próximos passos sugeridos'], outRequired: ["proximosPassos"] },
     criteria: ['todas as colecções lidas', 'cada sugestão aponta ao que falta'],
-    limits: { timeoutMs: 5000, maxItems: 50 }
+    limits: { timeoutMs: 5000, maxItems: 50, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'research-planner', name: 'Planeador de investigação', phase: 'planeamento', kind: 'ai',
-    contract: { in: ['pergunta', 'âmbito'], out: ['subperguntas', 'consultas prioritárias', 'critérios de conclusão propostos'] },
+    contract: { in: ['pergunta', 'âmbito'], out: ['subperguntas', 'consultas prioritárias', 'critérios de conclusão propostos'], outRequired: ["subperguntas", "consultasPrioritarias", "criteriosDeConclusao"] },
     criteria: ['JSON válido', 'sem nomes inventados fora da pergunta'],
-    limits: { timeoutMs: 30000, maxItems: 12 }
+    limits: { timeoutMs: 30000, maxItems: 12, maxCalls: 2, retries: 2, cancelavel: true }
   },
   {
     id: 'web-search', name: 'Pesquisa web (geração de consultas)', phase: 'recolha', kind: 'ai',
-    contract: { in: ['pergunta', 'entidades'], out: ['consultas', 'operadores', 'motivo de cada consulta'] },
+    contract: { in: ['pergunta', 'entidades'], out: ['consultas', 'operadores', 'motivo de cada consulta'], outRequired: ["consultas"] },
     criteria: ['consultas sem nomes não presentes na pergunta ou nas provas'],
-    limits: { timeoutMs: 30000, maxItems: 20 }
+    limits: { timeoutMs: 30000, maxItems: 20, maxCalls: 3, retries: 2, cancelavel: true }
   },
   {
     id: 'document-hunter', name: 'Caça a documentos', phase: 'recolha', kind: 'ai',
-    contract: { in: ['entidades', 'âmbito'], out: ['tipos de documento a procurar', 'registos oficiais por jurisdição'] },
+    contract: { in: ['entidades', 'âmbito'], out: ['tipos de documento a procurar', 'registos oficiais por jurisdição'], outRequired: ["documentos"] },
     criteria: ['cada sugestão nomeia o registo e a jurisdição'],
-    limits: { timeoutMs: 30000, maxItems: 15 }
+    limits: { timeoutMs: 30000, maxItems: 15, maxCalls: 2, retries: 2, cancelavel: true }
   },
   {
     id: 'extraction', name: 'Extracção de excertos', phase: 'extracção', kind: 'ai',
-    contract: { in: ['documentos', 'pergunta'], out: ['excertos literais', 'posição (favorável/contrária/neutra)'] },
+    contract: { in: ['documentos', 'pergunta'], out: ['excertos literais', 'posição (favorável/contrária/neutra)'], outRequired: ["excertos"] },
     criteria: ['excerto literal', 'URL de origem presente'],
-    limits: { timeoutMs: 30000, maxItems: 30 }
+    limits: { timeoutMs: 30000, maxItems: 30, maxCalls: 3, retries: 1, cancelavel: true }
   },
   {
     id: 'entity-resolution', name: 'Resolução de entidades', phase: 'extracção', kind: 'local',
-    contract: { in: ['entidades das provas'], out: ['colisões de nome', 'entidades sem desambiguador'] },
+    contract: { in: ['entidades das provas'], out: ['colisões de nome', 'entidades sem desambiguador'], outRequired: ["colisoes", "semDesambiguador"] },
     criteria: ['nenhuma fusão sem identificador'],
-    limits: { timeoutMs: 5000, maxItems: 200 }
+    limits: { timeoutMs: 5000, maxItems: 200, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'relationship-mapper', name: 'Mapeamento de relações', phase: 'síntese', kind: 'ai',
-    contract: { in: ['excertos'], out: ['relações tipificadas propostas (nunca gravadas automaticamente)'] },
+    contract: { in: ['excertos'], out: ['relações tipificadas propostas (nunca gravadas automaticamente)'], outRequired: ["relacoesPropostas"] },
     criteria: ['cada proposta cita o excerto e o tipo de relação'],
-    limits: { timeoutMs: 30000, maxItems: 20 }
+    limits: { timeoutMs: 30000, maxItems: 20, maxCalls: 2, retries: 1, cancelavel: true }
   },
   {
     id: 'corporate-financial', name: 'Societário e financeiro', phase: 'análise', kind: 'ai',
-    contract: { in: ['entidades', 'provas'], out: ['cadeia de controlo declarada', 'lacunas societárias'] },
+    contract: { in: ['entidades', 'provas'], out: ['cadeia de controlo declarada', 'lacunas societárias'], outRequired: ["cadeiaDeclarada", "lacunas"] },
     criteria: ['distingue o que está documentado do que é inferido'],
-    limits: { timeoutMs: 30000, maxItems: 20 }
+    limits: { timeoutMs: 30000, maxItems: 20, maxCalls: 2, retries: 1, cancelavel: true }
   },
   {
     id: 'timeline', name: 'Cronologia', phase: 'síntese', kind: 'local',
-    contract: { in: ['provas com datas'], out: ['eventos ordenados', 'contradições de data'] },
+    contract: { in: ['provas com datas'], out: ['eventos ordenados', 'contradições de data'], outRequired: ["eventos", "anomalias"] },
     criteria: ['cada evento aponta a prova e o tipo de data'],
-    limits: { timeoutMs: 5000, maxItems: 500 }
+    limits: { timeoutMs: 5000, maxItems: 500, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'counter-evidence', name: 'Contra-provas', phase: 'verificação', kind: 'local',
-    contract: { in: ['alegações', 'provas'], out: ['alegações sem contra-prova procurada', 'contradições registadas'] },
+    contract: { in: ['alegações', 'provas'], out: ['alegações sem contra-prova procurada', 'contradições registadas'], outRequired: ["semContraprova"] },
     criteria: ['cada lacuna indica o que falta procurar'],
-    limits: { timeoutMs: 5000, maxItems: 200 }
+    limits: { timeoutMs: 5000, maxItems: 200, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'fact-checker', name: 'Verificador de factos', phase: 'verificação', kind: 'local',
-    contract: { in: ['alegações', 'provas'], out: ['alegações cujo estado não é sustentado pelas provas'] },
+    contract: { in: ['alegações', 'provas'], out: ['alegações cujo estado não é sustentado pelas provas'], outRequired: ["problemas", "verificadas"] },
     criteria: ['usa as mesmas regras do servidor (nove estados)'],
-    limits: { timeoutMs: 5000, maxItems: 300 }
+    limits: { timeoutMs: 5000, maxItems: 300, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'red-team', name: 'Auditor adversário', phase: 'verificação', kind: 'local',
-    contract: { in: ['provas', 'alegações', 'relações', 'citações'], out: ['achados com gravidade e sujeito'] },
+    contract: { in: ['provas', 'alegações', 'relações', 'citações'], out: ['achados com gravidade e sujeito'], outRequired: ["findings", "counts"] },
     criteria: ['cada achado indica a regra violada e o objecto'],
-    limits: { timeoutMs: 8000, maxItems: 500 }
+    limits: { timeoutMs: 8000, maxItems: 500, maxCalls: 1, retries: 0, cancelavel: true }
   },
   {
     id: 'report-generator', name: 'Gerador de relatório', phase: 'entrega', kind: 'ai',
-    contract: { in: ['provas', 'alegações', 'relações'], out: ['texto por secção (só a partir dos dados)'] },
+    contract: { in: ['provas', 'alegações', 'relações'], out: ['texto por secção (só a partir dos dados)'], outRequired: ["seccoes"] },
     criteria: ['não acrescenta factos', 'declara o que falta'],
-    limits: { timeoutMs: 30000, maxItems: 18 }
+    limits: { timeoutMs: 30000, maxItems: 18, maxCalls: 1, retries: 1, cancelavel: true }
   }
 ];
 
@@ -257,53 +257,123 @@ export function agentPrompt(id, ctx) {
 
 export function newAgentRunId() { return 'agr-' + crypto.randomBytes(8).toString('base64url'); }
 
+/* Validação da saída contra o contrato do agente.
+
+   Não basta «é JSON»: cada agente declara que chaves a sua saída tem de trazer
+   (`contract.outRequired`). Uma saída sem elas é recusada — é preferível um
+   agente «falhou» a um agente que devolve um objecto vazio com ar de sucesso. */
+export function validateAgentOutput(agentId, parsed) {
+  const agent = agentById(agentId);
+  if (!agent) return { ok: false, faltas: ['agente desconhecido'], truncado: null };
+  const exigidas = (agent.contract && agent.contract.outRequired) || [];
+  if (parsed == null || typeof parsed !== 'object') return { ok: false, faltas: ['saída não é um objecto'], truncado: null };
+  const faltas = exigidas.filter((k) => parsed[k] === undefined || parsed[k] === null);
+  /* respeitar o tecto de itens declarado: corta-se e diz-se que se cortou */
+  let truncado = null;
+  const out = Object.assign({}, parsed);
+  exigidas.forEach((k) => {
+    if (Array.isArray(out[k]) && out[k].length > agent.limits.maxItems) {
+      truncado = truncado || {};
+      truncado[k] = { tinha: out[k].length, ficou: agent.limits.maxItems };
+      out[k] = out[k].slice(0, agent.limits.maxItems);
+    }
+  });
+  return { ok: faltas.length === 0, faltas, truncado, output: out };
+}
+
 export async function executeAgent(deps, agentId, ctx, opts) {
   const agent = agentById(agentId);
   if (!agent) return { ok: false, error: 'agente desconhecido: ' + agentId };
+  opts = opts || {};
   const t0 = Date.now();
   const run = {
     n: 0, id: newAgentRunId(), agentId, agentName: agent.name, kind: agent.kind, phase: agent.phase,
     promptVersion: agent.kind === 'ai' ? AGENT_PROMPT_VERSION : null,
     status: 'a-executar', startedAt: new Date().toISOString(), finishedAt: null,
-    provider: null, model: null, output: null, findings: null, reason: null, latencyMs: null
+    provider: null, model: null, output: null, findings: null, reason: null, latencyMs: null,
+    /* D1/D2/D3: o contrato fica registado na execução, tal como foi aplicado */
+    contrato: { timeoutMs: agent.limits.timeoutMs, maxItems: agent.limits.maxItems,
+      maxCalls: agent.limits.maxCalls, retries: agent.limits.retries, cancelavel: !!agent.limits.cancelavel },
+    tentativas: [], chamadas: 0, truncado: null, cancelado: false
+  };
+  const cancelado = () => (typeof opts.cancelado === 'function' ? !!opts.cancelado() : !!opts.cancelado);
+  const terminar = (status, reason) => {
+    run.status = status;
+    run.reason = reason || null;
+    run.latencyMs = Date.now() - t0;
+    run.finishedAt = new Date().toISOString();
+    return { ok: true, run };
   };
 
-  if (agent.kind === 'ai') {
-    const ai = opts && opts.ai;
-    if (!ai) {
-      run.status = 'nao-executado';
-      run.reason = 'sem fornecedor de IA validado: configure e valide uma chave em «Chaves de IA»';
-      run.finishedAt = new Date().toISOString();
-      return { ok: true, run };
-    }
-    const messages = agentPrompt(agentId, ctx);
-    const r = await ai({ agent, messages, timeoutMs: agent.limits.timeoutMs });
-    run.latencyMs = Date.now() - t0;
-    run.provider = r.provider || null;
-    run.model = r.model || null;
-    run.finishedAt = new Date().toISOString();
-    if (!r.ok) { run.status = 'falhou'; run.reason = String(r.error || 'falha do fornecedor').slice(0, 300); return { ok: true, run }; }
-    if (r.parsed === null || r.parsed === undefined) {
-      run.status = 'falhou';
-      run.reason = 'resposta não é JSON válido: nada registado (' + (r.note || 'sem nota') + ')';
-      return { ok: true, run };
-    }
-    run.output = r.parsed;
-    run.status = 'concluido';
-    return { ok: true, run };
+  /* D4: cancelamento verificado ANTES de começar */
+  if (cancelado()) {
+    run.cancelado = true;
+    return terminar('cancelado', 'cancelado antes de começar: nenhuma chamada feita');
   }
 
-  const output = runLocalAgent(agentId, ctx);
-  run.latencyMs = Date.now() - t0;
-  run.finishedAt = new Date().toISOString();
-  if (output === null) { run.status = 'falhou'; run.reason = 'agente local sem implementação'; return { ok: true, run }; }
-  run.output = output;
-  if (agentId === 'red-team') {
-    run.findings = output.findings;
-    run.output = { counts: output.counts, checkedAt: output.checkedAt, total: output.findings.length };
+  if (agent.kind === 'ai') {
+    const ai = opts.ai;
+    if (!ai) return terminar('nao-executado', 'sem fornecedor de IA validado: configure e valide uma chave em «Chaves de IA»');
+    const messages = agentPrompt(agentId, ctx);
+    /* D2: orçamento próprio do agente — independente do global da execução */
+    /* tentativas = 1 + retries, mas nunca acima do orçamento de chamadas do
+       agente. Se o orçamento for o limite que aperta, o estado final é
+       «orcamento-esgotado»; se forem os retries, é «falhou». A diferença não é
+       cosmética: diz se vale a pena tentar mais tarde. */
+    const maxCalls = agent.limits.maxCalls == null ? 1 : agent.limits.maxCalls;
+    const tentativasMax = Math.max(1, Math.min(1 + (agent.limits.retries || 0), maxCalls));
+    let ultimoErro = null;
+    for (let tentativa = 1; tentativa <= tentativasMax; tentativa++) {
+      if (cancelado()) { run.cancelado = true; return terminar('cancelado', 'cancelado durante as tentativas: nenhum resultado guardado'); }
+      if (run.chamadas >= maxCalls) {
+        return terminar('orcamento-esgotado',
+          'orçamento do agente esgotado (' + run.chamadas + '/' + maxCalls + ' chamadas): parou só este agente' + (ultimoErro ? ' · último erro: ' + ultimoErro : ''));
+      }
+      run.chamadas++;
+      const r = await ai({ agent, messages, timeoutMs: agent.limits.timeoutMs });
+      const registo = { n: tentativa, ok: !!r.ok, provider: r.provider || null, model: r.model || null,
+        latencyMs: r.latencyMs != null ? r.latencyMs : null, erro: r.ok ? null : String(r.error || '').slice(0, 200) };
+      run.tentativas.push(registo);
+      run.provider = r.provider || run.provider;
+      run.model = r.model || run.model;
+      /* A tentativa só conta como boa se dela sair uma saída utilizável: o
+         registo diz o que se passou, não apenas que o fornecedor respondeu. */
+      if (!r.ok) { registo.ok = false; registo.erro = registo.erro || 'fornecedor recusou'; ultimoErro = 'fornecedor recusou'; continue; }
+      if (r.parsed === null || r.parsed === undefined) {
+        registo.ok = false; registo.erro = 'resposta não é JSON válido';
+        ultimoErro = 'resposta não é JSON válido'; continue;
+      }
+      const v = validateAgentOutput(agentId, r.parsed);
+      if (!v.ok) {
+        registo.ok = false; registo.erro = 'saída fora do contrato: falta ' + v.faltas.join(', ');
+        ultimoErro = registo.erro; continue;
+      }
+      run.output = v.output;
+      run.truncado = v.truncado;
+      return terminar('concluido', v.truncado ? 'saída cortada no tecto de ' + agent.limits.maxItems + ' itens' : null);
+    }
+    const esgotou = run.chamadas >= maxCalls;
+    return terminar(esgotou ? 'orcamento-esgotado' : 'falhou',
+      (esgotou
+        ? 'orçamento do agente esgotado (' + run.chamadas + '/' + maxCalls + ' chamadas): parou só este agente'
+        : 'falhou após ' + run.chamadas + ' tentativa(s)')
+      + (ultimoErro ? ' · último erro: ' + ultimoErro : ''));
   }
-  run.status = 'concluido';
-  return { ok: true, run };
+
+  /* agente local: determinístico e sem chamadas externas */
+  const output = runLocalAgent(agentId, ctx);
+  if (output === null) return terminar('falhou', 'agente local sem implementação');
+  const v = validateAgentOutput(agentId, output);
+  run.chamadas = 1;
+  run.tentativas.push({ n: 1, ok: v.ok, provider: 'local', model: null, latencyMs: Date.now() - t0, erro: v.ok ? null : 'contrato' });
+  if (!v.ok) return terminar('falhou', 'saída fora do contrato: falta ' + v.faltas.join(', '));
+  run.output = v.output;
+  run.truncado = v.truncado;
+  if (agentId === 'red-team') {
+    run.findings = v.output.findings;
+    run.output = { counts: v.output.counts, checkedAt: v.output.checkedAt, total: v.output.findings.length };
+  }
+  return terminar('concluido', v.truncado ? 'saída cortada no tecto de ' + agent.limits.maxItems + ' itens' : null);
 }
 
 /* ---------------- orçamento de execuções ----------------

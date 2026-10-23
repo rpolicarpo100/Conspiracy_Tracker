@@ -56,10 +56,12 @@ requisito explícito da missão · **P2** qualidade/robustez · **P3** cosmétic
 | D3 | Perfis RAPIDA/NORMAL/PROFUNDA/EXAUSTIVA com limites explícitos | `IMPLEMENTADO_E_TESTADO` | `server/research.mjs:46-49` | `tests/fase3c.mjs` (28) («devolve o orçamento e a API recusa quando esgotado») | limites de chamadas/documentos/minutos declarados, mas o perfil só escolhe **passos de IA**; não escolhe fornecedor | médio | P1 | cada perfil declara e respeita os três tectos; esgotar → paragem com `stopReason:'orcamento-esgotado'` |
 | D4 | Cancelar execução | `IMPLEMENTADO_E_TESTADO` (**era `PARCIAL`**) | `server/api.mjs:2988`, `src/ui/account.js:1280` | `tests/research.mjs`; botão «Cancelar» na UI | marca `cancelled` mas o fluxo não verifica o estado entre passos, por isso não interrompe a meio | alto | P1 | cancelar durante uma execução faz o passo seguinte não arrancar em ≤ 1 passo, com `stopReason:'cancelado-pelo-utilizador'` |
 | D5 | Retomar execução interrompida por falha | `IMPLEMENTADO_E_TESTADO` (**era `PARCIAL`**) | `server/api.mjs:2988` | `tests/research.mjs` | não há retoma a partir de checkpoint de **passo** com estado parcial de documentos; retoma não repete o trabalho já feito | alto | P1 | retomar após reinício continua no passo seguinte e não re-recolhe documentos já arquivados (hash igual não duplica) |
-| D6 | Agentes com contrato, orçamento, timeout, retry, cancelamento | `PARCIAL` | `server/agents.mjs` (13 agentes), `server/api.mjs` (`agentAiRunner`) | `tests/agents.mjs` (18), `tests/agents-p3.mjs` (16), `tests/agents-ui.mjs` (5) | `limits.timeoutMs`/`maxItems` existem no catálogo; **não há orçamento por agente, retry por agente nem cancelamento a meio** | alto | P1 | cada agente declara `maxCalls`, `timeoutMs`, `retries`, e o executor aplica-os; esgotar o orçamento de um agente não mata os outros |
+| D6 | Agentes com contrato, orçamento, timeout, retry, cancelamento | `IMPLEMENTADO_E_TESTADO` (**era `PARCIAL`**) | `server/agents.mjs` (13 agentes, `limits{timeoutMs,maxItems,maxCalls,retries,cancelavel}`, `contract.outRequired`, `validateAgentOutput`), `server/api.mjs` (`contractRules`, `cancelado`) | `tests/agentes-contrato.mjs` (10), `tests/agents-p3.mjs` (16), `tests/agents.mjs` (18) | — | médio | P1 | cada agente declara `maxCalls`, `timeoutMs`, `retries`, e o executor aplica-os; esgotar o orçamento de um agente não mata os outros |
 | D7 | Registo por agente consultável (quem fez o quê, com que modelo e resultado) | `IMPLEMENTADO_E_TESTADO` | `server/api.mjs` (`/api/projects/:id/agent-runs`) | `tests/agents-p3.mjs`, `tests/provider-os.mjs` (25) | na execução real estudada o registo ficou **vazio** porque a execução morreu antes de qualquer agente de IA concluir | médio | P1 | execução completa tem ≥ 1 registo por agente executado, com `ok`, `modelo`, `latencyMs` |
-| D8 | Contraprovas (contra-evidence) | `IMPLEMENTADO_SEM_TESTE` | `server/research.mjs` passo 15 (ia), agente `counter-evidence` (local) | nenhum teste dedicado | passo é `ia` e, nos perfis em que corre, morre com o resto | alto (viés de confirmação) | P1 | para uma afirmação com prova favorável, a execução procura e arquiva activamente fonte contrária e marca `contraditoria`/`corroborada` |
+| D8 | Contraprovas (contra-evidence) | `PARCIAL` (**era `IMPLEMENTADO_SEM_TESTE`**) | `server/research.mjs` passo 15 (ia, agora com cálculo local equivalente), agente `counter-evidence` (local), rota `POST /api/claims/:id/counter-evidence` | `tests/agentes-contrato.mjs` (10/10, «contraprovas calcula sem IA») | o passo 15 já não fica vazio sem chave: devolve `semProcura[]` com o que falta procurar e declara a lacuna `calculado-sem-ia`; continua a **não** arquivar sozinho uma fonte contrária — a contraprova registada exige prova indicada por uma pessoa | alto (viés de confirmação) | P1 | para uma afirmação com prova favorável, a execução procura e arquiva activamente fonte contrária e marca `contraditoria`/`corroborada` |
 | D9 | Fact-checker e red-team | `IMPLEMENTADO_SEM_TESTE` | agentes `fact-checker`, `red-team` (locais) | nenhum teste dedicado | sem prova de que classificam e de que recusam publicar sem proveniência | alto | P1 | alegação sem excerto verificável nunca sai como `confirmada`; red-team produz lista de lacunas |
+| D10 | **Workflows de investigação nomeados** (`triagem-rapida`, `recolha-documental`, `verificacao-cruzada`, `relatorio-rastreavel`) com passos, perfil e limites explícitos | `IMPLEMENTADO_E_TESTADO` | `server/workflows.mjs`, rotas `GET /api/workflows` e `GET /api/workflows/:id` | `tests/workflows-investigacao.mjs` (10) | os workflows são definição + plano verificável: **não** executam ainda um subconjunto do motor (a execução selectiva é da fase E/G) | baixo | P1 | cada workflow tem definição versionada e esqueleto que corre sem rede |
+| D11 | Passo 15 (contraprovas) deixa de depender de IA | `IMPLEMENTADO_E_TESTADO` | `server/research.mjs` (`case 'contraprovas'` + `calculado sem IA`) | `tests/agentes-contrato.mjs` (10/10) | — | baixo | P1 | sem chave, o passo devolve o que falta procurar em vez de ficar vazio, e declara a lacuna |
 
 ---
 
@@ -130,20 +132,22 @@ requisito explícito da missão · **P2** qualidade/robustez · **P3** cosmétic
 
 ---
 
-## J. Resumo (contagem das 56 linhas acima, estado a seguir à FASE C)
+## J. Resumo (contagem das 58 linhas acima, estado a seguir à FASE D)
 
 | estado | n.º | quais |
 |---|---|---|
-| `IMPLEMENTADO_E_TESTADO` | **39** | A1–A5, B1–B2, C1–C6, D1–D5, D7, E1–E8, F1–F2, G1–G4, G7–G8, H1–H2, H4–H5, I1–I3, I6 |
-| `PARCIAL` | **9** | A6 (retenção: só dry-run), B3 (durável em produção, falta ensaio numa base descartável), D6 (agentes sem orçamento/retry por agente), E6/E7 (avisam mas não bloqueiam a promoção), G5, G6, H3, H6 |
+| `IMPLEMENTADO_E_TESTADO` | **46** | A1–A5, B1–B2, C1–C6, D1–D7 (D6 saiu de `PARCIAL`), D10–D11, E1–E8, F1–F2, G1–G4, G7–G8, H1–H2, H4–H5, I1–I3, I6 |
+| `PARCIAL` | **7** | A6 (retenção: só dry-run), B3 (durável em produção, falta ensaio numa base descartável), D8 (contraprovas: sem IA já calcula, mas não arquiva sozinho fonte contrária), G5, G6, H3, H6 |
 | `FALHOU` | **0** | D1 e D2 corrigidos na FASE B |
-| `IMPLEMENTADO_SEM_TESTE` | **2** | D8 (o passo 15 de contraprovas continua a ser `ia`; a rota C4 é outra coisa), D9 |
-| `NAO_IMPLEMENTADO` | **3** | F3 (arquivo), F4 (suite «Quem é José Sócrates?» com documentos reais), I5 (CI: `ci.yml` existe, ainda não correu num PR real) |
-| misto | **1** | I4: `benchmark` testado, os outros três workflows sem teste |
+| `IMPLEMENTADO_SEM_TESTE` | **1** | D9 (fact-checker e red-team sem suite dedicada) |
+| `NAO_IMPLEMENTADO` | **3** | F3 (arquivo/dossiê), F4 (suite «Quem é José Sócrates?» com documentos reais), I5 (CI: `ci.yml` existe, ainda não correu num PR real) |
+| misto | **1** | I4: `benchmark` testado; `manutencao` e `reevaluate` têm modo seco provado em `tests/agentes-contrato.mjs`, `ai-quota` e `keyless-scan` só têm disparo manual |
 
 Fora da tabela: **4 `BLOQUEADO`** (testes contra produção e ensaio de durabilidade com base
 descartável) e **3 `NAO_VERIFICADO`** (conteúdo de produção vs HEAD, fiabilidade do pollinations,
 comportamento com uma chave de IA válida).
 
-**Leitura:** a base, o fluxo e a classificação estão provados com execução. O que resta concentra-se
-em três sítios — **arquivo** (F3), **caso real** (F4) e **orçamento/retry por agente** (D6).
+**Leitura:** a base, o fluxo, a classificação e os agentes estão provados com execução. O que resta
+concentra-se em três sítios — **arquivo** (F3), **caso real** (F4) e as fases E (catálogo de APIs com
+máquina de estados), F (arquivo) e G (interface/desempenho). Dizê-lo assim é mais honesto do que
+somar verdes: o produto ainda não entrega um dossiê arquivado, e é isso que a fase F tem de resolver.

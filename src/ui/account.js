@@ -1118,7 +1118,7 @@
     const runsByAgent = {};
     (d.agentRuns || []).forEach((r) => { runsByAgent[r.agentId] = r; });
     root.appendChild(el('table', { class: 'listtable' }, [
-      el('thead', {}, [el('tr', {}, ['agente', 'tipo', 'última execução', 'orçamento', ''].map((x) => el('th', { text: x })))]),
+      el('thead', {}, [el('tr', {}, ['agente', 'tipo', 'última execução', 'contrato aplicado', 'orçamento', ''].map((x) => el('th', { text: x })))]),
       el('tbody', {}, (d.agents || []).map((ag) => {
         const last = runsByAgent[ag.id];
         return el('tr', {}, [
@@ -1127,8 +1127,18 @@
           el('td', { style: 'font-size:10px' }, [
             last ? el('span', { class: 'tag ' + (last.status === 'concluido' ? 'ok' : last.status === 'nao-executado' ? 'warn' : 'bad'), text: last.status }) : el('span', { style: 'color:var(--muted)', text: 'nunca executado' }),
             last && last.reason ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.reason.slice(0, 80) }) : null,
-            last && last.findings ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.findings.length + ' achado(s)' }) : null
+            last && last.findings ? el('div', { style: 'font-size:9px;color:var(--muted)', text: last.findings.length + ' achado(s)' }) : null,
+            last && last.model ? el('div', { style: 'font-size:9px;color:var(--muted)', text: (last.provider || '') + ' · ' + last.model + (last.latencyMs != null ? ' · ' + last.latencyMs + ' ms' : '') }) : null,
+            last && (last.tentativas || []).length > 1 ? el('div', { style: 'font-size:9px;color:var(--muted)', text: (last.tentativas || []).length + ' tentativa(s) · ' + (last.chamadas || 0) + ' chamada(s)' }) : null,
+            last && last.truncado ? el('div', { style: 'font-size:9px;color:var(--warn,#b45309)', text: 'saída cortada no tecto' }) : null
           ].filter(Boolean)),
+          el('td', { style: 'font-size:9px;color:var(--muted)' }, (function () {
+            const c = (last && last.contrato) || ag.limits || {};
+            const aplicado = !!(last && last.contrato);
+            return [el('div', { text: (c.timeoutMs != null ? c.timeoutMs + ' ms' : '?') + ' · ' + (c.maxItems != null ? c.maxItems + ' itens' : '?') }),
+              el('div', { text: 'chamadas ' + (c.maxCalls != null ? c.maxCalls : '?') + ' · retries ' + (c.retries != null ? c.retries : '?') }),
+              el('div', { style: 'color:' + (aplicado ? 'inherit' : 'var(--muted)'), text: aplicado ? 'aplicado nesta execução' : 'declarado (ainda não executado)' })];
+          })()),
           (() => {
             const q = (d.agentQuotas || {})[ag.id];
             if (!q) return el('td', {});
@@ -1145,13 +1155,30 @@
               if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
               const run = r.json.run;
               note(ag.name + ': ' + run.status + (run.reason ? ' — ' + run.reason : '') +
-                (run.findings ? ' · ' + run.findings.length + ' achado(s)' : ''), run.status === 'concluido' ? 'ok' : 'warn');
+                (run.findings ? ' · ' + run.findings.length + ' achado(s)' : '') +
+                ' · ' + (run.chamadas || 0) + ' chamada(s)/' + ((run.contrato && run.contrato.maxCalls) || '?'),
+                run.status === 'concluido' ? 'ok' : 'warn');
               await reloadDetail();
             }
           })])
         ]);
       }))
     ]));
+    /* registos por agente, um a um: quem correu, com que modelo, quantas chamadas */
+    if ((d.agentRuns || []).length) {
+      root.appendChild(el('div', { style: 'margin-top:6px' }, [
+        el('div', { style: 'font-size:10px;color:var(--muted)', text:
+          'Registos de agente guardados neste projecto (' + d.agentRuns.length + ') — cada linha é uma execução real, com contrato aplicado' }),
+        ...d.agentRuns.slice(-12).map((r) => el('div', { style: 'font-size:10px;margin-top:2px' }, [
+          el('span', { class: 'tag ' + (r.status === 'concluido' ? 'ok' : r.status === 'nao-executado' ? 'warn' : 'bad'), text: r.status }),
+          el('span', { text: ' ' + r.agentId + ' · ' + String(r.startedAt || '').slice(11, 19) +
+            ' · ' + (r.chamadas || 0) + ' chamada(s)' +
+            ((r.tentativas || []).length > 1 ? ' · ' + r.tentativas.length + ' tentativas' : '') +
+            (r.model ? ' · ' + r.model : '') +
+            (r.reason ? ' — ' + String(r.reason).slice(0, 70) : '') })
+        ]))
+      ]));
+    }
     const ultimoAuditor = runsByAgent['red-team'];
     if (ultimoAuditor && ultimoAuditor.findings && ultimoAuditor.findings.length) {
       root.appendChild(el('div', { class: 'warnbox', style: 'margin-top:6px' }, [

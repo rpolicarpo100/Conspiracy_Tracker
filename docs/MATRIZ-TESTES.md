@@ -13,48 +13,51 @@ código 1.
 
 ---
 
-## 1. `npm test` — 34 ficheiros, um a um (FASES B e C aplicadas)
+## 1. `npm test` — 36 ficheiros, um a um (FASES B, C e D aplicadas)
 
-Gerado por `node tools/auditoria/matriz-testes.mjs` (cada ficheiro em processo próprio).
+Gerado por `bash tools/ui-env.sh node tools/auditoria/matriz-testes.mjs` (cada ficheiro em processo
+próprio, sessão de 2026-10-23, servidor de testes em `127.0.0.1:8080`).
 
-Total: **34 ficheiros · 563 PASS · 0 FAIL · 0 ficheiros com código de saída ≠ 0**.
+Total: **36 ficheiros · 583 PASS · 0 FAIL · 0 ficheiros com código de saída ≠ 0**.
 
 | ficheiro | PASS | FAIL | duração | código | veredicto |
 |---|---|---|---|---|---|
-| `tests/afirmacoes.mjs` | 14 | 0 | 1,2 s | 0 | ok |
-| `tests/agents-p3.mjs` | 16 | 0 | 2,2 s | 0 | ok |
-| `tests/agents.mjs` | 18 | 0 | 4,7 s | 0 | ok |
-| `tests/apis.mjs` | 13 | 0 | 0,2 s | 0 | ok |
-| `tests/auth-privacidade.mjs` | 15 | 0 | 5,8 s | 0 | ok |
-| `tests/benchmark.mjs` | 18 | 0 | 2,7 s | 0 | ok |
-| `tests/cabecalhos.mjs` | 2 | 0 | 1,8 s | 0 | ok |
-| `tests/discovery.mjs` | 13 | 0 | 1,4 s | 0 | ok |
-| `tests/evidence.mjs` | 17 | 0 | 4,0 s | 0 | ok |
-| `tests/fase3c.mjs` | 28 | 0 | 3,1 s | 0 | ok |
-| `tests/fase3d.mjs` | 18 | 0 | 2,3 s | 0 | ok |
-| `tests/fase3e.mjs` | 21 | 0 | 0,6 s | 0 | ok |
-| `tests/flow.mjs` | 14 | 0 | 7,2 s | 0 | ok |
-| `tests/fontes.mjs` | 23 | 0 | 1,6 s | 0 | ok |
-| `tests/graph.mjs` | 13 | 0 | 2,1 s | 0 | ok |
-| `tests/ia-fornecedores.mjs` | 21 | 0 | 1,8 s | 0 | ok |
-| `tests/keyless.mjs` | 10 | 0 | 0,3 s | 0 | ok |
-| `tests/modelos.mjs` | 12 | 0 | 0,1 s | 0 | ok |
-| `tests/ocr.mjs` | 15 | 0 | 4,5 s | 0 | ok |
-| `tests/pdftext.mjs` | 19 | 0 | 0,1 s | 0 | ok |
-| `tests/persistencia-pg.mjs` | 0 | 0 | 0,1 s | 0 | ok |
-| `tests/pesquisa-servidor.mjs` | 18 | 0 | 1,3 s | 0 | ok |
-| `tests/provider-os.mjs` | 25 | 0 | 0,6 s | 0 | ok |
-| `tests/provider-tests.mjs` | 18 | 0 | 4,1 s | 0 | ok |
-| `tests/quota-ia.mjs` | 10 | 0 | 1,0 s | 0 | ok |
-| `tests/realdata-bundle.mjs` | 7 | 0 | 0,0 s | 0 | ok |
-| `tests/research.mjs` | 24 | 0 | 3,5 s | 0 | ok |
-| `tests/retencao.mjs` | 10 | 0 | 1,1 s | 0 | ok |
-| `tests/scheduler.mjs` | 21 | 0 | 2,5 s | 0 | ok |
-| `tests/search.mjs` | 17 | 0 | 5,3 s | 0 | ok |
-| `tests/seguranca.mjs` | 25 | 0 | 25,1 s | 0 | ok |
-| `tests/selector.mjs` | 24 | 0 | 0,3 s | 0 | ok |
-| `tests/server.mjs` | 26 | 0 | 4,0 s | 0 | ok |
-| `tests/ssrn.mjs` | 18 | 0 | 0,7 s | 0 | ok |
+| `tests/afirmacoes.mjs` | 14 | 0 | 1.3 s | 0 | ok |
+| `tests/agentes-contrato.mjs` | 10 | 0 | 0.1 s | 0 | ok |
+| `tests/agents-p3.mjs` | 16 | 0 | 2.2 s | 0 | ok |
+| `tests/agents.mjs` | 18 | 0 | 4.7 s | 0 | ok |
+| `tests/apis.mjs` | 13 | 0 | 0.2 s | 0 | ok |
+| `tests/auth-privacidade.mjs` | 15 | 0 | 6.2 s | 0 | ok |
+| `tests/benchmark.mjs` | 18 | 0 | 3.3 s | 0 | ok |
+| `tests/cabecalhos.mjs` | 2 | 0 | 1.8 s | 0 | ok |
+| `tests/discovery.mjs` | 13 | 0 | 1.5 s | 0 | ok |
+| `tests/evidence.mjs` | 17 | 0 | 4.1 s | 0 | ok |
+| `tests/fase3c.mjs` | 28 | 0 | 3.1 s | 0 | ok |
+| `tests/fase3d.mjs` | 18 | 0 | 2.3 s | 0 | ok |
+| `tests/fase3e.mjs` | 21 | 0 | 0.6 s | 0 | ok |
+| `tests/flow.mjs` | 14 | 0 | 7.4 s | 0 | ok |
+| `tests/fontes.mjs` | 23 | 0 | 1.9 s | 0 | ok |
+| `tests/graph.mjs` | 13 | 0 | 2.1 s | 0 | ok |
+| `tests/ia-fornecedores.mjs` | 21 | 0 | 1.8 s | 0 | ok |
+| `tests/keyless.mjs` | 10 | 0 | 0.4 s | 0 | ok |
+| `tests/modelos.mjs` | 12 | 0 | 0.0 s | 0 | ok |
+| `tests/ocr.mjs` | 15 | 0 | 5.5 s | 0 | ok |
+| `tests/pdftext.mjs` | 19 | 0 | 0.1 s | 0 | ok |
+| `tests/persistencia-pg.mjs` | 0 | 0 | 0.1 s | 0 | ok |
+| `tests/pesquisa-servidor.mjs` | 18 | 0 | 1.5 s | 0 | ok |
+| `tests/provider-os.mjs` | 25 | 0 | 0.8 s | 0 | ok |
+| `tests/provider-tests.mjs` | 18 | 0 | 4.2 s | 0 | ok |
+| `tests/quota-ia.mjs` | 10 | 0 | 0.9 s | 0 | ok |
+| `tests/realdata-bundle.mjs` | 7 | 0 | 0.1 s | 0 | ok |
+| `tests/research.mjs` | 24 | 0 | 3.6 s | 0 | ok |
+| `tests/retencao.mjs` | 10 | 0 | 1.1 s | 0 | ok |
+| `tests/scheduler.mjs` | 21 | 0 | 2.7 s | 0 | ok |
+| `tests/search.mjs` | 17 | 0 | 6.4 s | 0 | ok |
+| `tests/seguranca.mjs` | 25 | 0 | 8.2 s | 0 | ok |
+| `tests/selector.mjs` | 24 | 0 | 0.4 s | 0 | ok |
+| `tests/server.mjs` | 26 | 0 | 4.3 s | 0 | ok |
+| `tests/ssrn.mjs` | 18 | 0 | 0.7 s | 0 | ok |
+| `tests/workflows-investigacao.mjs` | 10 | 0 | 0.2 s | 0 | ok |
 
 > **`tests/persistencia-pg.mjs` continua a ser o único ficheiro com 0 asserções:** imprime
 > `SKIP persistência: DATABASE_URL não está definida` e sai com 0. Um «verde» aqui **não prova
@@ -62,17 +65,19 @@ Total: **34 ficheiros · 563 PASS · 0 FAIL · 0 ficheiros com código de saída
 
 ### Diferença face à cadeia `npm test`
 
-`npm test` encadeia os 32 ficheiros com `&&`. Numa cadeia assim, um ficheiro que rebente no
+`npm test` encadeia os 36 ficheiros com `&&`. Numa cadeia assim, um ficheiro que rebente no
 arranque aparece como falha global sem dizer qual foi — e um ficheiro que não corre passa
 despercebido se estiver fora da cadeia. A matriz existe precisamente para separar as duas coisas.
-A soma coincide com a cadeia completa: **563 PASS / 0 falhas** (542 da FASE A + 7 da FASE B +
-14 de `tests/afirmacoes.mjs` na FASE C).
+A soma coincide com a cadeia completa: **583 PASS / 0 falhas** (542 da FASE A + 7 da FASE B +
+14 de `tests/afirmacoes.mjs` na FASE C + 10 de `tests/agentes-contrato.mjs` e 10 de
+`tests/workflows-investigacao.mjs` na FASE D). A cadeia `npm test` foi também corrida de ponta a ponta
+nesta sessão, com o mesmo resultado (583 PASS · saída 0).
 
 ---
 
-## 2. `npm run test:ui` — 9 suites
+## 2. `npm run test:ui` — 9 suites (FASE D)
 
-Corrido com `bash tools/ui-env.sh npm run test:ui` → **código de saída 0**.
+Corrido com `bash tools/ui-env.sh npm run test:ui` → **código de saída 0**, 9 suites · 100 verificações.
 
 | suite | verificações | resultado |
 |---|---|---|
@@ -115,7 +120,8 @@ Código de saída 0 · dados em `docs/DEPENDENCIAS-DADOS.json`.
 | `tests/ocr-publico.mjs` | não | `BLOQUEADO` | idem |
 | `tests/real-fetch.mjs` | não | `BLOQUEADO` | sai para a rede aberta |
 
-Consequência: **13 de 54 ficheiros nunca correm em CI** e quatro dos que correm à mão não têm
+Consequência: **13 dos 58 ficheiros de `tests/` nunca correm em CI** (36 estão em `npm test`, 9 em
+`npm run test:ui`) e quatro dos que correm à mão não têm
 asserções. A cobertura real é a da §1 e §2, não a contagem de ficheiros em `tests/`.
 
 ---

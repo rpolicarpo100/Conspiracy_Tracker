@@ -330,10 +330,17 @@ await t('agente de IA com stub devolve saída estruturada e é registado', async
   ok(a.run.status === 'concluido' && a.run.output.consultas.length === 1, 'saída: ' + JSON.stringify(a.run.output));
   ok(a.run.provider === 'stub' && a.run.promptVersion, 'sem fornecedor/versão registados');
   const bad = await executeAgent({ store }, 'web-search', ctx, { ai: async () => ({ ok: true, provider: 'stub', parsed: null, note: 'sem objecto JSON' }) });
-  ok(bad.run.status === 'falhou' && bad.run.output === null, 'aceitou resposta inválida');
+  /* desde a FASE D o agente tem orçamento próprio (3 chamadas para web-search):
+     três respostas inválidas esgotam-no, por isso o estado final pode ser
+     «falhou» ou «orcamento-esgotado». O que não pode mudar — e é o que este
+     teste guarda — é que uma resposta inválida NUNCA produz saída guardada. */
+  ok(['falhou', 'orcamento-esgotado'].includes(bad.run.status) && bad.run.output === null, 'aceitou resposta inválida (' + bad.run.status + ')');
   ok(/não é JSON válido/.test(bad.run.reason), 'motivo: ' + bad.run.reason);
+  ok(bad.run.tentativas.length >= 1 && bad.run.tentativas.every((t) => t.ok === false), 'tentativas inválidas registadas como boas');
   const fail = await executeAgent({ store }, 'web-search', ctx, { ai: async () => ({ ok: false, error: 'HTTP 401' }) });
-  ok(fail.run.status === 'falhou' && /HTTP 401/.test(fail.run.reason), 'falha de fornecedor não registada');
+  ok(['falhou', 'orcamento-esgotado'].includes(fail.run.status) && fail.run.output === null, 'falha de fornecedor aceite (' + fail.run.status + ')');
+  /* o erro do fornecedor fica no registo da tentativa (não se perde) */
+  ok((fail.run.tentativas || []).some((t) => t.ok === false && /HTTP 401/.test(t.erro || '')), 'falha de fornecedor não registada: ' + JSON.stringify(fail.run.tentativas));
   return 'sucesso, JSON inválido e falha de fornecedor distinguidos · nada inventado';
 });
 

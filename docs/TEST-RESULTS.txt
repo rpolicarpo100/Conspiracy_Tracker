@@ -2274,3 +2274,78 @@ E. O que continua por fazer
         não havia dados com os nomes antigos, por isso não houve conversão a
         fazer. O caminho de conversão foi provado em tests/afirmacoes.mjs com
         uma base v7 real.
+
+§59  F A S E   D  —  A G E N T E S   E   W O R K F L O W S
+     Versão 2.3.0-faseD · esquema v8 (sem migração) · 2026-10-23
+
+§59.1  E X E C U Ç Ã O   C O M P L E T A
+   PASS npm test → 36 ficheiros · 583 PASS · 0 FAIL · saída 0
+   PASS npm run test:ui → 9 suites · 100 verificações · saída 0
+   PASS matriz por ficheiro (tools/auditoria/matriz-testes.mjs) → 36 ficheiros,
+        583 PASS, 0 FAIL, 0 ficheiros com código ≠ 0
+   NOTA tests/persistencia-pg.mjs continua com 0 asserções e sai com 0:
+        imprime SKIP por não haver DATABASE_URL. Não é um «verde» de durabilidade.
+
+§59.2  C O N T R A T O   D E   A G E N T E   (tests/agentes-contrato.mjs, 10/10)
+   PASS os 13 agentes declaram tempo, tecto de itens, chamadas, retries e cancelamento
+        → 13 agentes com 5 limites e saída obrigatória (1/3/1/1/1/2/1/2/2/1/2/2/1)
+   PASS saída fora do contrato é «falhou», nunca sucesso vazio
+        → objecto vazio recusado com motivo nomeado · saída válida aceite
+   PASS excesso de itens é cortado no tecto do agente e o corte fica registado
+        → 25 → 20 itens, corte declarado no resultado
+   PASS retry por agente: falha duas vezes e passa à terceira, com as tentativas registadas
+        → 3 tentativas (2 falhas + 1 sucesso) · chamadas contadas
+   PASS orçamento do agente esgota e para SÓ esse agente
+        → web-search esgotou em 3 chamadas · orchestrator a seguir correu normalmente
+   PASS cancelar antes de começar não faz uma única chamada → «cancelado» · 0 chamadas
+   PASS cancelar entre tentativas interrompe o retry → parou após 1 tentativa · nada guardado
+   PASS agente local também respeita o tecto de itens → 260 entidades → 200 (tecto 200)
+   PASS o passo de contraprovas calcula sem IA em vez de ficar vazio
+        → passo 15 concluído sem IA · 1 afirmação sem procura de contraprova declarada
+   PASS os workflows de operação têm modo seco declarado
+        → manutencao e reevaluate com modo seco · os quatro com disparo manual
+
+§59.3  W O R K F L O W S   D E   I N V E S T I G A Ç Ã O   (tests/workflows-investigacao.mjs, 10/10)
+   PASS 4 workflows nomeados, todos válidos
+        → triagem-rapida · recolha-documental · verificacao-cruzada · relatorio-rastreavel
+   PASS 25 referências a passos, todas existentes nos 20 do motor e por ordem
+   PASS limites declarados nunca excedem o perfil (4 verificados)
+   PASS a validação recusa 7 definições erradas: passo inventado, passo repetido,
+        ordem trocada, limite acima do perfil, IA fora do perfil rápido,
+        «diz sem IA mas usa IA» e «diz com IA e não usa»
+   PASS esqueleto corre sem rede → 4 esqueletos com 0 chamadas de fetch
+        (fetch substituído por uma função que rebenta, contagem confirmada = 0)
+   PASS workflow sem IA di-lo (3 de 4) e o com IA declara a necessidade de chave
+   PASS limites efectivos = menor entre declarado e perfil
+   PASS workflow desconhecido → recusado com a lista do que existe
+   PASS lista pública traz versão, validação e necessidades de cada workflow
+   PASS GET /api/workflows sem sessão → 401
+
+§59.4  A P I   L O C A L   (verificação à mão, servidor de testes em 127.0.0.1:8080)
+   PASS GET /health → 2.3.0-faseD · alive
+   PASS GET /api/workflows (com sessão) → 200 · 4 workflows, todos valido:true,
+        perfis rapida/normal/profunda, passos 4/8/7/6
+   PASS GET /api/workflows/recolha-documental → 200 · 8 passos ·
+        limites efectivos {maxCalls:0, maxDocuments:8, maxMinutes:10} · validação ok
+   PASS GET /api/workflows/inventado → 404 «workflow desconhecido» + lista dos 4
+
+§59.5  C O R R E C Ç Õ E S   D U R A N T E   A   F A S E
+   · (truncado || {})[k] = … não atribuía a truncado — o corte ficava invisível.
+     Passou a atribuição explícita; testado.
+   · tentativas inválidas eram registadas com ok:true (o registo era criado antes
+     da validação e nunca corrigido). Passaram a ok:false com o erro concreto:
+     «resposta não é JSON válido», «saída fora do contrato: falta …», erro do fornecedor.
+   · tests/agents-p3.mjs esperava «falhou» onde o orçamento por agente produz
+     «orcamento-esgotado». O teste NÃO foi desactivado: passou a aceitar os dois
+     estados e a exigir mais — nenhuma saída inválida guardada e tentativas inválidas
+     registadas como inválidas.
+
+§59.6  O   Q U E   A   F A S E   D   N Ã O   F E Z   (declarado, para não parecer esquecimento)
+   · os workflows nomeados NÃO executam um subconjunto do motor: hoje são definição
+     versionada + plano verificável (esqueleto). A execução selectiva por workflow
+     é trabalho da fase E/G.
+   · não houve migração de base nesta fase (esquema continua v8).
+   · nenhuma chave de IA válida neste ambiente: os agentes de IA foram provados com
+     stub; o comportamento com chave real continua NAO_VERIFICADO.
+   · produção: deploy automático do Render. A leitura de /health depois do deploy
+     fica nesta secção (§59.7) quando acontecer — não se antecipa.

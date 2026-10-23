@@ -18,6 +18,7 @@ import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES, periodWindo
 import { graphToSvg, graphToDot, graphExportPayload } from './graph-export.mjs';
 import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_REDIRECTS } from './access.mjs';
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
+import { WORKFLOWS, WORKFLOW_VERSION, workflowById, validateWorkflow, skeleton, workflowsPublic } from './workflows.mjs';
 import { validateEntityLink } from './graph.mjs';
 import { extrairIdSSRN, lerMetadadosSSRN, sondarBloqueioSSRN, SSRN } from './ssrn.mjs';
 import { PESQUISA, parseQuery, pontuarItem, recorte, ordenar, pesoRaridade } from './search.mjs';
@@ -56,7 +57,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.2.0-faseC';
+const APP_VERSION = '2.3.0-faseD';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -2861,10 +2862,40 @@ export async function createApi(opts) {
         return json(res, 200, {
           ok: true, promptVersion: AGENT_PROMPT_VERSION,
           agents: AGENTS.map((ag) => ({ id: ag.id, name: ag.name, phase: ag.phase, kind: ag.kind,
-            contract: ag.contract, criteria: ag.criteria, limits: ag.limits })),
+            contract: ag.contract, criteria: ag.criteria, limits: ag.limits,
+            outRequired: (ag.contract && ag.contract.outRequired) || [] })),
+          contractRules: {
+            limite: 'timeoutMs · maxItems · maxCalls · retries são aplicados pelo executor, não declarados para enfeitar',
+            saida: 'a saída é validada contra outRequired: falta de chave = agente «falhou», nunca sucesso vazio',
+            orcamento: 'esgotar o orçamento de um agente pára só esse agente',
+            cancelamento: 'verificado antes de começar e entre tentativas: nada é guardado depois de cancelado'
+          },
           note: 'nenhum agente escreve conclusões: os agentes locais só analisam, os de IA devolvem propostas'
         });
       }
+      /* ---------- workflows de investigação nomeados (FASE D4) ---------- */
+      if (p === '/api/workflows' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        return json(res, 200, {
+          ok: true, version: WORKFLOW_VERSION, engine: { steps: STEPS.length, promptVersion: PROMPT_VERSION },
+          workflows: workflowsPublic(),
+          rules: {
+            definicao: 'cada workflow nomeia passos existentes do motor, por ordem, com perfil e limites',
+            limites: 'os limites declarados nunca excedem o perfil; o valor efectivo é o menor dos dois',
+            semIA: 'workflow sem passos de IA corre sem chave e di-lo; nenhum passo é simulado',
+            esqueleto: 'GET /api/workflows/:id devolve o plano puro, sem rede'
+          }
+        });
+      }
+      if (p.match(/^\/api\/workflows\/[^/]+$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const id = decodeURIComponent(p.split('/')[3]);
+        const w = workflowById(id);
+        if (!w) return err(res, 404, 'workflow desconhecido', { known: WORKFLOWS.map((x) => x.id) });
+        return json(res, 200, { ok: true, version: WORKFLOW_VERSION, esqueleto: skeleton(id), definicao: w,
+          validacao: validateWorkflow(w) });
+      }
+
       if (p.match(/^\/api\/projects\/[^/]+\/agent-runs$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
         const pid = p.split('/')[3];
@@ -2892,12 +2923,17 @@ export async function createApi(opts) {
           return err(res, 429, quota.reason, { quota });
         }
         const ai = agentAiRunner(a.user);
-        const out = await executeAgent({ store }, agentId, ctx, { ai });
+        /* D4: o cancelamento é verificado pelo executor antes de cada chamada.
+           Aqui liga-se ao estado do projecto (arquivado) e ao corpo do pedido. */
+        const body = await readBody(req);
+        const cancelado = () => prj.status === 'archived' || body.cancelar === true;
+        const out = await executeAgent({ store }, agentId, ctx, { ai, cancelado });
         const saved = await store.addAgentRun(pid, out.run, a.user.id);
         await store.audit({
           type: 'agent_run', actorId: a.user.id, subjectId: saved.id, action: agentId,
           detail: { projectId: pid, status: saved.status, kind: saved.kind,
-            findings: saved.findings ? saved.findings.length : null, reason: saved.reason || null }
+            findings: saved.findings ? saved.findings.length : null, reason: saved.reason || null,
+            tentativas: (saved.tentativas || []).length, chamadas: saved.chamadas || 0 }
         });
         await store.count('agent_runs');
         const quotaAfter = quotaState({ runs: store.data.agentRuns || [], userId: a.user.id, projectId: pid, agentId });
