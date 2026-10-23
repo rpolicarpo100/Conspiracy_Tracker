@@ -7,8 +7,8 @@ retry por agente, registo por agente visível no ecrã da execução, workflows 
 e `workflow_dispatch` seco nos quatro workflows.
 
 > Nada foi alterado à mão em produção. O deploy é o automático do Render (`autoDeploy:true`), ligado
-> pelo utilizador e que ele pode desligar. As leituras de produção ficam registadas em §59.10 de
-> `docs/TEST-RESULTS.txt` **só depois** de acontecerem — não se antecipa resultado.
+> pelo utilizador e que ele pode desligar. As leituras de produção ficam registadas em §59.7 de
+> `docs/TEST-RESULTS.txt` — foram feitas **depois** do deploy, não antes.
 
 ---
 
@@ -149,7 +149,7 @@ Além dos testes, verificação manual na API local: `GET /api/workflows` (4 wor
 | retry por agente gasta mais chamadas do que antes | contido por `maxCalls` por agente e pelo orçamento global; o estado diz quando foi o orçamento que parou |
 | `verificacao-cruzada` depende de IA para contraprovas | se não houver chave, o passo corre localmente e é marcado «calculado sem IA» (lacuna explícita) |
 | workflows nomeados não executam um subconjunto (correm o motor inteiro) | **declarado**: hoje são definição + plano verificável; a execução selectiva por workflow é trabalho da fase E/G — não se anuncia o que não existe |
-| produção continua em `2.2.0-faseC` até o Render reconstruir | `/health` publicado dirá a versão; ver §59.10 de `docs/TEST-RESULTS.txt` |
+| produção passa de `2.2.0-faseC` para `2.3.0-faseD` no deploy automático | confirmado: `/health` em produção devolve `2.3.0-faseD` / `5d44da1` e `/ready` diz `ready` com Postgres durável (ver §59.7 de `docs/TEST-RESULTS.txt`) |
 
 ---
 

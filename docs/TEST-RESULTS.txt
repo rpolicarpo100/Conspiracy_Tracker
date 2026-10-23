@@ -2347,5 +2347,22 @@ E. O que continua por fazer
    · não houve migração de base nesta fase (esquema continua v8).
    · nenhuma chave de IA válida neste ambiente: os agentes de IA foram provados com
      stub; o comportamento com chave real continua NAO_VERIFICADO.
-   · produção: deploy automático do Render. A leitura de /health depois do deploy
-     fica nesta secção (§59.7) quando acontecer — não se antecipa.
+   · produção: deploy automático do Render. As leituras feitas depois do deploy
+     estão em §59.7, com a versão e o commit que a produção devolveu.
+
+§59.7  P R O D U Ç Ã O   (leitura apenas, depois do deploy automático do Render)
+   PASS GET /health → 2.3.0-faseD · commit 5d44da1cb57ec1b5c560a7ca3440834cd88182ed
+        · alive · uptime 84 s
+   PASS GET /api/meta → version 2.3.0-faseD · schemaVersion 8 · agents{total 13,
+        local 6, ai 7, promptVersion a1}
+   PASS GET /ready → ready · persistência «postgres+ficheiro» · durável entre
+        deploy true · postgres activo (versão 1080) · writes 1 · errors 0
+        · integridade da base verificada por checksum · cofre de chaves
+        aes-256-gcm activo
+   PASS GET /api/workflows sem sessão → 401: a rota existe em produção e exige
+        sessão (não se leu conteúdo autenticado — isso exigiria credenciais)
+   PASS GET /api/agents sem sessão → 401 (o contrato só é servido a sessão válida)
+   NOTA o deploy foi o automático do Render, disparado pelo push em
+        86dd538..5d44da1. Nenhum passo manual foi executado em produção e
+        nenhum dado de produção foi escrito por esta fase (esquema v8, sem
+        migração).
