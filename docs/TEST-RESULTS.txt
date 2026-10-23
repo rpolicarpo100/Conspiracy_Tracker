@@ -2110,3 +2110,73 @@ E. O que continua por fazer
    lhe enviar documentos — isso exige revisão humana e declaração em
    docs/PRIVACIDADE.md. É a regra do dono da instância, e está escrita na resposta
    da rota, na interface e no workflow.
+
+=====================================================================
+§57  FASE B — CRÍTICOS DO FLUXO (recolha sem IA, execução em fundo,
+     cancelamento, retoma, cabeçalhos, CI em PRs) — 2026-10-23
+=====================================================================
+
+§57.1  P O N T O   D E   P A R T I D A
+   Medido na FASE A (docs/AUDITORIA-INTEGRAL.md): com 10 URLs fornecidas e sem
+   chave de IA, os três perfis terminavam «stopped» com ZERO documentos e ZERO
+   provas; POST /runs segurava a ligação 2,0 s / 9,9 s / 24,2 s; e a aplicação
+   aceitava ser embutida em qualquer site (frame-ancestors *).
+
+§57.2  M O T O R  (server/research.mjs)
+   PASS sem fornecedor de IA a execução NÃO pára: o passo fica «nao-executado»,
+        entra em lacunas[] com tipo e motivo, e os passos locais + a recolha
+        continuam até ao fim
+   PASS estado final novo «concluido-com-lacunas» — diz o que faltou em vez de
+        fingir cobertura; «aguarda-revisao-humana» quando não falta nada
+   PASS a recolha ARQUIVA os documentos (hash, estado, revisão pendente)
+   PASS retomar reutiliza o arquivo (0 descargas na 2.ª passagem) e não repete
+        passos concluídos; um passo tem UM registo (sem duplicados: 20 passos)
+   PASS cancelar corta a recolha a meio: 4 de 6 documentos, motivo escrito
+   PASS orçamento esgotado não mata a execução (6 lacunas, locais correram,
+        zero chamadas externas)
+   PASS resposta de IA que não é JSON continua a NÃO ser guardada como resultado
+
+§57.3  A P I  (server/api.mjs)
+   PASS background:true → 202 em 7 ms com runId e estado acompanhável
+   PASS resume aceita «concluido-com-lacunas» e limpa as lacunas antes de tentar
+   PASS api.close() espera pelas execuções em fundo (nada fica «running» para sempre)
+   PASS modo síncrono mantido e declarado na resposta (background:false)
+
+§57.4  I N T E R F A C E
+   PASS «Iniciar pesquisa» dispara em fundo e acompanha até terminar
+   PASS lacunas visíveis: «lacunas: N» + «lacunas declaradas: passo 1 interpretar …»
+   PASS «Retomar (n)» disponível também para execuções com lacunas
+   PASS account-ui 19/19 depois da mudança
+
+§57.5  C A B E Ç A L H O S  (tests/cabecalhos.mjs, NOVO)
+   PASS script-src 'self' (sem 'unsafe-inline' — não há scripts embutidos no HTML)
+   PASS frame-ancestors 'self' + X-Frame-Options SAMEORIGIN
+   PASS Strict-Transport-Security max-age=31536000
+   PASS ALLOW_EMBED=1 repõe o modo embutível (pré-visualizações) e só nesse modo
+
+§57.6  C I  (.github/workflows/ci.yml, NOVO)
+   PASS dispara em pull_request, push para main e workflow_dispatch
+   PASS corre audit:deps, levanta o servidor local, npm test e test:ui
+   (verificação real: só acontece no GitHub, no primeiro PR — não se afirma aqui
+    que já correu lá; o YAML foi validado com yaml.safe_load)
+
+§57.7  E N S A I O   D E   P O N T A   A   P O N T A   (sem chave de IA)
+   PASS [rapida]    concluido-com-lacunas · 1 lacuna · 20 passos
+   PASS [normal]    concluido-com-lacunas · 2 lacunas · 20 passos
+   PASS [exaustiva] concluido-com-lacunas · 5 lacunas · 20 passos
+   PASS 10 documentos arquivados (antes: 0) · provas 0 (por desenho: exigem
+        excerto confirmado por uma pessoa)
+   PASS relatório idêntico após reinício do processo (sem contar o carimbo)
+
+§57.8  S U Í T E S
+   PASS npm test → 549 PASS · 0 falhas · 33 ficheiros · exit 0
+   PASS npm run test:ui → 9 suites · 100 verificações · exit 0
+   PASS tests/research.mjs → 24/24 (4 reescritos para o contrato novo, 5 novos)
+   PASS npm run audit:deps → 41 pacotes · sem vulnerabilidades altas/críticas
+
+§57.9  O  Q U E   C O N T I N U A   A   F A L T A R
+   · taxonomia de afirmações igual à exigida (nao-verificada, desactualizada)
+   · independência de fontes (duas cópias ≠ duas fontes)
+   · tests/caso-socrates.mjs com documentos reais
+   · durabilidade entre deploys (BLOQUEADO: sem DATABASE_URL)
+   · produção continua no commit anterior: DEPLOY REQUER AUTORIZAÇÃO

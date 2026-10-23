@@ -1,0 +1,61 @@
+# Integração contínua em pull requests.
+#
+# Antes disto os quatro workflows só corriam por agenda: um PR podia entrar com
+# testes vermelhos e ninguém notava até ao dia seguinte. Este corre em cada PR e
+# em cada push para main, e falha o PR se algo estiver vermelho.
+#
+# Sem segredos: os testes usam contas descartáveis e dados em /tmp (tests/_env.mjs
+# abre o registo só para eles). Nada aqui toca em produção nem em bases reais.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: testes (npm test + interface + dependências)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: instalar dependências
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: auditoria de dependências
+        run: npm run audit:deps
+
+      - name: servidor local (as suites de interface precisam dele)
+        run: |
+          bash tools/dev-server.sh > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS -m 2 http://127.0.0.1:8080/health > /dev/null; then echo "servidor pronto"; exit 0; fi
+            sleep 1
+          done
+          echo "::error::o servidor local não arrancou em 40 s"; tail -40 /tmp/dev.log; exit 1
+
+      - name: npm test (32 ficheiros)
+        run: bash tools/ui-env.sh npm test
+
+      - name: testes de interface (9 suites, Chromium)
+        run: |
+          npx playwright install --with-deps chromium
+          bash tools/ui-env.sh npm run test:ui
+
+      - name: registo do servidor em caso de falha
+        if: failure()
+        run: tail -60 /tmp/dev.log || true
