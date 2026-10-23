@@ -230,23 +230,34 @@ await t('código válido: sessão criada e desafio consumido', async () => {
 });
 
 await t('o mesmo código TOTP não pode ser reutilizado noutro login', async () => {
-  /* O TOTP muda a cada 30 s. Se o passo anterior usou um código do fim de uma
-     janela, o código de agora é OUTRO (contador seguinte) e é legítimo que seja
-     aceite — isso não é reutilização. Para o teste medir o que diz medir, espera-se
-     pelo início da janela e confirma-se que o contador não mudou a meio. */
-  const segundoNaJanela = () => Math.floor(Date.now() / 1000) % 30;
-  if (segundoNaJanela() > 12) await new Promise((r) => setTimeout(r, (30 - segundoNaJanela() + 1) * 1000));
-  const contador = counterNow();
-  const codigo = totpAt(secret, contador);
-  const novo = session();
-  const l = await novo.call('POST', '/api/auth/login', { email, password: PASSWORD });
-  const r = await novo.call('POST', '/api/auth/mfa/verify', { challenge: l.json.challenge, code: codigo });
-  if (counterNow() !== contador) {
-    /* a janela virou a meio do pedido: não há reutilização a medir aqui */
-    return 'não avaliado: a janela TOTP virou durante o pedido (o código seria outro, não uma repetição)';
+  /* A prova tem de ser auto-contida: usar AGORA um código, e voltar a tentá-lo
+     logo depois com o MESMO código. Assim o contador do código é, por construção,
+     igual ao último usado — e a reutilização é recusada independentemente da
+     janela de 30 s (na versão anterior o código era recalculado, e quando a
+     janela virava entre os dois testes era outro código, legitimamente aceite). */
+  /* O teste anterior já pode ter gasto o código da janela actual (é o mesmo
+     contador). Nesse caso espera-se pela janela seguinte — é a própria protecção
+     a funcionar, não uma falha. */
+  const tentar = async (codigo) => {
+    const s = session();
+    const l = await s.call('POST', '/api/auth/login', { email, password: PASSWORD });
+    return s.call('POST', '/api/auth/mfa/verify', { challenge: l.json.challenge, code: codigo });
+  };
+  let codigo = totpAt(secret, counterNow());
+  const c0 = counterNow();
+  let primeira = await tentar(codigo);
+  if (primeira.status === 401) {
+    while (counterNow() === c0) await new Promise((r) => setTimeout(r, 1500));
+    codigo = totpAt(secret, counterNow());
+    primeira = await tentar(codigo);
   }
-  ok(r.status === 401, 'reutilização aceite: ' + r.status);
-  return '401 (mesmo código, mesma janela: ' + contador + ')';
+  ok(primeira.status === 200, 'a primeira utilização devia entrar: ' + primeira.status + ' ' + primeira.text.slice(0, 120));
+  const s2 = session();
+  const l2 = await s2.call('POST', '/api/auth/login', { email, password: PASSWORD });
+  const segunda = await s2.call('POST', '/api/auth/mfa/verify', { challenge: l2.json.challenge, code: codigo });
+  ok(segunda.status === 401, 'reutilização aceite: ' + segunda.status);
+  ok(/incorrecto|já usado|utilizado/i.test(segunda.text), 'mensagem inesperada: ' + segunda.text.slice(0, 120));
+  return 'primeiro uso 200 · reutilização do mesmo código 401';
 });
 
 await t('código de recuperação: entra uma vez e é consumido', async () => {
