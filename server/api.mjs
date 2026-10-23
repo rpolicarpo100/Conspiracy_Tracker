@@ -1017,7 +1017,8 @@ export async function createApi(opts) {
               amostra: String((r.text || '').trim()).slice(0, 40) }
           : { ok: false, ms: ms, via: via, fornecedor: op ? op.provider : null, modelo: feito.modelo || (op && op.modelo),
               modeloCorrigido: r.modeloCorrigido || null, modeloPedido: r.modeloPedido || null,
-              motivo: String(r.error || 'falhou').slice(0, 160) };
+              motivo: String(r.error || 'falhou').slice(0, 160),
+              detalheDoFornecedor: r.detalhe ? String(r.detalhe).replace(/\s+/g, ' ').slice(0, 240) : null };
         /* Se a chave do operador falhar, a pergunta seguinte é inevitável:
            «então e a aplicação, fica sem IA?». Responde-se aqui, medindo. */
         if (!r.ok && op && !op.keyless

@@ -339,7 +339,11 @@ export async function complete({ provider, base, apiKey, model, messages, timeou
   recordFailure(key);
   const last = feito.last || {};
   const msg = (last.json && last.json.error && (last.json.error.message || last.json.error)) || last.error || ('HTTP ' + last.status);
-  return { ok: false, error: String(msg).slice(0, 300), status: last.status, latencyMs: last.ms, esperouMs: feito.esperouMs || 0 };
+  /* `detalhe` guarda o início do corpo devolvido: quando o fornecedor responde um
+     código sem mensagem JSON, é a única coisa que diz PORQUE recusou. Não leva
+     nada nosso — é a resposta dele. */
+  return { ok: false, error: String(msg).slice(0, 300), detalhe: String(last.text || '').slice(0, 240),
+    status: last.status, latencyMs: last.ms, esperouMs: feito.esperouMs || 0 };
 }
 
 export function registryPublic() {

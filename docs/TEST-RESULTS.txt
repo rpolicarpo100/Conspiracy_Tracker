@@ -1954,3 +1954,20 @@ E. O que continua por fazer
    PASS npm run test:ui → 10/10 · 5/5 · 7/7 · 18/18 · 6/6 · 10/10 · 12/12 ·
         16/16 · 15/15
    PASS node tools/status.mjs --check → estado coerente · 109 rotas
+
+§54.11  D O I S  T E S T E S  Q U E  M E D I A M  O  Q U E  N Ã O  D I Z I A M
+   · tests/seguranca.mjs, «o mesmo código TOTP não pode ser reutilizado»: o código
+     muda a cada 30 s. Quando os dois passos caíam dos dois lados de uma fronteira
+     de janela, o segundo código era OUTRO (contador seguinte) e ser aceite é o
+     comportamento correcto — o teste falhava sem haver defeito. Passa a esperar
+     pelo início da janela e a declarar «não avaliado» se a janela virar a meio.
+     PASS → 401 (mesmo código, mesma janela: 59757833)
+   · tests/account-ui.mjs, «prova registada»: lia o ecrã no instante da mensagem;
+     a lista é repintada depois de um segundo GET. Passou a esperar pela origem.
+
+§54.12  C O N C L U S Ã O  D A  F A S E  1 2
+   PASS npm test → 521 linhas PASS · 0 falhas (31 ficheiros, incl. tests/modelos.mjs)
+   PASS npm run test:ui → 9 suites, todas verdes
+   PASS produção: /health 2.0.0-fase12 · /ready ready · IA por chave do operador
+        (groq e openrouter respondem; gemini responde 404 e a aplicação declara-o
+        com o detalhe do fornecedor)

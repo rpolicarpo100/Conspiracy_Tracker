@@ -230,11 +230,23 @@ await t('código válido: sessão criada e desafio consumido', async () => {
 });
 
 await t('o mesmo código TOTP não pode ser reutilizado noutro login', async () => {
+  /* O TOTP muda a cada 30 s. Se o passo anterior usou um código do fim de uma
+     janela, o código de agora é OUTRO (contador seguinte) e é legítimo que seja
+     aceite — isso não é reutilização. Para o teste medir o que diz medir, espera-se
+     pelo início da janela e confirma-se que o contador não mudou a meio. */
+  const segundoNaJanela = () => Math.floor(Date.now() / 1000) % 30;
+  if (segundoNaJanela() > 12) await new Promise((r) => setTimeout(r, (30 - segundoNaJanela() + 1) * 1000));
+  const contador = counterNow();
+  const codigo = totpAt(secret, contador);
   const novo = session();
   const l = await novo.call('POST', '/api/auth/login', { email, password: PASSWORD });
-  const r = await novo.call('POST', '/api/auth/mfa/verify', { challenge: l.json.challenge, code: totpAt(secret, counterNow()) });
+  const r = await novo.call('POST', '/api/auth/mfa/verify', { challenge: l.json.challenge, code: codigo });
+  if (counterNow() !== contador) {
+    /* a janela virou a meio do pedido: não há reutilização a medir aqui */
+    return 'não avaliado: a janela TOTP virou durante o pedido (o código seria outro, não uma repetição)';
+  }
   ok(r.status === 401, 'reutilização aceite: ' + r.status);
-  return '401 (código já usado neste passo)';
+  return '401 (mesmo código, mesma janela: ' + contador + ')';
 });
 
 await t('código de recuperação: entra uma vez e é consumido', async () => {
