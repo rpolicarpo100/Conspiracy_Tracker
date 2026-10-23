@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
@@ -28,6 +28,7 @@ const EMPTY = () => ({
   evidence: [], claims: [], runs: [], relations: [], agentRuns: [], notes: [], entityLinks: [],
   sources: [], sourceChecks: [], sourceRatings: [], sourceDecisions: [], discoveryRuns: [],
   providerCatalog: [], providerTests: [], providerRankings: [], selectionDecisions: [], checkpoints: [],
+  apiCatalog: [],
   audit: [], migrations: [], metrics: { counters: {} }, createdAt: new Date().toISOString()
 });
 
@@ -143,6 +144,19 @@ const MIGRATIONS = {
     if (missing && missing.indexOf('entityLinks') >= 0) changes.push('criada a colecção entityLinks (fusão de homónimos com identificador, reversível)');
     return changes;
   }
+};
+
+/* v9 (FASE E1): catálogo de APIs sem chave com estado, histórico e provas.
+   A colecção nasce vazia: nada é importado por migração. O catálogo enche-se
+   quando alguém sincroniza o relatório de sonda e valida uma API — uma
+   migração que inventasse entradas estaria a declarar APIs que ninguém viu. */
+MIGRATIONS[9] = (db, missing) => {
+  const changes = [];
+  if (!Array.isArray(db.apiCatalog)) db.apiCatalog = [];
+  if (missing && missing.indexOf('apiCatalog') >= 0) {
+    changes.push('criada a colecção apiCatalog (estado, histórico e provas por API sem chave)');
+  }
+  return changes;
 };
 
 /* Os estados válidos vêm de server/evidence.mjs — fonte única, sem lista paralela. */
@@ -842,6 +856,27 @@ export function createStore(dir) {
       db.agentRuns.push(r); await persist(); return r;
     },
     agentRunsOf(projectId) { return db.agentRuns.filter((r) => r.projectId === projectId); },
+
+    /* --- catálogo de APIs sem chave (FASE E1): estado, histórico e provas ---
+       Guardado por id, com histórico append-only. `upsertApiCatalog` substitui a
+       entrada inteira (o módulo apis-catalogo.mjs é quem decide o que muda) e
+       devolve a entrada guardada; nunca cria estado sem transição registada. */
+    apiCatalog() { return (db.apiCatalog || []).slice(); },
+    apiCatalogById(id) { return (db.apiCatalog || []).find((e) => e.id === id) || null; },
+    async upsertApiCatalog(entry) {
+      if (!entry || !entry.id) throw new Error('entrada de catálogo sem id');
+      db.apiCatalog = db.apiCatalog || [];
+      const i = db.apiCatalog.findIndex((e) => e.id === entry.id);
+      const rec = Object.assign({}, entry, { actualizadoEm: entry.actualizadoEm || new Date().toISOString() });
+      if (i < 0) db.apiCatalog.push(rec); else db.apiCatalog[i] = rec;
+      await persist();
+      return rec;
+    },
+    async replaceApiCatalog(entradas) {
+      db.apiCatalog = (entradas || []).slice();
+      await persist();
+      return db.apiCatalog.slice();
+    },
     latestAgentRun(projectId, agentId) {
       const list = db.agentRuns.filter((r) => r.projectId === projectId && r.agentId === agentId);
       return list.length ? list[list.length - 1] : null;

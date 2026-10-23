@@ -207,6 +207,9 @@ export async function runResearch(deps, runId, opts) {
           spent.calls++;
           rec.provider = ai.provider || null;
           rec.model = ai.model || null;
+          /* FASE E3: a rota (cadeia, exclusões e exigência de JSON) fica no
+             registo do passo — quem ler a execução sabe quem podia ter servido */
+          rec.rota = ai.rota || null;
           rec.output = ai.parsed !== undefined ? ai.parsed : null;
           rec.reason = ai.note || null;
           if (ai.parsed === null && ai.expectsJson) {

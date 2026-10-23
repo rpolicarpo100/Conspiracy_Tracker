@@ -346,11 +346,11 @@ await t('agente de IA com stub devolve saída estruturada e é registado', async
 
 await t('esquema v5 registado e meta publica os agentes', async () => {
   const meta = await (await fetch(BASE + '/api/meta')).json();
-  ok(meta.schemaVersion === 8, 'versão ' + meta.schemaVersion);
+  ok(meta.schemaVersion === 9, 'versão ' + meta.schemaVersion);
   ok(meta.agents.total === 13 && meta.agents.local + meta.agents.ai === 13, 'meta dos agentes: ' + JSON.stringify(meta.agents));
   /* base criada já na versão actual não tem passos de migração; uma base antiga tem de os registar */
   ok(meta.migrations.length === 0 || meta.migrations.some((m) => m.to >= 4), 'migração para v4+ não registada');
-  return 'schemaVersion 8 (' + (meta.migrations.length ? meta.migrations.length + ' passo(s) de migração' : 'base criada na versão actual') + ') · ' + meta.agents.local + ' agentes locais · ' + meta.agents.ai + ' de IA · prompt ' + meta.agents.promptVersion;
+  return 'schemaVersion 9 (' + (meta.migrations.length ? meta.migrations.length + ' passo(s) de migração' : 'base criada na versão actual') + ') · ' + meta.agents.local + ' agentes locais · ' + meta.agents.ai + ' de IA · prompt ' + meta.agents.promptVersion;
 });
 
 srv.kill('SIGTERM');

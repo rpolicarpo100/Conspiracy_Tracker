@@ -130,6 +130,13 @@ export const PROVIDERS = {
     docs: 'https://github.com/pollinations/pollinations',
     freeTier: 'sim — sem chave; serviço comunitário, sem garantia de disponibilidade',
     keyUrl: null, envVar: null, keyless: true,
+    /* FASE E4: `produzJson:false` não é opinião — é o que se MEDIU. Numa execução
+       real em 2026-10-23 a resposta veio HTTP 200 sem JSON utilizável (o passo
+       ficou «resposta-invalida-de-ia», ver docs/AUDITORIA-INTEGRAL.md A-03/G5).
+       Um passo que exige JSON não pode ser servido por este fornecedor: a
+       cascata exclui-o e diz porquê, em vez de gastar a chamada para falhar. */
+    produzJson: false,
+    produzJsonProva: { em: '2026-10-23', resultado: 'HTTP 200 sem JSON válido', onde: 'docs/TEST-RESULTS.txt §58 (G5)' },
     privacidade: 'os pedidos passam por um serviço público de terceiros: não enviar dados pessoais nem provas privadas',
     probe: { url: 'https://text.pollinations.ai/openai', verificado: 'POST completou em 2026-10-22 (HTTP 200, resposta real)' }
   },

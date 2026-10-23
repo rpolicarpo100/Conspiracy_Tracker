@@ -2280,7 +2280,7 @@ E. O que continua por fazer
 
 §59.1  E X E C U Ç Ã O   C O M P L E T A
    PASS npm test → 36 ficheiros · 583 PASS · 0 FAIL · saída 0
-   PASS npm run test:ui → 9 suites · 100 verificações · saída 0
+   PASS npm run test:ui → 9 suites · 101 verificações · saída 0
    PASS matriz por ficheiro (tools/auditoria/matriz-testes.mjs) → 36 ficheiros,
         583 PASS, 0 FAIL, 0 ficheiros com código ≠ 0
    NOTA tests/persistencia-pg.mjs continua com 0 asserções e sai com 0:
@@ -2366,3 +2366,81 @@ E. O que continua por fazer
         86dd538..5d44da1. Nenhum passo manual foi executado em produção e
         nenhum dado de produção foi escrito por esta fase (esquema v8, sem
         migração).
+
+§60  F A S E   E  —  A P I s   S E M   C H A V E   E   R O U T E R   P O R   P E R F I L
+     Versão 2.4.0-faseE · esquema v9 (migração que só cria apiCatalog) · 2026-10-23
+
+§60.1  E X E C U Ç Ã O   C O M P L E T A
+   PASS npm test → 38 ficheiros · 613 PASS · 0 FAIL · saída 0
+   PASS npm run test:ui → 9 suites · 100 verificações · saída 0
+   PASS matriz por ficheiro → 38 ficheiros · 613 PASS · 0 FAIL · 0 com código ≠ 0
+   NOTA tests/persistencia-pg.mjs continua com 0 asserções (SKIP sem DATABASE_URL):
+        não é um «verde» de durabilidade.
+
+§60.2  C A T Á L O G O   C O M   E S T A D O   E   P R O V A   (tests/apis-estado.mjs, 18/18)
+   PASS 6 estados com significado e ordem · transições fechadas
+        → descoberto → em-analise → validado → em-uso → degradado → descontinuado
+   PASS descontinuado não salta para em-uso; descoberto não salta para validado/em-uso
+   PASS sem motivo escrito nenhuma transição acontece
+   PASS «validado» exige prova de geração completa
+        → 8 provas incompletas recusadas (sem data, sem pedido, http, sem status,
+          sem excerto/hash, sem latência, não confirmada) · 1 completa aceite
+   PASS «em uso» exige validado + prova + confirmação + o passo onde é usada
+   PASS degradar exige falha observada com data · descontinuar exige motivo
+   PASS reverter desfaz o último passo e deixa rasto → histórico de 3 passos
+   PASS resumo conta estados e provas sem inventar
+   PASS importar o varrimento leva no máximo a «em análise»
+        → 2 entradas · 1 prova externa · 0 validadas
+   PASS sincronizar de novo NÃO reescreve o estado decidido por uma pessoa
+   PASS a prova da sonda é construída a partir do que a sonda devolveu
+   PASS servidor: catálogo começa vazio e diz como o encher
+   PASS servidor: sincronizar importa o relatório guardado → 46 APIs · 0 em uso
+   PASS servidor: validar com sonda confirmada valida e marca a prova como «ensaio»
+        → pollinations-control: em-analise → validado · prova de ensaio registada
+   PASS servidor: validar não põe em uso; sem confirmação → HTTP 400
+   PASS servidor: reverter devolve ao estado anterior e o histórico cresce
+        → em-uso → validado · histórico com 4 passos
+   PASS servidor: API desconhecida → 404 · sem sessão → 401
+   PASS servidor: sonda recusada fica registada e NÃO valida
+
+§60.3  R O U T E R   P O R   P E R F I L   (tests/router-perfis.mjs, 12/12)
+   PASS 4 perfis com política declarada
+        → rapida=latência/8000ms · normal=custo/15000ms · profunda=qualidade/30000ms
+          · exaustiva=qualidade/60000ms
+   PASS mesmo catálogo, perfis diferentes → rapida→rapido · normal→barato · exaustiva→bom
+   PASS quem devolve texto livre nunca serve um passo que exige JSON (E4)
+        → rejeitado com motivo nomeado · aceite quando o passo não exige JSON
+   PASS sem estado validado / sem latência medida / sem candidatas / perfil inventado
+        → 4 recusas honestas, cada uma com motivo
+   PASS degradado só entra quando não há alternativa válida
+   PASS decisão determinística (mesma entrada invertida → mesma escolha; empate por id)
+   PASS tabela perfil × passo sem escolhas inventadas
+   PASS na aplicação o texto livre é excluído com motivo e prova
+        → pollinations produzJson:false com prova de 2026-10-23 · rejeitado num passo JSON
+   PASS GET /api/ia/rotas → 8 passos de IA · 4 perfis · exclusão de pollinations com prova
+   PASS decisão por perfil responde com escolha ou com o que falta
+        → «nenhuma candidata sobreviveu às regras do perfil» (é a verdade neste ambiente)
+   PASS GET /api/ai/estado → ordem utilizável [] · excluído pollinations
+   PASS GET /api/meta → 6 estados de catálogo · router r1
+
+§60.4  C O N S E Q U Ê N C I A   D E C L A R A D A
+   Sem chave de operador, os passos de IA que exigem JSON ficam «não executado»
+   com a lacuna «sem-fornecedor-de-ia-validado». Antes tentavam o fornecedor sem
+   chave, recebiam texto e gravavam «resposta-invalida-de-ia». A recolha de
+   documentos, os passos locais e o relatório continuam a acontecer — a falta de
+   IA não bloqueia a recolha (FASE B), e agora também não gasta chamadas inúteis.
+
+§60.5  T E S T E S   A J U S T A D O S   (por mudança de contrato, não desactivados)
+   · tests/evidence.mjs — esquema 8 → 9, cadeia 2..9, e passa a exigir que
+     apiCatalog exista VAZIA depois da migração.
+   · tests/agents-p3.mjs, tests/provider-os.mjs, tests/fontes.mjs, tests/afirmacoes.mjs
+     — versão de esquema 9.
+
+§60.6  O   Q U E   A   F A S E   E   N Ã O   F E Z
+   · o router não decide a rota em produção neste ambiente: não há medições
+     (testes de fornecedor) nem chaves, e por isso a resposta é «não há candidata».
+     A regra está provada com catálogo fixo; a escolha real exige dados medidos.
+   · a validação faz UM pedido real ao fornecedor; neste ambiente os testes usam
+     sonda substituída e o registo diz «ensaio». Com sonda real só depois de
+     autorização para tocar a rede aberta.
+   · sem migração de dados: a v9 só cria a colecção apiCatalog vazia.

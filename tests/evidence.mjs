@@ -319,8 +319,8 @@ await t('esquema v1 é migrado para v2 com registo do que mudou', async () => {
   try {
     await new Promise((r) => setTimeout(r, 1800));
     const meta = await (await fetch('http://127.0.0.1:' + port2 + '/api/meta')).json();
-    ok(meta.schemaVersion === 8, 'versão de esquema ' + meta.schemaVersion);
-    ok(meta.migrations.map((m) => m.to).join(',') === '2,3,4,5,6,7,8', 'registo de migrações: ' + JSON.stringify(meta.migrations.map((m) => m.to)));
+    ok(meta.schemaVersion === 9, 'versão de esquema ' + meta.schemaVersion);
+    ok(meta.migrations.map((m) => m.to).join(',') === '2,3,4,5,6,7,8,9', 'registo de migrações: ' + JSON.stringify(meta.migrations.map((m) => m.to)));
     const db = JSON.parse(await fs.readFile(path.join(dir, 'db.json'), 'utf8'));
     const p = db.projects[0];
     ok(p.status === 'draft' && Array.isArray(p.hypotheses) && p.budget.maxCalls === 50, 'projecto antigo não completado');
@@ -329,8 +329,11 @@ await t('esquema v1 é migrado para v2 com registo do que mudou', async () => {
     ok(Array.isArray(db.relations) && Array.isArray(db.agentRuns), 'colecções relations/agentRuns ausentes após migração');
     ok(Array.isArray(db.sources) && Array.isArray(db.sourceChecks) && Array.isArray(db.discoveryRuns), 'colecções do registo de fontes ausentes');
     ok(Array.isArray(db.providerCatalog) && Array.isArray(db.providerTests) && Array.isArray(db.checkpoints), 'colecções do Provider OS ausentes');
+    /* v9 (FASE E1): o catálogo de APIs nasce vazio — uma migração que inventasse
+       entradas estaria a declarar APIs que ninguém viu */
+    ok(Array.isArray(db.apiCatalog) && db.apiCatalog.length === 0, 'colecção apiCatalog ausente ou povoada por migração');
     ok(db.migrations[0].changes.length > 0, 'migração sem descrição de alterações');
-    return 'v1 → v8 em sete passos · ' + db.migrations.map((m) => m.from + '→' + m.to + ': ' + m.changes.join('; ')).join(' | ');
+    return 'v1 → v9 em oito passos · ' + db.migrations.map((m) => m.from + '→' + m.to + ': ' + m.changes.join('; ')).join(' | ');
   } finally { srv2.kill('SIGTERM'); }
 });
 

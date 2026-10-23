@@ -175,6 +175,38 @@ await t('separador de chaves mostra o estado do cofre e recusa guardar sem APP_S
   return providers + ' fornecedores listados · ' + (/cifradas em repouso/.test(txt) ? 'cofre activo' : 'cofre desactivado');
 });
 
+/* FASE E1/E2: o catálogo de APIs sem chave vive no mesmo ecrã das chaves e tem
+   de mostrar estado, prova e operações reais. O botão «Sincronizar» lê o
+   relatório guardado no servidor — não toca a internet — e por isso pode ser
+   exercido aqui; «Validar» faz uma sonda real e não é clicado neste teste. */
+await t('catálogo de APIs sem chave: estado, prova e botões reais (sem botões inertes)', async () => {
+  const caixa = await p.evaluate(() => !!document.querySelector('[data-vn="catalogo-apis"]'));
+  if (!caixa) throw new Error('a caixa do catálogo não existe no ecrã das chaves');
+  const vazio = await p.evaluate(() => !document.querySelector('[data-vn="tabela-catalogo-apis"]'));
+  if (vazio) {
+    await p.evaluate(() => [...document.querySelectorAll('[data-vn="catalogo-apis"] button')]
+      .find((b) => /Sincronizar/.test(b.textContent)).click());
+    await waitFor(() => !!document.querySelector('[data-vn="tabela-catalogo-apis"]'), 20000);
+  }
+  const info = await p.evaluate(() => {
+    const tabela = document.querySelector('[data-vn="tabela-catalogo-apis"]');
+    const linhas = [...tabela.querySelectorAll('tbody tr')];
+    return {
+      linhas: linhas.length,
+      estados: [...new Set(linhas.map((tr) => (tr.children[1].textContent || '').trim().split('\n')[0]))],
+      comProva: linhas.filter((tr) => /HTTP/.test(tr.children[2].textContent)).length,
+      botoesReverter: tabela.querySelectorAll('button').length,
+      texto: document.querySelector('[data-vn="catalogo-apis"]').textContent
+    };
+  });
+  if (info.linhas < 5) throw new Error('catálogo com ' + info.linhas + ' linhas');
+  if (!info.estados.length || info.estados.some((e) => !e)) throw new Error('sem estado por linha: ' + JSON.stringify(info.estados));
+  if (!info.botoesReverter) throw new Error('nenhum botão de operação na tabela (botões inertes)');
+  if (!/Validar/.test(info.texto)) throw new Error('falta o botão «Validar»');
+  if (!/descoberto|em análise|validado/.test(info.texto)) throw new Error('estados não legíveis: ' + info.texto.slice(0, 120));
+  return info.linhas + ' APIs · estados: ' + info.estados.join('/') + ' · ' + info.comProva + ' com prova · ' + info.botoesReverter + ' botões';
+});
+
 await t('chave de IA: guardada com máscara e validada contra o fornecedor real', async () => {
   await p.evaluate(() => {
     const sel = document.querySelector('#accroot select');

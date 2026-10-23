@@ -71,6 +71,10 @@
       /* api() devolve {status, ok, json}: o relatório vem em .json. Um 404 aqui é
          informação («ainda não há varrimento guardado»), não um erro de rede. */
       S.keyless = kl.ok ? kl.json : { ok: false, error: kl.error, status: kl.status };
+      /* FASE E1/E2: catálogo com estado por API (não é o relatório da sonda:
+         é a decisão tomada sobre cada API, com histórico e prova) */
+      const kc = await api('/api/apis/catalogo');
+      S.apiCatalog = kc.ok ? kc.json : { ok: false, error: kc.error, status: kc.status };
       const se = await api('/api/auth/sessions');
       if (se.ok) S.sessions = se.json.sessions;
       const mf = await api('/api/auth/mfa');
@@ -83,7 +87,7 @@
         if (a.ok) S.audit = a.json.events;
       }
     } else {
-      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null; S.operatorKeys = null; S.keyless = null;
+      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null; S.operatorKeys = null; S.keyless = null; S.apiCatalog = null;
       S.detail = null;
     }
     if (my !== gen) return;
@@ -1660,6 +1664,86 @@
     caixaKl.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-top:4px', text:
       'Encontrar um endpoint aberto não o acrescenta à aplicação: só os fornecedores declarados em server/providers.mjs recebem conteúdo, e o prompt enviado está em docs/PRIVACIDADE.md.' }));
     root.appendChild(caixaKl);
+
+    /* ---- catálogo com estado e prova (FASE E1/E2) ----
+       Cada linha mostra o estado, desde quando, a última prova (data, HTTP,
+       latência, excerto) e o último passo do histórico. Os botões fazem
+       operações reais: validar (sonda agora), usar (exige confirmação),
+       reverter (desfaz o último passo). Sem catálogo, diz-se o que fazer. */
+    const kc = S.apiCatalog;
+    const caixaCat = el('div', { class: 'warnbox', style: 'margin:8px 0', 'data-vn': 'catalogo-apis' }, [
+      el('b', { text: 'Catálogo de APIs sem chave (estado e prova): ' }),
+      el('span', { text: !kc ? 'não carregado'
+        : kc.ok === false ? 'indisponível: ' + ((kc.error && kc.error.message) || 'erro')
+          : (kc.entradas || []).length === 0
+            ? 'vazio — sincronize o relatório do varrimento para começar'
+            : (kc.resumo.total + ' APIs · ' + (kc.resumo.emUso || 0) + ' em uso · ' +
+              (kc.resumo.validados || 0) + ' com prova de geração') })
+    ]);
+    if (kc && kc.ok && (kc.entradas || []).length) {
+      const etiqueta = { 'descoberto': 'muted', 'em-analise': 'warn', 'validado': 'ok', 'em-uso': 'ok', 'degradado': 'warn', 'descontinuado': 'bad' };
+      const linhas = kc.entradas.slice(0, 40).map((e) => {
+        const p = (e.provas || []).slice(-1)[0] || null;
+        return el('tr', {}, [
+          el('td', { style: 'font-size:11px' }, [el('b', { text: e.id }),
+            el('div', { style: 'color:var(--muted);font-size:10px', text: (e.base || '').slice(0, 46) })]),
+          el('td', {}, [el('span', { class: 'tag ' + (etiqueta[e.estado] || 'muted'), text: e.estadoLabel || e.estado }),
+            el('div', { style: 'color:var(--muted);font-size:9px', text: (e.actualizadoEm || '').slice(0, 16) })]),
+          el('td', { style: 'font-size:10px' }, [p
+            ? el('div', {}, [el('span', { text: (p.em || '').slice(0, 16) + ' · HTTP ' + (p.status == null ? '—' : p.status) + ' · ' + (p.latenciaMs == null ? '—' : p.latenciaMs + ' ms') }),
+              el('div', { style: 'color:var(--muted);font-size:9px', text: p.origem === 'ensaio' ? 'ENSAIO (sonda substituída)' : (p.origem || 'sonda') + (p.ok ? ' · gerou' : ' · não gerou') })])
+            : el('span', { style: 'color:var(--muted)', text: 'sem prova' })]),
+          el('td', { style: 'font-size:10px;color:var(--muted);max-width:200px', text: e.ultimoPasso ? (e.ultimoPasso.de + ' → ' + e.ultimoPasso.para + ': ' + (e.ultimoPasso.motivo || '')) : '—' }),
+          el('td', {}, [
+            el('button', {
+              class: 'btn sm', type: 'button', text: 'Validar',
+              onclick: async () => {
+                note('A sondar ' + e.id + ' (um pedido, max_tokens 1)…', 'warn');
+                const r = await api('/api/apis/' + encodeURIComponent(e.id) + '/validar', { method: 'POST', body: {} });
+                if (!r.ok) return note('Falhou: ' + ((r.error && r.error.message) || 'erro'), 'bad');
+                note(e.id + ': ' + (r.json.veredicto || 'sondado') + ' → ' + r.json.entrada.estado + (r.json.aviso ? ' · ' + r.json.aviso : ''), r.json.prova && r.json.prova.ok ? 'ok' : 'warn');
+                refresh();
+              }
+            }),
+            e.estado === 'validado' ? el('button', {
+              class: 'btn sm', type: 'button', text: 'Pôr em uso',
+              onclick: async () => {
+                /* confirmação explícita: validar não põe nada em uso */
+                if (typeof confirm === 'function' && !confirm('Pôr ' + e.id + ' em uso? Isto altera a rota de IA.')) return;
+                const r = await api('/api/apis/' + encodeURIComponent(e.id) + '/uso', { method: 'POST',
+                  body: { confirmar: true, usaEm: 'passos de IA da aplicação', motivo: 'confirmado na interface' } });
+                if (!r.ok) return note('Não entrou em uso: ' + ((r.error && r.error.message) || 'erro'), 'bad');
+                note(e.id + ' em uso', 'ok'); refresh();
+              }
+            }) : null,
+            (e.passos || 0) > 0 ? el('button', {
+              class: 'btn sm', type: 'button', text: 'Reverter',
+              onclick: async () => {
+                const r = await api('/api/apis/' + encodeURIComponent(e.id) + '/reverter', { method: 'POST', body: {} });
+                if (!r.ok) return note('Não revertido: ' + ((r.error && r.error.message) || 'erro'), 'bad');
+                note(e.id + ': ' + r.json.revertido.de + ' → ' + r.json.revertido.para, 'ok'); refresh();
+              }
+            }) : null
+          ].filter(Boolean))
+        ]);
+      });
+      caixaCat.appendChild(el('table', { class: 'listtable', style: 'margin-top:6px', 'data-vn': 'tabela-catalogo-apis' }, [
+        el('thead', {}, [el('tr', {}, ['API', 'estado', 'última prova', 'último passo', ''].map((h) => el('th', { text: h })))]),
+        el('tbody', {}, linhas)
+      ]));
+      caixaCat.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-top:4px', text:
+        'Estados: descoberto → em análise → validado → em uso. «Validar» faz uma sonda real e não põe nada em uso; «Pôr em uso» exige confirmação; «Reverter» desfaz o último passo e fica no histórico.' }));
+    } else if (kc && kc.ok) {
+      caixaCat.appendChild(el('button', {
+        class: 'btn sm', type: 'button', text: 'Sincronizar do varrimento',
+        onclick: async () => {
+          const r = await api('/api/apis/catalogo/sincronizar', { method: 'POST', body: {} });
+          if (!r.ok) return note('Falhou: ' + ((r.error && r.error.message) || 'erro'), 'bad');
+          note(r.json.total + ' APIs no catálogo (' + r.json.novas + ' novas)', 'ok'); refresh();
+        }
+      }));
+    }
+    root.appendChild(caixaCat);
 
     const f = DRAFT.key;
     if (!f.provider) f.provider = (S.providers[0] || {}).id || 'groq';

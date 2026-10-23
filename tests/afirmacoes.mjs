@@ -115,7 +115,7 @@ await t('dados legados na base são convertidos na migração v8, com registo da
   try {
     for (let i = 0; i < 40; i++) { try { await fetch('http://127.0.0.1:' + port2 + '/health'); break; } catch { await new Promise((r) => setTimeout(r, 250)); } }
     const db = JSON.parse(fs.readFileSync(path.join(dir2, 'db.json'), 'utf8'));
-    ok(db.version === 8, 'versão ' + db.version);
+    ok(db.version === 9, 'versão ' + db.version);
     ok(db.evidence[0].validationState === 'nao-verificada' && db.evidence[0].estadoMigradoDe === 'fonte-inacessivel', 'prova não migrada: ' + JSON.stringify(db.evidence[0]));
     ok(db.claims[0].state === 'facto-documentado' && db.claims[0].estadoMigradoDe === 'corroborada-independente', 'afirmação não migrada: ' + JSON.stringify(db.claims[0]));
     ok(db.projects[0].hypotheses[0].state === 'facto-documentado', 'hipótese legada não migrada');

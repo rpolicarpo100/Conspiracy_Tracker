@@ -335,11 +335,11 @@ await t('persistência e migração: reiniciar mantém fontes e histórico', asy
   const after = store2.sources();
   ok(after.length === before.total, 'fontes após reinício: ' + after.length + ' (antes ' + before.total + ')');
   ok(store2.discoveryRuns().length >= 1, 'histórico de descoberta perdido');
-  ok(store2.schemaVersion() === 8, 'versão do esquema: ' + store2.schemaVersion());
-  /* Base criada de fresco regista {from:0,to:8}; as cadeias 5→6→7 e 7→8 são
-     verificadas a seguir com bases verdadeiras dessas versões. */
+  ok(store2.schemaVersion() === 9, 'versão do esquema: ' + store2.schemaVersion());
+  /* Base criada de fresco regista {from:0,to:9}; as cadeias 5→6→7, 7→8 e 8→9
+     são verificadas a seguir com bases verdadeiras dessas versões. */
   const mig = store2.migrations().map((m) => m.to);
-  ok(mig.includes(8), 'versão actual não registada: ' + mig.join(','));
+  ok(mig.includes(9), 'versão actual não registada: ' + mig.join(','));
   ok(store2.ratingsOf(SID).length === 2, 'classificações perdidas');
   await store2.close();
 

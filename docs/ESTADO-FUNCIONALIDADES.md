@@ -77,6 +77,8 @@ requisito explícito da missão · **P2** qualidade/robustez · **P3** cosmétic
 | E8 | **C5** Caducidade: `desactualizada` só com marca explícita | `IMPLEMENTADO_E_TESTADO` | `server/evidence.mjs` (`isStale`), `validityUntil`/`supersededBy` | `tests/afirmacoes.mjs` (2 testes) | sem marca explícita nada é dado como desactualizado | baixo | P1 | prova caducada impede «facto documentado» e a sugestão passa a `desactualizada` |
 | E4 | Grafo só a partir de registos documentais; sem inferência por co-presença; sem fundir homónimos; sem culpa por associação | `IMPLEMENTADO_E_TESTADO` | `server/graph.mjs`, `server/graph-export.mjs` | `tests/graph.mjs` (13) («estatísticas do grafo dizem o que não está provado»), `tests/flow.mjs` (testes 3–5, 8) | o grafo é relacional e declarativo; a ligação tem de vir de uma prova registada | médio | P0 | aresta sem `evidenceIds` é recusada; duas pessoas com o mesmo nome ficam em nós distintos até haver prova de identidade |
 | E5 | Cronologia de acontecimentos | `IMPLEMENTADO_E_TESTADO` | `server/research.mjs` (timeline), `src/ui/timeline.js` | `tests/flow.mjs` («Inspeccionar cronologia → anos 12, min 2015, max 2026, semData 82») | 82 de 82 relações do corpus de teste ficaram **sem data** — a cronologia é frágil quando a data não vem explícita | médio | P2 | cada relação datada mostra a data e a proveniência da data; sem data fica explicitamente «sem data», nunca inventada |
+| E9 | **Catálogo de APIs sem chave com máquina de estados** (E1 do plano) | `IMPLEMENTADO_E_TESTADO` | `server/apis-catalogo.mjs`, rotas `GET /api/apis/catalogo`, `POST /api/apis/catalogo/sincronizar`, `POST /api/apis/:id/validar`, `/uso`, `/reverter` | `tests/apis-estado.mjs` (18) | os estados são fechados e tudo é reversível; o varrimento externo nunca valida sozinho | alto | P1 | nenhuma API passa a `em-uso` sem prova de geração registada (data, pedido, resposta, latência) e sem confirmação |
+| E10 | **Router de fornecedores por perfil** (E3 do plano) | `IMPLEMENTADO_E_TESTADO` | `server/router-perfis.mjs`, `GET /api/ia/rotas`, `rota` registada no passo de pesquisa | `tests/router-perfis.mjs` (12) | com o catálogo medido hoje, o router não escolhe ninguém na aplicação: diz o que falta (testes de fornecedor) — não escolhe por analogia | alto | P1 | mesma pergunta em dois perfis escolhe fornecedores diferentes e justifica; teste com catálogo fixo |
 
 ---
 
@@ -99,8 +101,8 @@ requisito explícito da missão · **P2** qualidade/robustez · **P3** cosmétic
 | G2 | Selecção de provedor por tarefa com fallback | `IMPLEMENTADO_E_TESTADO` | `server/selector.mjs` | `tests/selector.mjs` (24) | a selecção usa a **tarefa**, não o **perfil de investigação** | médio | P1 | `ProviderRouter` escolhe por `perfil` × `passo` e regista a razão da escolha |
 | G3 | Rotação por quota/crédito, saída de fornecedor sem crédito | `IMPLEMENTADO_E_TESTADO` | `server/quota.mjs`, `server/api.mjs` (`quotasIA`) | `tests/quota-ia.mjs` (10) («4 fornecedores»), `tests/benchmark.mjs` (18) | — | — | P2 | fornecedor sem crédito sai da rota e o seguinte serve, sem repetir o pedido inválido |
 | G4 | Cofre de chaves (`aes-256-gcm`), chaves por conta | `IMPLEMENTADO_E_TESTADO` | `server/crypto-keys.mjs`, `server/api.mjs` | `tests/ia-fornecedores.mjs` (21), `tests/provider-os.mjs` | — | — | P1 | chave nunca é devolvida em claro; chave inválida não entra em uso |
-| G5 | Cascata do operador + alternância sem chave (`pollinations`) | `PARCIAL` | `server/api.mjs:519-540` | execução real: `200` sem JSON (→ `resposta-invalida-de-ia`) e limite «1 resposta/30 s por IP» | é o único caminho disponível sem chave e **não sustenta** o fluxo (D1) | **crítico** | **P0** | a cascata só inclui fornecedores validados; um fornecedor que devolva texto não-JSON nunca é usado para passos que exigem JSON, e a falta de IA não impede a recolha |
-| G6 | Catálogo persistente de APIs sem chave, com estados e operação de validação | `PARCIAL` | `tools/keyless-scan.mjs`, `docs/APIS-sem-chave.{json,md}`, `GET /api/ai/keyless` | `tests/keyless.mjs` (10); execução real 2026-10-23: 46 sondados, 18 públicos, 24 exigem chave, 4 indeterminados, **1 gera** (o controlo) | estados actuais são derivados da sonda, não a máquina de estados exigida (DESCOBERTO→…→DESCONTINUADO); validação não é operação de primeira classe na UI | alto | P1 | cada API tem estado explícito, data de última prova, e a UI permite validar e ver a evidência da validação |
+| G5 | Cascata do operador + alternância sem chave (`pollinations`) | `IMPLEMENTADO_E_TESTADO` (**era `PARCIAL`**) | `server/providers.mjs` (`produzJson:false` com prova), `server/api.mjs` (`rotaDeFornecedores`, `emRota.excluidos`), `server/router-perfis.mjs` | `tests/router-perfis.mjs` (12) — fornecedor de texto livre recusado num passo JSON, exclusão com motivo e prova | **consequência declarada**: sem chave de operador deixa de haver IA nos passos que exigem JSON (ficam `nao-executado` com lacuna nomeada) — a recolha e o relatório continuam | crítico | P0 | a cascata só inclui fornecedores validados; um fornecedor que devolva texto não-JSON nunca é usado para passos que exigem JSON, e a falta de IA não impede a recolha |
+| G6 | Catálogo persistente de APIs sem chave, com estados e operação de validação | `IMPLEMENTADO_E_TESTADO` (**era `PARCIAL`**) | `server/apis-catalogo.mjs` (6 estados, transições fechadas, provas), `server/store.mjs` (v9, `apiCatalog`), rotas `/api/apis/*`, `src/ui/account.js` (tabela com estado, prova e botões Validar/Usar/Reverter) | `tests/apis-estado.mjs` (18) — incl. 8 provas incompletas recusadas, `em-uso` com confirmação, reversão, sonda falhada registada | decisão declarada: o varrimento externo leva a «em análise», nunca a «validado» | alto | P1 | cada API tem estado explícito, data de última prova, e a UI permite validar e ver a evidência da validação |
 | G7 | Workflow de varrimento keyless com controlo obrigatório | `IMPLEMENTADO_E_TESTADO` | `.github/workflows/keyless-scan.yml` | teste nos dois sentidos executado (controlo real → 0; relatório adulterado → `::error::A SONDA ESTÁ AVARIADA`, 1) | não corre em PRs | médio | P2 | workflow falha se o controlo não gerar; commit só se o relatório mudar |
 | G8 | Modelos alternativos/nomes de modelo tratados com rigor | `IMPLEMENTADO_E_TESTADO` | `server/modelos.mjs`, `server/api.mjs` | `tests/modelos.mjs` (12), `tests/ia-fornecedores.mjs` (21) | — | — | P3 | sugestão do fornecedor é seguida tal e qual e registada |
 
@@ -132,22 +134,23 @@ requisito explícito da missão · **P2** qualidade/robustez · **P3** cosmétic
 
 ---
 
-## J. Resumo (contagem das 58 linhas acima, estado a seguir à FASE D)
+## J. Resumo (contagem das 60 linhas acima, estado a seguir à FASE E)
 
 | estado | n.º | quais |
 |---|---|---|
-| `IMPLEMENTADO_E_TESTADO` | **46** | A1–A5, B1–B2, C1–C6, D1–D7 (D6 saiu de `PARCIAL`), D10–D11, E1–E8, F1–F2, G1–G4, G7–G8, H1–H2, H4–H5, I1–I3, I6 |
-| `PARCIAL` | **7** | A6 (retenção: só dry-run), B3 (durável em produção, falta ensaio numa base descartável), D8 (contraprovas: sem IA já calcula, mas não arquiva sozinho fonte contrária), G5, G6, H3, H6 |
+| `IMPLEMENTADO_E_TESTADO` | **50** | A1–A5, B1–B2, C1–C6, D1–D7, D10–D11, E1–E10, F1–F2, G1–G8 (G5 e G6 saíram de `PARCIAL`), H1–H2, H4–H5, I1–I3, I6 |
+| `PARCIAL` | **5** | A6 (retenção: só dry-run), B3 (durável em produção, falta ensaio numa base descartável), D8 (contraprovas: calcula sem IA, não arquiva sozinho fonte contrária), H3, H6 |
 | `FALHOU` | **0** | D1 e D2 corrigidos na FASE B |
 | `IMPLEMENTADO_SEM_TESTE` | **1** | D9 (fact-checker e red-team sem suite dedicada) |
 | `NAO_IMPLEMENTADO` | **3** | F3 (arquivo/dossiê), F4 (suite «Quem é José Sócrates?» com documentos reais), I5 (CI: `ci.yml` existe, ainda não correu num PR real) |
-| misto | **1** | I4: `benchmark` testado; `manutencao` e `reevaluate` têm modo seco provado em `tests/agentes-contrato.mjs`, `ai-quota` e `keyless-scan` só têm disparo manual |
+| misto | **1** | I4: `benchmark` testado; `manutencao`/`reevaluate` com modo seco provado; `ai-quota` e `keyless-scan` só com disparo manual |
 
 Fora da tabela: **4 `BLOQUEADO`** (testes contra produção e ensaio de durabilidade com base
 descartável) e **3 `NAO_VERIFICADO`** (conteúdo de produção vs HEAD, fiabilidade do pollinations,
 comportamento com uma chave de IA válida).
 
-**Leitura:** a base, o fluxo, a classificação e os agentes estão provados com execução. O que resta
-concentra-se em três sítios — **arquivo** (F3), **caso real** (F4) e as fases E (catálogo de APIs com
-máquina de estados), F (arquivo) e G (interface/desempenho). Dizê-lo assim é mais honesto do que
-somar verdes: o produto ainda não entrega um dossiê arquivado, e é isso que a fase F tem de resolver.
+**Leitura:** o que resta não é decoração. **F3 arquivo** é o buraco maior — a aplicação ainda não
+entrega um dossiê arquivado com versões e hash por documento; **F4** é o ensaio com o caso real; **D8**
+continua a não arquivar sozinho uma fonte contrária; **B3** só fecha com uma base descartável. E há uma
+consequência da fase E que tem de ficar dita: **sem chave de operador deixou de haver IA nos passos que
+exigem JSON** — os passos ficam `nao-executado` com lacuna nomeada, em vez de receber texto livre.

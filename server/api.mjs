@@ -19,6 +19,12 @@ import { graphToSvg, graphToDot, graphExportPayload } from './graph-export.mjs';
 import { checkAccess, accessSuggestion, ACCESS_STATE_LABEL, ACCESS_METHOD, MAX_REDIRECTS } from './access.mjs';
 import { AGENTS, agentById, executeAgent, AGENT_PROMPT_VERSION, quotaState, QUOTAS } from './agents.mjs';
 import { WORKFLOWS, WORKFLOW_VERSION, workflowById, validateWorkflow, skeleton, workflowsPublic } from './workflows.mjs';
+import {
+  API_STATES, STATE_IDS as API_STATE_IDS, TRANSITIONS as API_TRANSITIONS, TRANSITION_RULES as API_TRANSITION_RULES,
+  CATALOG_VERSION, stateById as apiStateById, validateProof, proofFromProbe, validateTransition, applyTransition,
+  revertLast, mergeScan, summary as catalogSummary, toPublic as apiCatalogToPublic
+} from './apis-catalogo.mjs';
+import { ROUTER_VERSION, PROFILE_POLICY, routeProvider, routeTable, candidateFromProvider } from './router-perfis.mjs';
 import { validateEntityLink } from './graph.mjs';
 import { extrairIdSSRN, lerMetadadosSSRN, sondarBloqueioSSRN, SSRN } from './ssrn.mjs';
 import { PESQUISA, parseQuery, pontuarItem, recorte, ordenar, pesoRaridade } from './search.mjs';
@@ -44,7 +50,8 @@ import {
 } from './benchmark.mjs';
 import {
   ACCESS_DETAIL_FIELDS, DISCOVERY_CATEGORY_LABELS, ADAPTERS as DISCOVERY_IMPL,
-  categoryOf, categorySummary, accessDetailCoverage, validateAccessDetails, mergeDiscovered
+  categoryOf, categorySummary, accessDetailCoverage, validateAccessDetails, mergeDiscovered,
+  probeGeracaoSemChave, KEYLESS_VERDICTS
 } from './discovery.mjs';
 import {
   SOURCE_STATES, SOURCE_CATEGORIES, JURISDICTIONS, RATING_DIMENSIONS, RATING_BANDS,
@@ -57,7 +64,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.3.0-faseD';
+const APP_VERSION = '2.4.0-faseE';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -244,6 +251,12 @@ export async function createApi(opts) {
   /* em produção não se passa nada: `fetchDoc` é sempre a recolha real.
      A injecção existe só para testes que precisam de servir um PDF conhecido. */
   const fetchDoc = opts.fetchDoc || fetchDocument;
+  /* FASE E2: a validação de uma API faz uma sonda REAL. A injecção existe só
+     para testes; quando é usada, o registo diz `origem: 'ensaio'` — nunca se
+     apresenta um ensaio como medição feita em produção. */
+  const sondaApiPadrao = probeGeracaoSemChave;
+  const probeApi = opts.probeApi || sondaApiPadrao;
+  const sondaELocal = probeApi !== sondaApiPadrao;
   const store = await createStore(opts.dataDir).init();
   const vault = keyVault(opts.appSecret || process.env.APP_SECRET);
   const auth = createAuth(store, {
@@ -518,9 +531,15 @@ export async function createApi(opts) {
      fim. Os que estão em espera (limite de ritmo, sem saldo, chave recusada ou
      fornecedor em baixo) ficam de fora — mas só enquanto durar a espera observada,
      e nunca para sempre: passado o tempo, voltam a ser tentados. */
-  function cadeiaDeFornecedores({ incluirEmEspera } = {}) {
+  /* FASE E4/E5: a cadeia diz também o que EXCLUIU e porquê. Um fornecedor com
+     produção medida em texto livre (`produzJson === false`) não serve um passo
+     que exige JSON — nem como último recurso. Antes o passo gastava a chamada,
+     recebia texto e registava «resposta-invalida-de-ia»; a lacuna era verdadeira
+     mas a tentativa era sabidamente inútil. */
+  function rotaDeFornecedores({ incluirEmEspera, exigeJson = true } = {}) {
     const ordem = String(valorEnv('AI_OPERATOR_ORDER', 'API_OPERATOR_ORDER') || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare')
       .split(',').map((x) => x.trim()).filter(Boolean);
+    const excluidos = [];
     const out = [];
     for (const id of ordem) {
       const k = chaveDoOperador(id);
@@ -536,21 +555,37 @@ export async function createApi(opts) {
       if (!incluirEmEspera && !quotasIA.disponivel(id)) return;
       out.push({ provider: id, apiKey: k.apiKey, modelo: k.modelo, keyless: false, env: k.env });
     });
-    if (String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' && PROVIDERS.pollinations) {
-      if (incluirEmEspera || quotasIA.disponivel('pollinations')) {
+    const semChaveLigado = String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false';
+    if (semChaveLigado && PROVIDERS.pollinations) {
+      const spec = PROVIDERS.pollinations;
+      if (exigeJson && spec.produzJson === false) {
+        excluidos.push({ provider: 'pollinations', keyless: true,
+          motivo: 'produção medida em texto livre (sem JSON): não serve um passo que exige JSON',
+          prova: spec.produzJsonProva || null });
+      } else if (incluirEmEspera || quotasIA.disponivel('pollinations')) {
         out.push({ provider: 'pollinations', apiKey: null,
-          modelo: (valorEnv(...nomesDoModelo('pollinations')) || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
+          modelo: (valorEnv(...nomesDoModelo('pollinations')) || spec.modelsHint[0]), keyless: true });
       }
     }
-    return out;
+    return { cadeia: out, excluidos, exigeJson };
   }
+  function cadeiaDeFornecedores(opts) { return rotaDeFornecedores(opts).cadeia; }
 
   /* Executor com a chave do operador (ou sem chave). A utilização fica registada
      com o fornecedor e o modelo reais, e com `viaOperador` para se saber de quem é
      a chave que pagou a chamada. */
   function runnerDoOperador(user, tipo) {
-    const cadeia = cadeiaDeFornecedores();
+    /* todos os passos e agentes desta aplicação exigem JSON validado; a rota é
+       calculada com essa exigência e fica registada no resultado */
+    const rota = rotaDeFornecedores({ exigeJson: true });
+    const cadeia = rota.cadeia;
     if (!cadeia.length) return null;
+    const rotaRegistada = {
+      exigeJson: true,
+      cadeia: cadeia.map((c) => ({ provider: c.provider, keyless: !!c.keyless })),
+      excluidos: rota.excluidos,
+      versao: ROUTER_VERSION
+    };
     const p = cadeia[0];
     return async function ai(req) {
       const messages = tipo === 'research' ? promptFor(req.step && req.step.id, req.project, req.candidates) : req.messages;
@@ -591,12 +626,12 @@ export async function createApi(opts) {
       if (!r || !r.ok) {
         return { ok: false, provider: usado && usado.provider,
           error: 'fornecedor recusou: ' + String((r && r.error) || 'sem resposta').slice(0, 160),
-          tentativas: tentativas,
+          tentativas: tentativas, rota: rotaRegistada,
           nota: tentativas.length > 1
             ? 'tentados ' + tentativas.length + ' fornecedores; nenhum tinha tokens disponíveis neste momento'
             : null };
       }
-      return Object.assign(aplicarResposta(r, parsed, usado, p, caiu, tipo), { tentativas: tentativas });
+      return Object.assign(aplicarResposta(r, parsed, usado, p, caiu, tipo), { tentativas: tentativas, rota: rotaRegistada });
     };
   }
   /* resposta normalizada, igual para o caminho do operador e o do utilizador */
@@ -1052,8 +1087,9 @@ export async function createApi(opts) {
              observado — não é um inventário de infraestrutura. */
           fornecedores: quotasIA.relatorio().filter((f) => f.estado !== 'desconhecido' || chaveDoOperador(f.id).estado === 'ok'),
           emRota: (function () {
-            const c = cadeiaDeFornecedores();
-            return { ordem: c.map((x) => x.provider), primeiro: c.length ? c[0].provider : null,
+            const r = rotaDeFornecedores({ exigeJson: true });
+            return { ordem: r.cadeia.map((x) => x.provider), primeiro: r.cadeia.length ? r.cadeia[0].provider : null,
+              exigeJson: true, excluidos: r.excluidos,
               emEspera: quotasIA.relatorio().filter((f) => !f.disponivelAgora).map((f) => ({ id: f.id, estado: f.estado, motivo: f.motivo, disponivelEm: f.disponivelEm })) };
           })(),
           verificado: null
@@ -1167,6 +1203,23 @@ export async function createApi(opts) {
           },
           research: { steps: STEPS.length, profiles: Object.keys(PROFILES), promptVersion: PROMPT_VERSION, reportSections: SECTION_TITLES.length },
           agents: { total: AGENTS.length, promptVersion: AGENT_PROMPT_VERSION, local: AGENTS.filter((x) => x.kind === 'local').length, ai: AGENTS.filter((x) => x.kind === 'ai').length },
+          /* FASE E1/E3: o catálogo de APIs sem chave tem estados fechados e o
+             router por perfil publica a sua tabela — para que a decisão de quem
+             serve cada passo não viva só no código. */
+          apiCatalog: {
+            version: CATALOG_VERSION,
+            states: API_STATES.map((x) => ({ id: x.id, label: x.label })),
+            transitions: API_TRANSITIONS,
+            rules: {
+              validado: 'exige prova de geração com pedido, resposta e latência',
+              'em-uso': 'exige confirmação explícita e um passo onde é usada',
+              reversivel: 'todas as transições ficam no histórico e podem ser revertidas'
+            },
+            entradas: store.apiCatalog().length
+          },
+          router: { version: ROUTER_VERSION, policy: PROFILE_POLICY,
+            rules: { json: 'fornecedor com produção em texto livre nunca serve um passo que exige JSON',
+              estado: 'só serve quem está validado na aplicação', medicao: 'sem latência medida não há escolha' } },
           providers: registryPublic(),
           keyVault: { enabled: vault.enabled, reason: vault.reason },
           documents: {
@@ -2894,6 +2947,187 @@ export async function createApi(opts) {
         if (!w) return err(res, 404, 'workflow desconhecido', { known: WORKFLOWS.map((x) => x.id) });
         return json(res, 200, { ok: true, version: WORKFLOW_VERSION, esqueleto: skeleton(id), definicao: w,
           validacao: validateWorkflow(w) });
+      }
+
+      /* ---------- catálogo de APIs sem chave (FASE E1/E2) ----------
+         O relatório de sonda diz o que foi MEDIDO lá fora. O catálogo diz, por
+         API, em que estado está, com que prova, e desde quando — e só entra em
+         uso com confirmação explícita. Validar não põe nada em uso. */
+      if (p === '/api/apis/catalogo' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const entradas = store.apiCatalog();
+        return json(res, 200, {
+          ok: true, version: CATALOG_VERSION,
+          estados: API_STATES,
+          transicoes: API_TRANSITIONS,
+          regras: API_TRANSITION_RULES,
+          resumo: catalogSummary(entradas),
+          entradas: entradas.map((e) => apiCatalogToPublic(e)),
+          rules: {
+            prova: 'passar a «validado» exige prova de geração com pedido, resposta e latência medidas na aplicação',
+            uso: 'passar a «em uso» exige estar validado, a prova existente e confirmação explícita — validar não põe nada em uso',
+            reverter: 'todas as transições são reversíveis e ficam no histórico; nada é apagado',
+            sondaExterna: 'o varrimento externo dá provas marcadas «varrimento-externo»: levam a «em análise», nunca a «validado»'
+          },
+          vazio: entradas.length ? null : 'catálogo vazio: sincronize o relatório do varrimento (POST /api/apis/catalogo/sincronizar)'
+        });
+      }
+      if (p === '/api/apis/catalogo/sincronizar' && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const ficheiro = new URL('../docs/APIS-sem-chave.json', import.meta.url);
+        let bruto = null;
+        try { bruto = fsSync.readFileSync(ficheiro, 'utf8'); } catch { /* não existe */ }
+        if (!bruto) return err(res, 404, 'não há relatório de varrimento guardado: correr o workflow «IA — varrimento sem chave»');
+        let relatorio = null;
+        try { relatorio = JSON.parse(bruto); } catch { return err(res, 500, 'o relatório guardado não é JSON válido'); }
+        const r = mergeScan(store.apiCatalog(), relatorio, { por: a.user.id });
+        await store.replaceApiCatalog(r.entradas);
+        await store.audit({ type: 'api_catalog_sync', actorId: a.user.id, subjectId: null, action: 'sync_catalog',
+          detail: { total: r.entradas.length, novas: r.novas, actualizadas: r.actualizadas } });
+        return json(res, 200, { ok: true, total: r.entradas.length, novas: r.novas, actualizadas: r.actualizadas,
+          resumo: catalogSummary(store.apiCatalog()),
+          nota: 'entradas existentes mantêm o estado decidido por uma pessoa: uma sonda não reescreve decisões' });
+      }
+      if (p.match(/^\/api\/apis\/[^/]+\/validar$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = decodeURIComponent(p.split('/')[3]);
+        const entrada = store.apiCatalogById(id);
+        if (!entrada) return err(res, 404, 'API desconhecida no catálogo', { how: 'sincronizar primeiro o relatório do varrimento' });
+        const body = await readBody(req);
+        const base = String(body.base || entrada.base || '').replace(/\/+$/, '');
+        if (!base) return err(res, 400, 'esta API não tem URL base no catálogo: indique «base» no pedido');
+        let probe = null;
+        try {
+          probe = await probeApi({ id, base, firstModel: body.modelo || null }, { timeoutMs: 20000 });
+        } catch (e) {
+          return err(res, 502, 'a sonda falhou: ' + String(e.message || e).slice(0, 200));
+        }
+        const prova = proofFromProbe(probe, { origem: sondaELocal ? 'ensaio' : 'sonda', por: a.user.id });
+        let e = entrada;
+        const passos = [];
+        if (e.estado === 'descoberto') {
+          const t = applyTransition(e, 'em-analise', { motivo: 'validação pedida na aplicação', por: a.user.id });
+          if (t.ok) { e = t.entrada; passos.push(t.passo); }
+        }
+        /* a prova entra sempre no registo, tenha passado ou não: uma tentativa
+           falhada também é informação, e apagá-la seria esconder a evidência */
+        e = Object.assign({}, e, { provas: (e.provas || []).filter((x) => x.em !== prova.em).concat([prova]) });
+        if (prova.ok && e.estado === 'em-analise') {
+          const t = applyTransition(e, 'validado', { motivo: 'prova de geração obtida na aplicação', prova, por: a.user.id });
+          if (t.ok) { e = t.entrada; passos.push(t.passo); }
+          else return err(res, 400, 'a prova foi obtida mas a transição foi recusada: ' + t.erros.join('; '), { prova });
+        }
+        if (prova.ok && e.estado === 'degradado') {
+          const t = applyTransition(e, 'em-analise', { motivo: 'nova prova de geração obtida depois de degradado', prova, por: a.user.id });
+          if (t.ok) { e = t.entrada; passos.push(t.passo); }
+        }
+        const guardada = await store.upsertApiCatalog(e);
+        await store.audit({ type: 'api_catalog_validate', actorId: a.user.id, subjectId: id, action: 'validate_api',
+          detail: { ok: prova.ok, status: prova.resposta.status, latenciaMs: prova.latenciaMs,
+            estado: guardada.estado, origem: prova.origem, veredicto: probe.verdict } });
+        await store.count('api_catalog_validations');
+        return json(res, 200, {
+          ok: true, entrada: apiCatalogToPublic(guardada), prova,
+          veredicto: probe.verdict || null,
+          passos: passos.length,
+          aviso: prova.ok ? null : 'a sonda não confirmou geração sem chave: a entrada NÃO passou a «validado»',
+          nota: 'validar não põe a API em uso: isso exige confirmação explícita noutra operação'
+        });
+      }
+      if (p.match(/^\/api\/apis\/[^/]+\/uso$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = decodeURIComponent(p.split('/')[3]);
+        const entrada = store.apiCatalogById(id);
+        if (!entrada) return err(res, 404, 'API desconhecida no catálogo');
+        const body = await readBody(req);
+        const t = applyTransition(entrada, 'em-uso', {
+          motivo: String(body.motivo || '').trim() || 'confirmada para uso na aplicação',
+          confirmar: body.confirmar === true,
+          usaEm: String(body.usaEm || '').trim(),
+          por: a.user.id
+        });
+        if (!t.ok) return err(res, 400, 'não entrou em uso: ' + t.erros.join('; '), { erros: t.erros, estado: entrada.estado });
+        const guardada = await store.upsertApiCatalog(t.entrada);
+        await store.audit({ type: 'api_catalog_use', actorId: a.user.id, subjectId: id, action: 'api_to_use',
+          detail: { usaEm: body.usaEm || null } });
+        return json(res, 200, { ok: true, entrada: apiCatalogToPublic(guardada) });
+      }
+      if (p.match(/^\/api\/apis\/[^/]+\/reverter$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const id = decodeURIComponent(p.split('/')[3]);
+        const entrada = store.apiCatalogById(id);
+        if (!entrada) return err(res, 404, 'API desconhecida no catálogo');
+        const body = await readBody(req);
+        const r = revertLast(entrada, { motivo: body.motivo || null, por: a.user.id });
+        if (!r.ok) return err(res, 400, 'não foi revertido: ' + r.erros.join('; '), { erros: r.erros });
+        const guardada = await store.upsertApiCatalog(r.entrada);
+        await store.audit({ type: 'api_catalog_revert', actorId: a.user.id, subjectId: id, action: 'revert_api_state',
+          detail: r.revertido });
+        return json(res, 200, { ok: true, entrada: apiCatalogToPublic(guardada), revertido: r.revertido });
+      }
+
+      /* ---------- router por perfil (FASE E3) ----------
+         Diz, para cada perfil e passo, QUEM serviria — e porquê, incluindo
+         quando a resposta é «ninguém, porque não há medições». Não escolhe por
+         analogia: sem latência medida e sem estado validado na aplicação, a
+         decisão é «não há candidata», com a lista do que falta. */
+      if (p === '/api/ia/rotas' && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const passosIA = STEPS.filter((x) => x.kind === 'ia').map((x) => x.id);
+        const e = estadoChavesOperador();
+        const candidatos = Object.keys(e.providers).map((id) => {
+          const spec = PROVIDERS[id] || {};
+          const visto = e.providers[id] || {};
+          const testes = store.providerTestsOf('providers/' + id).filter((t) => !t.synthetic);
+          const gerou = testes.filter((t) => t.level === 4 && t.result === 'PASS');
+          const lat = gerou.map((t) => t.latencyMs).filter((x) => x != null).sort((x, y) => x - y);
+          return candidateFromProvider(id, spec, {
+            estado: gerou.length ? 'validado' : (visto.estado === 'ok' || visto.keyless ? 'em-analise' : 'descoberto'),
+            latenciaMs: lat.length ? lat[Math.floor(lat.length / 2)] : null,
+            /* JSON: só é verdade quando há prova (teste de geração com PASS);
+               o fornecedor com produção medida em texto livre fica false */
+            produzJson: spec.produzJson === false ? false : (gerou.length ? true : null),
+            nota: gerou.length ? 'teste de geração com PASS' : 'sem prova de geração na aplicação'
+          });
+        });
+        const perfil = url.searchParams.get('perfil');
+        const passo = url.searchParams.get('passo');
+        const base = {
+          ok: true, version: ROUTER_VERSION,
+          politica: PROFILE_POLICY,
+          passosIA,
+          candidatos: candidatos.map((c) => ({ provider: c.provider, estado: c.estado, latenciaMs: c.latenciaMs,
+            produzJson: c.produzJson, semChave: c.semChave, nota: c.nota })),
+          regras: {
+            estado: 'só serve quem está «validado» (ou «em-uso»); degradado só sem alternativa',
+            json: 'quem devolve texto livre — ou não tem prova de JSON — nunca serve um passo que exige JSON',
+            latencia: 'sem latência medida não há comparação: a decisão é «não há candidata»',
+            desempate: 'determinístico pelo id do fornecedor',
+            registo: 'toda a decisão devolve a razão, a alternativa e os rejeitados'
+          },
+          cadeiaActual: (function () {
+            const r = rotaDeFornecedores({ exigeJson: true });
+            return { ordem: r.cadeia.map((x) => x.provider), excluidos: r.excluidos, exigeJson: true };
+          })()
+        };
+        if (perfil && passo) {
+          return json(res, 200, Object.assign(base, {
+            decisao: routeProvider({ perfil, passo, candidatos })
+          }));
+        }
+        if (perfil) {
+          return json(res, 200, Object.assign(base, {
+            tabela: passosIA.map((x) => {
+              const r = routeProvider({ perfil, passo: x, candidatos });
+              return { passo: x, ok: r.ok, escolhido: r.escolhido || null, motivo: r.motivo || null, criterio: r.criterio || null };
+            })
+          }));
+        }
+        return json(res, 200, Object.assign(base, { tabela: routeTable({ passos: passosIA, candidatos }) }));
       }
 
       if (p.match(/^\/api\/projects\/[^/]+\/agent-runs$/) && method === 'GET') {
