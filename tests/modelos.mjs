@@ -14,7 +14,7 @@
      · quando a lista não serve, falha — não inventa um nome;
      · o que foi pedido e o que foi usado ficam ambos registados.
    ===================================================================== */
-import { escolherModeloConversa, razaoDaEscolha, criarResolvedorDeModelos, ERRO_DE_MODELO, erroDeModelo } from '../server/modelos.mjs';
+import { escolherModeloConversa, razaoDaEscolha, normalizarNomes, criarResolvedorDeModelos, ERRO_DE_MODELO, erroDeModelo } from '../server/modelos.mjs';
 
 const R = [];
 const t = async (name, fn) => {
@@ -160,6 +160,18 @@ await t('resolvedor · 404 sem mensagem (o caso do Google) também corrige o mod
   ok(s.modelo === 'gemini-2.5-flash', 'escolheu ' + s.modelo);
   ok(pedidos.length === 2, 'pedidos: ' + pedidos.length);
   return 'HTTP 404 sem corpo → ' + s.modelo;
+});
+
+await t('nomes com prefixo de recurso · «models/gemini-2.5-flash» vira «gemini-2.5-flash»', async () => {
+  ok(normalizarNomes(['models/gemini-2.5-flash', 'models/gemini-2.5-pro']).join(',') === 'gemini-2.5-flash,gemini-2.5-pro', 'não normalizou');
+  ok(normalizarNomes(['llama-3.1-8b-instant']).join(',') === 'llama-3.1-8b-instant', 'mexeu numa lista sem prefixo');
+  ok(normalizarNomes([]).length === 0, 'lista vazia');
+  const escolhido = escolherModeloConversa(['models/gemini-2.5-flash', 'models/text-embedding-004'], 'gemini-2.0-flash');
+  ok(escolhido === 'gemini-2.5-flash', 'escolheu ' + escolhido);
+  /* e com o modelo pedido JÁ a existir: não se troca por outro */
+  const igual = razaoDaEscolha(['models/gemini-2.5-flash'], 'gemini-2.5-flash');
+  ok(igual.escolhido === 'gemini-2.5-flash' && /existe/.test(igual.razao), JSON.stringify(igual));
+  return 'prefixo removido só quando é comum a todos · modelo pedido reconhecido';
 });
 
 await t('reconhecimento do erro · cobre os avisos reais dos fornecedores', async () => {

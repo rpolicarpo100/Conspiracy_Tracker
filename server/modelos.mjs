@@ -50,8 +50,19 @@ const PREFERENCIA = [
 /* Escolhe um modelo de CONVERSA a partir da lista real. Devolve null quando a
    lista só tem modelos que não servem — nesse caso é melhor falhar do que
    enviar o texto a um modelo de embeddings e receber uma resposta sem sentido. */
+/* Alguns fornecedores (Google) devolvem os nomes com prefixo de recurso
+   («models/gemini-2.5-flash»), mas o endpoint de conversa espera o nome SEM
+   prefixo. Aplicado o prefixo tal e qual, a escolha automática dava 404 outra
+   vez — o mesmo erro, uma camada mais adiante. */
+export function normalizarNomes(lista) {
+  const l = (lista || []).filter((m) => typeof m === 'string' && m);
+  if (!l.length) return [];
+  const todosComPrefixo = l.every((m) => m.indexOf('models/') === 0);
+  return todosComPrefixo ? l.map((m) => m.slice('models/'.length)) : l;
+}
+
 export function escolherModeloConversa(lista, pedido) {
-  const so = (lista || []).filter((m) => typeof m === 'string' && m && !FORA.test(m));
+  const so = normalizarNomes(lista).filter((m) => m && !FORA.test(m));
   if (!so.length) return null;
   for (const re of PREFERENCIA) {
     const achado = so.find((m) => m !== pedido && re.test(m));
@@ -62,10 +73,12 @@ export function escolherModeloConversa(lista, pedido) {
 
 /* Versão explicável da escolha: para a interface e para os registos. */
 export function razaoDaEscolha(lista, pedido) {
+  const listaNorm = normalizarNomes(lista);
+  /* o modelo pedido existe? então é ele — a correcção não troca o que já serve */
+  if (pedido && listaNorm.indexOf(pedido) >= 0) return { escolhido: pedido, razao: 'o modelo pedido existe na lista do fornecedor' };
   const escolhido = escolherModeloConversa(lista, pedido);
   if (!escolhido) return { escolhido: null, razao: 'a lista do fornecedor não tem nenhum modelo de conversa utilizável' };
   if (!pedido) return { escolhido, razao: 'não havia modelo preferido; primeiro modelo de conversa da lista' };
-  if (lista && lista.indexOf(pedido) >= 0) return { escolhido: pedido, razao: 'o modelo pedido existe na lista do fornecedor' };
   return { escolhido, razao: 'o modelo pedido não existe na lista do fornecedor; escolhido um modelo de conversa' };
 }
 
