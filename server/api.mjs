@@ -8,7 +8,8 @@ import crypto from 'node:crypto';
 import { createStore } from './store.mjs';
 import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser } from './auth.mjs';
 import { keyVault } from './crypto-keys.mjs';
-import { PROVIDERS, registryPublic, validateProvider, complete, breakerState, isPrivateHost } from './providers.mjs';
+import { PROVIDERS, registryPublic, validateProvider, complete, listModels, breakerState, isPrivateHost } from './providers.mjs';
+import { criarResolvedorDeModelos } from './modelos.mjs';
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
 import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
 import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES, periodWindow, relationInWindow } from './graph.mjs';
@@ -473,6 +474,10 @@ export async function createApi(opts) {
     const modelo = valorEnv(...nomesDoModelo(provider)) || spec.modelsHint[0] || null;
     return { estado: 'ok', env, apiKey: achada.valor, modelo, envAlternativo: env !== envDeclarado };
   }
+  /* modelos: nunca ficar preso a um nome que mudou (ver server/modelos.mjs) */
+  const resolvedorDeModelos = criarResolvedorDeModelos({ complete, listModels });
+  const { completarComModelo } = resolvedorDeModelos;
+
   function operadorPadrao() {
     /* quem tem chave de operador válida, por esta ordem; o sem-chave fica em último */
     const ordem = valorEnv('AI_OPERATOR_ORDER', 'API_OPERATOR_ORDER') || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare';
@@ -519,8 +524,9 @@ export async function createApi(opts) {
       const messages = tipo === 'research' ? promptFor(req.step && req.step.id, req.project, req.candidates) : req.messages;
       let r = null; let usado = null;
       for (const c of cadeia) {
-        r = await complete({ provider: c.provider, apiKey: c.apiKey, model: c.modelo, messages, timeoutMs: (req && req.timeoutMs) || 30000 });
-        usado = c;
+        const feito = await completarComModelo({ provider: c.provider, apiKey: c.apiKey, modelo: c.modelo, mensagens: messages, timeoutMs: (req && req.timeoutMs) || 30000 });
+        r = feito.r;
+        usado = feito.modelo && feito.modelo !== c.modelo ? Object.assign({}, c, { modelo: feito.modelo }) : c;
         if (r.ok) break;
         /* 400 é, em regra, erro do nosso pedido — repetir noutro fornecedor não
            ajuda. Excepção medida: uma chave inválida chega como 400 em alguns
@@ -977,17 +983,22 @@ export async function createApi(opts) {
         /* a chave usada é a que a aplicação usaria de facto — a do operador, se
            existir (é a mesma que serve os utilizadores sem chave própria) */
         const op = operadorPadrao();
-        const r = await complete({
+        const feito = await completarComModelo({
           provider: op ? op.provider : e.activo.provider,
           apiKey: op ? op.apiKey : null,
-          model: op ? op.modelo : e.activo.modelo,
-          messages: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000, retries: 1
-        }).catch((x) => ({ ok: false, error: String(x && x.message) }));
+          modelo: op ? op.modelo : e.activo.modelo,
+          mensagens: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000
+        }).catch((x) => ({ r: { ok: false, error: String(x && x.message) }, modelo: null }));
+        const r = feito.r;
         const ms = Date.now() - t0;
         const via = op ? (op.keyless ? 'sem-chave' : 'operador') : 'nenhuma';
         const verificado = r.ok
-          ? { ok: true, ms: ms, via: via, fornecedor: op ? op.provider : null, amostra: String((r.text || '').trim()).slice(0, 40) }
-          : { ok: false, ms: ms, via: via, fornecedor: op ? op.provider : null, motivo: String(r.error || 'falhou').slice(0, 160) };
+          ? { ok: true, ms: ms, via: via, fornecedor: op ? op.provider : null, modelo: feito.modelo || (op && op.modelo),
+              modeloCorrigido: r.modeloCorrigido || null, modeloPedido: r.modeloPedido || null,
+              amostra: String((r.text || '').trim()).slice(0, 40) }
+          : { ok: false, ms: ms, via: via, fornecedor: op ? op.provider : null, modelo: feito.modelo || (op && op.modelo),
+              modeloCorrigido: r.modeloCorrigido || null, modeloPedido: r.modeloPedido || null,
+              motivo: String(r.error || 'falhou').slice(0, 160) };
         /* Se a chave do operador falhar, a pergunta seguinte é inevitável:
            «então e a aplicação, fica sem IA?». Responde-se aqui, medindo. */
         if (!r.ok && op && !op.keyless

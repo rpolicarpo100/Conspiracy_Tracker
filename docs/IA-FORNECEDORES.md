@@ -84,6 +84,26 @@ curl -s https://conspiracy-aitracker.onrender.com/api/ai/estado
 `modo:"nenhum"` é o único caso em que a análise por IA não corre de todo — e
 acontece só quando não há chave nenhuma **e** `AI_KEYLESS_FALLBACK=false`.
 
+### Se o modelo sugerido já não existir
+
+Os fornecedores mudam o catálogo sem avisar. Quando o erro é «esse modelo não
+existe / não tens acesso», a aplicação pede a lista real (`GET /models`, um
+pedido autenticado que só envia a chave), escolhe um modelo de conversa dessa
+lista e repete **uma** vez — o mesmo texto, sem conteúdo novo. A lista fica em
+cache uma hora. Nunca se tenta um nome inventado: se a lista não servir, falha
+e diz porquê.
+
+A resposta da sondagem mostra os dois nomes, para não haver dúvida sobre o que
+foi usado:
+
+```json
+"verificado":{"ok":true,"modelo":"llama-3.1-8b-instant",
+  "modeloPedido":"llama-3.3-70b-versatile","modeloCorrigido":"llama-3.1-8b-instant", ...}
+```
+
+Se preferires fixar um modelo teu, define `AI_MODEL_GROQ` (ou `API_MODEL_GROQ`)
+com o nome exacto — a partir daí esse é o primeiro a ser tentado.
+
 ### Provar que a IA responde de facto (sondagem real)
 
 `modo:"sem-chave"` diz que há um caminho configurado — não diz que o fornecedor

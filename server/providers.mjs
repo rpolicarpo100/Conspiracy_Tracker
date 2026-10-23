@@ -190,6 +190,25 @@ export function urlFor(base, path) {
   return b + path;
 }
 
+/* Lista de modelos do fornecedor (GET /models). Serve para não ficar preso a um
+   nome de modelo que mudou: os catálogos dos fornecedores mudam sem aviso e um
+   nome fixo no código transforma-se, mais cedo ou mais tarde, num erro de
+   utilizador por causa de um erro nosso. Só envia a chave; nenhum conteúdo. */
+export async function listModels({ provider, base, apiKey, timeoutMs, fetchImpl, accountId }) {
+  const r = resolveProvider(provider, { base, accountId });
+  if (r.error) return { ok: false, error: r.error };
+  const semChave = !!(r.spec && (r.spec.keyless === true || r.spec.authStyle === 'none'));
+  if (!apiKey && !semChave) return { ok: false, error: 'sem chave configurada para ' + provider };
+  const headers = { 'content-type': 'application/json' };
+  if (apiKey) headers.authorization = 'Bearer ' + apiKey;
+  const resp = await httpJson(urlFor(r.base, '/models'), { method: 'GET', headers, timeoutMs: timeoutMs || 8000, fetchImpl });
+  if (!resp.ok) return { ok: false, status: resp.status, error: resp.error || ('HTTP ' + resp.status), text: (resp.text || '').slice(0, 300) };
+  const bruto = resp.json && Array.isArray(resp.json.data) ? resp.json.data
+    : (Array.isArray(resp.json) ? resp.json : []);
+  const models = bruto.map((m) => (typeof m === 'string' ? m : (m && (m.id || m.name)))).filter(Boolean);
+  return { ok: models.length > 0, models: models, source: 'GET /models', at: new Date().toISOString() };
+}
+
 async function httpJson(url, { method, headers, body, timeoutMs, fetchImpl }) {
   const f = fetchImpl || fetch;
   const ctrl = new AbortController();

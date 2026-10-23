@@ -324,3 +324,12 @@ Formato: data · decisão · motivo · o que foi recusado.
     Motivo: o Google devolve chave inválida como `400`. Sem esta excepção, colar uma chave com um
     caracter a mais desligava a IA da instância inteira — e o utilizador via «a pesquisa falhou»
     sem saber que a culpa era de uma vírgula.
+
+52. **2026-10-23 · Um modelo que deixou de existir não pode parecer um erro do utilizador.**
+    Quando o fornecedor responde «modelo não existe / sem acesso», pede-se a lista real (`GET
+    /models`), escolhe-se um modelo de conversa e repete-se **uma** vez, com o mesmo texto. A lista
+    fica em cache uma hora; o que foi pedido e o que foi usado ficam ambos na resposta. Se a lista
+    não servir, a chamada falha com a razão escrita — não se tenta um nome inventado.
+    Motivo: a sugestão de modelo do Groq no catálogo deixou de existir e a instância passou a
+    responder «The model … does not exist» com uma chave perfeitamente válida. Não havia nada no
+    código que se pudesse corrigir a tempo: o catálogo dos fornecedores muda fora do nosso controlo.
