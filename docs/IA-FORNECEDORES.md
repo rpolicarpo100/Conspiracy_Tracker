@@ -288,3 +288,51 @@ Regras que estes números mostram na prática: **a chave certa num nome diferent
 uma chave invisível** (§«O nome da variável»), **um modelo retirado não é um erro
 teu** (§«Se o modelo sugerido já não existir») e **um fornecedor em baixa não deixa
 a aplicação sem IA** (cai para o fornecedor sem chave, e diz que caiu).
+
+---
+
+## 8. Rotação automática — «este fornecedor ainda tem tokens?»
+
+A pergunta é feita **em cada pedido**, não uma vez por dia. A aplicação mantém um
+estado observado por fornecedor e escolhe a ordem em função dele.
+
+### Como se classifica uma recusa
+
+| o que o fornecedor respondeu | estado | o que a aplicação faz |
+|---|---|---|
+| 429 / «rate limit» / «resource exhausted» | `limitado` | passa ao seguinte e volta a tentar este quando ele disse (`Retry-After`, `retryDelay`, «retry in 30s») — com tecto de 15 min |
+| 402 / «insufficient_quota» / «credit balance is too low» | `sem-credito` | passa ao seguinte e só volta a tentar dentro de 6 h: sem saldo, não é o tempo que resolve |
+| 401/403 de credencial | `chave` | passa ao seguinte; a chave fica marcada como recusada |
+| 5xx / «high demand» / timeout | `indisponivel` | passa ao seguinte e tenta outra vez dentro de 2 min |
+| 400 que não é de credencial | — | **pára**: é erro do nosso pedido, gastar quota de outro fornecedor não o resolve |
+
+Ordem da rota: `AI_OPERATOR_ORDER` (por omissão groq → gemini → cerebras →
+openrouter → …) e, no fim, o fornecedor público sem chave. O estado nunca é
+permanente: passado o tempo de espera, o fornecedor volta a ser tentado — a única
+forma de saber se recuperou é perguntar-lhe.
+
+### Ver agora, sem entrar na conta
+
+```bash
+curl -s "$URL/api/ai/estado"        # quem está na rota, quem está de fora e até quando
+```
+
+```json
+"emRota":{"ordem":["groq","gemini","openrouter","pollinations"],"primeiro":"groq",
+          "emEspera":[{"id":"gemini","estado":"sem-credito","disponivelEm":"…"}]}
+```
+
+### Verificação periódica (workflow)
+
+`.github/workflows/ai-quota.yml` corre **de hora a hora** e faz duas coisas:
+primeiro lê o estado sem gastar pedidos (`GET`), depois sonda cada fornecedor com
+uma chamada mínima (`POST`) e publica um quadro no resumo da execução. Se nenhum
+fornecedor responder, o workflow **falha** (o GitHub avisa); se só o fornecedor
+público sem chave responder, deixa um aviso a dizer que é mais lento e partilhado.
+
+Configuração (uma vez): `CRON_TOKEN` no Render **e** o mesmo valor em
+GitHub → Settings → Secrets and variables → Actions. O servidor já responde `401`
+sem token e `503` quando `CRON_TOKEN` não existe — não há endpoint aberto.
+
+O texto enviado é sempre `«Responda apenas: ok»`. Nenhum documento, excerto ou
+dado de conta passa por esta rota.

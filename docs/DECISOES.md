@@ -343,3 +343,19 @@ Formato: data · decisão · motivo · o que foi recusado.
     Motivo: em produção, o Google respondeu com o nome exacto a usar e a aplicação, sem esta
     regra, ia pedir a lista para escolher às cegas — ou nem isso, quando a mensagem não casava
     com nenhum padrão conhecido («no longer available» não casava).
+
+54. **2026-10-23 · Rodar de fornecedor quando ele fica sem tokens — e voltar a tentá-lo depois.**
+    Estado por fornecedor observado em cada pedido: `limitado` (429), `sem-credito` (402/quota),
+    `chave` (401/403), `indisponivel` (5xx/timeout). O pedido segue para o fornecedor seguinte e o
+    que falhou sai da rota só enquanto durar a espera que ele próprio indicou (com tecto de 15 min
+    para ritmo; 6 h para falta de saldo). Um `400` que não seja de credencial continua a parar a
+    cadeia.
+    Motivo: em produção estavam três chaves boas e a aplicação insistia num fornecedor que respondia
+    `503 high demand`. Rodar é barato; um erro que parece do utilizador não é.
+
+55. **2026-10-23 · Ler a espera do fornecedor em vez de inventar uma.**
+    `Retry-After`, `x-ratelimit-reset-*`, `retryDelay: "27s"` e «Please retry in 12.5s» são lidos
+    e usados; sem pista, usa-se um valor declarado por tipo. Há tecto: um fornecedor que peça 3
+    horas não prende o tráfego 3 horas.
+    Motivo: insistir cedo demais gasta pedidos e pode agravar o bloqueio; insistir tarde demais
+    deixa a aplicação sem IA quando ela já podia voltar.

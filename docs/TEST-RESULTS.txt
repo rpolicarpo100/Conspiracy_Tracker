@@ -2000,3 +2000,43 @@ E. O que continua por fazer
    (GET /api/ai/estado?probe=gemini mostra o que foi pedido e o que foi usado).
 
    PASS npm test → 522 linhas PASS · 0 falhas (31 ficheiros)
+
+§55  F A S E  1 2  —  R O T A Ç Ã O  D E  I A  P O R  T O K E N S  D I S P O N Í V E I S
+--------------------------------------------------------------------------------
+   Pedido do dono da instância: identificar quando um fornecedor de IA deixou de
+   ter tokens e passar automaticamente a outro que tenha. Feito em duas camadas —
+   a decisão acontece em cada pedido, e um workflow horário verifica e reporta.
+
+§55.1  C L A S S I F I C A Ç Ã O  (server/quota.mjs, sem rede)
+   PASS 429 «rate limit» → limitado · 429 «insufficient_quota» → sem-credito
+        (a mensagem manda sobre o código) · 402 → sem-credito · 401 → chave ·
+        503 «high demand» → indisponivel · timeout → indisponivel
+   PASS espera lida do fornecedor: cabeçalho Retry-After 7s · retryDelay «27s» ·
+        «Please retry in 12.5s» · e tecto de 15 min quando ele pede 3 horas
+   PASS limites anunciados: x-ratelimit-remaining-tokens/pedidos lidos da resposta boa
+
+§55.2  L I V R O  D E  Q U O T A S  (estado observado, com relógio injectável)
+   PASS em espera 30 s e volta sozinho — o estado não é permanente
+   PASS sem crédito fica 6 h de fora, com o motivo guardado; label «sem crédito/quota»
+
+§55.3  C A D E I A  E M  T E M P O  D E  E X E C U Ç Ã O
+   A cadeia passou a incluir TODOS os fornecedores com chave (pela ordem de
+   AI_OPERATOR_ORDER), saltando os que estão em espera, com o fornecedor sem chave
+   no fim. Um pedido atravessa-a até encontrar tokens; a resposta leva `tentativas`
+   com o que cada um disse, e o erro final diz quantos foram tentados — em vez de
+   «falhou» sem mais.
+
+§55.4  R O T A  D E  S E R V I Ç O  E  W O R K F L O W
+   PASS POST /api/service/ai/rotacao sem CRON_TOKEN → 503 com o que fazer
+   PASS token errado ou ausente → 401 (sempre, não só quando geolocalizado)
+   PASS GET → estado observado em 6 ms, sem uma única chamada externa
+   PASS POST → sonda os 4 candidatos, classifica cada um, grava auditoria
+        (ai_rotation) e devolve veredicto legível
+   PASS /api/ai/estado → lista quem tem tokens, a ordem da rota e quem está de
+        fora até quando; verificado que a resposta não contém nenhuma chave
+   PASS .github/workflows/ai-quota.yml validado (YAML + lógica do resumo
+        executada localmente): com tokens → resumo e sucesso; com «NENHUM» →
+        ::error:: e saída 1; só pollinations → ::warning::
+
+   PASS npm test → 532 linhas PASS · 0 falhas (32 ficheiros, incl. tests/quota-ia.mjs 10/10)
+   PASS node tools/status.mjs --check → 2.0.0-fase12 · esquema v7 · 110 rotas
