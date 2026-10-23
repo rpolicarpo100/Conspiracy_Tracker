@@ -2040,3 +2040,73 @@ E. O que continua por fazer
 
    PASS npm test → 532 linhas PASS · 0 falhas (32 ficheiros, incl. tests/quota-ia.mjs 10/10)
    PASS node tools/status.mjs --check → 2.0.0-fase12 · esquema v7 · 110 rotas
+
+§56  V A R R I M E N T O  « S E M  C H A V E » — O  Q U E  E S T A V A  P A R T I D O
+--------------------------------------------------------------------------------
+   Relato do dono da instância: «o workflow que encontra apikeyless ai e guarda
+   não parece estar a funcionar». Verificado antes de mexer — e tinha razão, por
+   duas razões independentes:
+
+   1. NÃO EXISTIA WORKFLOW. Só `tools/keyless-scan.mjs`, uma ferramenta manual.
+      `ls .github/workflows` mostrava manutencao.yml, reevaluate.yml e
+      ai-quota.yml. Nada corria o varrimento; o relatório em docs/ era de uma
+      execução à mão em 2026-10-22.
+   2. NINGUÉM LIA O RESULTADO. `grep -rn "APIS-sem-chave"` encontrava o próprio
+      relatório, o gerador e duas linhas de documentação. O servidor não servia o
+      ficheiro, a interface não o mostrava. «Guardar» num ficheiro que ninguém
+      abre não é guardar — é deixar envelhecer.
+
+§56.1  V A R R I M E N T O  R E A L  (corrido hoje, não citado de memória)
+   node tools/keyless-scan.mjs --limit=45 --confirmar
+   PASS 46 sondados (45 + controlo) · 18 com catálogo público (`200` sem
+        Authorization) · 24 exigiram chave · 4 indeterminados
+   PASS etapa 2 (geração real, max_tokens:1, sem chave) nos 18 candidatos:
+        1 gerou — o controlo (Pollinations) · 16 recusaram (401/403) ·
+        1 indeterminado
+   PASS conclusão honesta: uma lista de modelos pública NÃO é uma API de
+        geração aberta. Apareceram 5 candidatos novos face a ontem (pioneer,
+        iteracompute, hyper, bee, sarvam, io-net) e todos recusaram gerar.
+
+§56.2  O  Q U E  F O I  C O N S T R U Í D O
+   · .github/workflows/keyless-scan.yml — segundas-feiras 04:23 UTC e a pedido:
+     corre a sonda com `--confirmar`, regenera o JSON e o resumo Markdown, faz
+     commit só se algo mudou (commit vazio forçaria um deploy sem motivo),
+     publica artefacto de 90 dias e escreve um quadro no resumo da execução;
+   · tools/keyless-scan.mjs — `--md` (resumo GERADO dos dados: o documento já não
+     pode envelhecer ao lado de um JSON actualizado) e `--ids` (reconfirmar só
+     alguns);
+   · GET /api/ai/keyless — serves o relatório guardado: data, idade em dias,
+     método, o que gerou de facto, o que a aplicação usa, e um aviso a partir dos
+     45 dias. Sem ficheiro, 404 com o que fazer — e a frase «sem relatório não se
+     afirma nada»;
+   · Conta → Chaves de IA — caixa com a data e o resultado do varrimento, e a
+     regra escrita: encontrá-lo não o acrescenta à aplicação.
+
+§56.3  O  T E S T E  Q U E  I M P E D E  O  « 0 »  F A L S O
+   O controlo (Pollinations, que se sabe funcionar sem chave) tem de gerar. Se não
+   gerar, a sonda está avariada e o workflow FALHA — um «0 sem chave» de uma sonda
+   que não detecta um caso conhecido não vale como conclusão.
+   PASS passo «Controlo obrigatório» com o relatório real → controlo ok, exit 0
+   PASS com o controlo estragado (verdict trocado) → ::error:: «A SONDA ESTÁ
+        AVARIADA», exit 1
+   PASS passo «Resumo da execução» → tabela com 46/18/24/4 e 1 geração real
+
+§56.4  S U Í T E
+   PASS tests/keyless.mjs (NOVO, 10/10, entra no npm test): catálogo fechado →
+        exige-chave · catálogo público → sem-chave e SÓ isso · 200 sem JSON →
+        indeterminado · geração aberta vs 401 vs 200 sem `choices` · endereço
+        privado recusado antes do pedido (SSRF) · rota com relatório real,
+        envelhecido (60 dias → aviso), corrompido (500) e ausente (404) · o
+        relatório não pode conter credenciais
+   PASS npm test → 542 linhas PASS · 0 falhas (33 ficheiros)
+   PASS npm run test:ui → 9 suites verdes, incluindo account-ui 19/19 com a nova
+        prova «varrimento sem chave aparece na interface com a data e o que NÃO
+        decide»
+   PASS em produção: GET /api/ai/keyless → geradoEm 2026-10-23, 18 com catálogo
+        público, 1 gera sem chave (controlo), emUsoPelaAplicacao: ["pollinations"]
+
+   O que CONTINUA a não acontecer, de propósito: o varrimento não acrescenta
+   fornecedores à aplicação. Encontrar um endpoint aberto não é autorização para
+   lhe enviar documentos — isso exige revisão humana e declaração em
+   docs/PRIVACIDADE.md. É a regra do dono da instância, e está escrita na resposta
+   da rota, na interface e no workflow.
