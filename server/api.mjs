@@ -420,27 +420,69 @@ export async function createApi(opts) {
      certo e a pessoa só substituir o valor, sem que a aplicação envie uma chave
      falsa para o fornecedor em lado nenhum. */
   const MARCADOR = /^(substituir|<|cola)/i;
+
+  /* ---- leitura tolerante do ambiente ----
+     O mesmo nome de variável é escrito de várias maneiras na vida real:
+     AI_KEY_GEMINI (o que render.yaml declara), API_KEY_GEMINI, API_KEY_Groq,
+     api_key_openrouter. Em Linux o ambiente distingue maiúsculas, por isso uma
+     chave colada com outro nome era simplesmente invisível: a pessoa via a
+     variável no painel, a aplicação dizia «sem IA», e não havia erro nenhum a
+     apontar o motivo. Aqui compara-se o nome sem separadores e sem caixa
+     (AIKEYGEMINI = APIKEYGEMINI = ai_key_gemini), aceitando AI_ e API_. */
+  const nomeEnv = (k) => String(k).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  function indisponivelEnv() {
+    const m = new Map();
+    Object.keys(process.env).forEach((k) => {
+      const v = String(process.env[k] == null ? '' : process.env[k]).trim().replace(/^["']|["']$/g, '').trim();
+      if (!v) return;
+      const n = nomeEnv(k);
+      if (!m.has(n)) m.set(n, { nome: k, valor: v });
+    });
+    return m;
+  }
+  /* devolve {nome, valor} do primeiro nome que exista, escrito como estiver */
+  function lerEnv(...nomes) {
+    const m = indisponivelEnv();
+    for (const n of nomes) {
+      if (!n) continue;
+      const achado = m.get(nomeEnv(n));
+      if (achado) return achado;
+    }
+    return null;
+  }
+  const valorEnv = (...nomes) => { const r = lerEnv(...nomes); return r ? r.valor : null; };
+  /* nomes aceites para a chave e para o modelo de um fornecedor */
+  function nomesDaChave(provider) {
+    const S = String(provider).toUpperCase();
+    return ['AI_KEY_' + S, 'API_KEY_' + S, 'AIKEY_' + S, 'APIKEY_' + S, S + '_API_KEY', S + '_KEY'];
+  }
+  function nomesDoModelo(provider) {
+    const S = String(provider).toUpperCase();
+    return ['AI_MODEL_' + S, 'API_MODEL_' + S, 'AIMODEL_' + S, 'APIMODEL_' + S, S + '_MODEL'];
+  }
+
   function chaveDoOperador(provider) {
     const spec = PROVIDERS[provider];
     if (!spec) return { estado: 'desconhecido' };
     if (spec.keyless) return { estado: 'sem-chave', keyless: true, modelo: spec.modelsHint[0] || null };
-    const env = spec.envVar || ('AI_KEY_' + String(provider).toUpperCase());
-    const bruto = String(process.env[env] || '').trim();
-    if (!bruto) return { estado: 'ausente', env };
-    if (MARCADOR.test(bruto)) return { estado: 'marcador', env };
-    const modelo = String(process.env['AI_MODEL_' + String(provider).toUpperCase()] || '').trim() || spec.modelsHint[0] || null;
-    return { estado: 'ok', env, apiKey: bruto, modelo };
+    const envDeclarado = spec.envVar || ('AI_KEY_' + String(provider).toUpperCase());
+    const achada = lerEnv(envDeclarado, ...nomesDaChave(provider));
+    if (!achada) return { estado: 'ausente', env: envDeclarado };
+    const env = achada.nome;                       /* o nome que EXISTE, não o que devia existir */
+    if (MARCADOR.test(achada.valor)) return { estado: 'marcador', env };
+    const modelo = valorEnv(...nomesDoModelo(provider)) || spec.modelsHint[0] || null;
+    return { estado: 'ok', env, apiKey: achada.valor, modelo, envAlternativo: env !== envDeclarado };
   }
   function operadorPadrao() {
     /* quem tem chave de operador válida, por esta ordem; o sem-chave fica em último */
-    const ordem = String(process.env.AI_OPERATOR_ORDER || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare');
+    const ordem = valorEnv('AI_OPERATOR_ORDER', 'API_OPERATOR_ORDER') || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare';
     for (const p of ordem.split(',').map((x) => x.trim()).filter(Boolean)) {
       const k = chaveDoOperador(p);
       if (k.estado === 'ok') return { provider: p, apiKey: k.apiKey, modelo: k.modelo };
     }
-    if (String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false') {
+    if (String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false') {
       const pol = PROVIDERS.pollinations;
-      if (pol) return { provider: 'pollinations', apiKey: null, modelo: (process.env.AI_MODEL_POLLINATIONS || pol.modelsHint[0]), keyless: true };
+      if (pol) return { provider: 'pollinations', apiKey: null, modelo: (valorEnv(...nomesDoModelo('pollinations')) || pol.modelsHint[0]), keyless: true };
     }
     return null;
   }
@@ -456,7 +498,7 @@ export async function createApi(opts) {
     });
     const p = operadorPadrao();
     return { providers: out, activo: p ? { provider: p.provider, modelo: p.modelo, keyless: !!p.keyless } : null,
-      keylessFallback: String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false' };
+      keylessFallback: String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' };
   }
 
   /* Executor com a chave do operador (ou sem chave). A utilização fica registada
@@ -469,9 +511,9 @@ export async function createApi(opts) {
        inválida (401/403), a aplicação não fica sem IA: cai para o sem-chave e diz que
        caiu — nunca finge que usou a chave do operador. */
     const cadeia = [p];
-    if (!p.keyless && String(process.env.AI_KEYLESS_FALLBACK || 'true') !== 'false' && PROVIDERS.pollinations) {
+    if (!p.keyless && String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' && PROVIDERS.pollinations) {
       cadeia.push({ provider: 'pollinations', apiKey: null,
-        modelo: (process.env.AI_MODEL_POLLINATIONS || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
+        modelo: (valorEnv(...nomesDoModelo('pollinations')) || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
     }
     return async function ai(req) {
       const messages = tipo === 'research' ? promptFor(req.step && req.step.id, req.project, req.candidates) : req.messages;
@@ -480,8 +522,12 @@ export async function createApi(opts) {
         r = await complete({ provider: c.provider, apiKey: c.apiKey, model: c.modelo, messages, timeoutMs: (req && req.timeoutMs) || 30000 });
         usado = c;
         if (r.ok) break;
-        /* 400 é erro do nosso pedido: repetir noutro fornecedor não ajuda */
-        if (r.status === 400) break;
+        /* 400 é, em regra, erro do nosso pedido — repetir noutro fornecedor não
+           ajuda. Excepção medida: uma chave inválida chega como 400 em alguns
+           fornecedores (Google devolve API_KEY_INVALID assim). Nesse caso NÃO é
+           erro nosso e a aplicação não pode ficar sem IA por causa de uma chave
+           mal colada: cai para o sem-chave, como no 401. */
+        if (r.status === 400 && !/api[_ -]?key|invalid|unauthor|permission|credential|forbidden/i.test(String(r.error || ''))) break;
       }
       const caiu = !!(usado && p.provider !== usado.provider);
       let parsed = null;
@@ -928,16 +974,37 @@ export async function createApi(opts) {
         ultimaSondagemGlobal = agora;
         estadoSondagem.set(ip, porIp.concat([agora]));
         const t0 = Date.now();
+        /* a chave usada é a que a aplicação usaria de facto — a do operador, se
+           existir (é a mesma que serve os utilizadores sem chave própria) */
+        const op = operadorPadrao();
         const r = await complete({
-          provider: e.activo.provider, apiKey: null, model: e.activo.modelo,
+          provider: op ? op.provider : e.activo.provider,
+          apiKey: op ? op.apiKey : null,
+          model: op ? op.modelo : e.activo.modelo,
           messages: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000, retries: 1
         }).catch((x) => ({ ok: false, error: String(x && x.message) }));
         const ms = Date.now() - t0;
-        return json(res, 200, Object.assign(base, {
-          verificado: r.ok
-            ? { ok: true, ms: ms, amostra: String((r.text || '').trim()).slice(0, 40) }
-            : { ok: false, ms: ms, motivo: String(r.error || 'falhou') }
-        }));
+        const via = op ? (op.keyless ? 'sem-chave' : 'operador') : 'nenhuma';
+        const verificado = r.ok
+          ? { ok: true, ms: ms, via: via, fornecedor: op ? op.provider : null, amostra: String((r.text || '').trim()).slice(0, 40) }
+          : { ok: false, ms: ms, via: via, fornecedor: op ? op.provider : null, motivo: String(r.error || 'falhou').slice(0, 160) };
+        /* Se a chave do operador falhar, a pergunta seguinte é inevitável:
+           «então e a aplicação, fica sem IA?». Responde-se aqui, medindo. */
+        if (!r.ok && op && !op.keyless
+            && String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false'
+            && PROVIDERS.pollinations) {
+          const t1 = Date.now();
+          const alt = await complete({
+            provider: 'pollinations', apiKey: null,
+            model: valorEnv(...nomesDoModelo('pollinations')) || PROVIDERS.pollinations.modelsHint[0],
+            messages: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000, retries: 1
+          }).catch((x) => ({ ok: false, error: String(x && x.message) }));
+          verificado.chaveFalhou = true;
+          verificado.alternativaSemChave = alt.ok
+            ? { ok: true, ms: Date.now() - t1, nota: 'a chave do operador falhou, mas a aplicação continua a ter IA pelo fornecedor sem chave' }
+            : { ok: false, ms: Date.now() - t1, motivo: String(alt.error || 'falhou').slice(0, 160) };
+        }
+        return json(res, 200, Object.assign(base, { verificado: verificado }));
       }
 
       /* ---------- meta ---------- */

@@ -1913,3 +1913,44 @@ E. O que continua por fazer
 
    ROLLBACK: `git revert 48ac18e && git push origin main` (ou o commit anterior).
    Sem alterações de esquema nesta fase: esquema v7 mantém-se.
+
+§54.9  N O M E S  D E  V A R I Á V E L — O  D E F E I T O  Q U E  I S S O  E S C O N D I A
+   As chaves coladas no painel do Render foram API_KEY_GEMINI, API_KEY_Groq e
+   API_KEY_OpenRouter. O código procurava AI_KEY_GEMINI / AI_KEY_GROQ /
+   AI_KEY_OPENROUTER. Em Linux o ambiente distingue maiúsculas: as chaves
+   existiam, a aplicação dizia «sem IA» e NÃO havia erro nenhum.
+   PASS medido em produção antes da correção: /api/ai/estado →
+        modo «sem-chave» · chavesDoOperador 0 (com três chaves no ambiente)
+
+   Correção (server/api.mjs): o ambiente é lido por nome normalizado — sem
+   separadores e sem caixa — e aceita AI_ e API_:
+     AI_KEY_GEMINI = API_KEY_GEMINI = api_key_gemini = apiKeyGemini
+   Modelos idem (AI_MODEL_ / API_MODEL_), precedência de AI_OPERATOR_ORDER e
+   AI_KEYLESS_FALLBACK também tolerante, e valores com aspas/espaços são limpos.
+   O nome encontrado é o que se reporta, não o que o render.yaml declara.
+
+   PASS «API_KEY_Gemini (qualquer caixa) é reconhecida» → modo operador,
+        fornecedor gemini, 1 chave, valor não devolvido no corpo
+   PASS «marcador e aspas» → SUBSTITUIR conta como ausente · aspas limpas
+   PASS «API_MODEL_Gemini respeitado» → modelo gemini-1.5-flash
+
+   Segunda correção, encontrada ao testar com uma chave inválida: o Google
+   devolve chave inválida como HTTP 400, e o 400 estava na lista de «erro nosso,
+   não repetir noutro fornecedor» — uma chave mal colada desligava a IA da
+   instância inteira. Passa a haver excepção quando a mensagem é de credencial,
+   e a sondagem passa a MEDIR a alternativa:
+     "verificado":{"ok":false,"via":"operador","motivo":"HTTP 400",
+       "chaveFalhou":true,"alternativaSemChave":{"ok":true,"ms":314,...}}
+
+§54.10  C O R R I D A  D E  C O R R I D A  N U M  T E S T E  D E  I N T E R F A C E
+   tests/account-ui.mjs lia o ecrã no instante em que a mensagem «Prova registada»
+   aparecia. A mensagem vem do POST; a lista de provas é repintada depois de um
+   segundo GET. Passou durante várias corridas e depois começou a falhar sem
+   nenhuma alteração no código que desenha a lista — era uma corrida, não um
+   defeito do produto. Passou a esperar pela origem na lista, com prazo de 15 s.
+
+   SUÍTE FINAL DESTA FASE
+   PASS npm test → 508 linhas PASS · 0 falhas (29 ficheiros)
+   PASS npm run test:ui → 10/10 · 5/5 · 7/7 · 18/18 · 6/6 · 10/10 · 12/12 ·
+        16/16 · 15/15
+   PASS node tools/status.mjs --check → estado coerente · 109 rotas

@@ -380,6 +380,12 @@ await t('projecto aberto mostra provas, origens independentes e estado sugerido'
   await fillByPlaceholder('o trecho exacto', 'O relatório confirma a transferência de 12 milhões de euros.');
   await clickText('#accroot .btn', 'Registar prova');
   await waitText(/Prova registada/, 'prova não foi aceite');
+  /* «Prova registada» é a resposta do servidor; a lista é repintada depois de um
+     novo GET (reloadDetail). Ler o ecrã nesse instante é uma corrida — espera-se
+     pela origem na lista, com prazo, em vez de assumir que já lá está. */
+  try {
+    await waitFor(() => /src:exemplo\.pt/.test((document.getElementById('accroot') || {}).textContent || ''), 15000);
+  } catch { /* cai no diagnóstico abaixo, com o estado real */ }
   const txt1 = await p.textContent('#accroot');
   if (!/src:exemplo\.pt/.test(txt1)) {
     const det = await p.evaluate(() => { const st = window.VN.accountUI.getState(); return { id: st.project && st.project.id, provas: (st.provas || []).length, texto: (document.getElementById('accroot') || {}).textContent.slice(0, 400) }; });

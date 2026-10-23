@@ -306,3 +306,21 @@ Formato: data · decisão · motivo · o que foi recusado.
     1 por minuto no servidor e 3 por hora por IP; sem o parâmetro não há chamada externa nenhuma
     (o teste mede o tempo para provar que não houve). Motivo: «configurado» e «a responder» são
     coisas diferentes — e a diferença entre as duas é exactamente onde se mente sem querer.
+
+50. **2026-10-23 · Nomes de variável lidos sem caixa e com `AI_` ou `API_`.**
+    `AI_KEY_GEMINI` e `API_KEY_Gemini` são a mesma coisa para a aplicação; idem para os modelos.
+    O que existe no ambiente é o que conta, e o nome encontrado é o que se reporta — não o que o
+    `render.yaml` declara.
+    Motivo: em Linux o ambiente distingue maiúsculas. Uma chave colada com outro nome ficava
+    invisível: aparecia no painel, a aplicação dizia «sem IA» e não havia erro nenhum a apontar o
+    motivo. Uma chave que existe e não serve é pior do que uma chave que falta, porque a segunda
+    sabe-se.
+
+51. **2026-10-23 · Chave inválida em 400 também cai para o fornecedor sem chave.**
+    O `400` continua a ser «erro nosso, não vale a pena repetir noutro lado» — excepto quando a
+    mensagem é de chave/credencial (`API_KEY_INVALID`, `invalid api key`, `unauthorized`…). Nesse
+    caso a cadeia segue para o fornecedor sem chave, e a resposta da sondagem declara
+    `chaveFalhou:true` com o resultado da alternativa.
+    Motivo: o Google devolve chave inválida como `400`. Sem esta excepção, colar uma chave com um
+    caracter a mais desligava a IA da instância inteira — e o utilizador via «a pesquisa falhou»
+    sem saber que a culpa era de uma vírgula.

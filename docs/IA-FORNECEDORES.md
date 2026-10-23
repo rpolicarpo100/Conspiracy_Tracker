@@ -34,6 +34,30 @@ AI_OPERATOR_ORDER = groq,gemini,cerebras,openrouter,mistral,github,nvidia,samban
 
 (predefinida; podes mudar a ordem na mesma variável).
 
+### O nome da variável não precisa de ser o que está no exemplo
+
+A aplicação aceita o nome escrito de qualquer destas maneiras — **caixa e
+separadores são indiferentes**, e tanto serve `AI_` como `API_`:
+
+```
+AI_KEY_GEMINI      AI_KEY_GROQ        AI_KEY_OPENROUTER
+API_KEY_GEMINI     API_KEY_GROQ       API_KEY_OPENROUTER
+api_key_gemini     API_KEY_Groq       apiKeyOpenRouter … (e as variantes com
+                                      ou sem underscore, em qualquer caixa)
+```
+
+O mesmo vale para os modelos: `AI_MODEL_GEMINI`, `API_MODEL_GEMINI`, … Se a
+chave do modelo não for indicada, usa-se o primeiro modelo do catálogo.
+
+Porque é que isto importa: em Linux o ambiente **distingue maiúsculas**. Uma
+chave colada como `API_KEY_Groq` era invisível para um código que procurava
+`AI_KEY_GROQ` — a variável aparecia no painel, a aplicação dizia «sem IA», e não
+havia erro nenhum a apontar o motivo. As duas convenções passaram a ser lidas.
+
+Se quiseres saber qual foi o nome que a aplicação encontrou, `GET /api/ai/estado`
+não o diz (é inventário de infraestrutura), mas *Conta → Chaves de IA* mostra o
+estado de cada fornecedor: `configurada`, `por preencher` ou `ausente`.
+
 ### Marcador de «ainda não preenchido»
 
 Se uma variável começar por `SUBSTITUIR`, `<` ou `COLA`, é tratada como **não
@@ -68,6 +92,16 @@ respondeu. Para ter a prova:
 ```bash
 curl -s "https://conspiracy-aitracker.onrender.com/api/ai/estado?probe=1"
 # → "verificado":{"ok":true,"ms":2416,"amostra":"ok"}
+```
+
+Se a chave do operador estiver errada, a resposta diz isso **e** mede a
+alternativa, para responder logo à pergunta seguinte:
+
+```json
+"verificado":{"ok":false,"via":"operador","fornecedor":"gemini","motivo":"HTTP 400",
+  "chaveFalhou":true,
+  "alternativaSemChave":{"ok":true,"ms":314,
+    "nota":"a chave do operador falhou, mas a aplicação continua a ter IA pelo fornecedor sem chave"}}
 ```
 
 O que é enviado é uma frase fixa e pública — `«Responda apenas: ok»` —, nenhum

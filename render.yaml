@@ -51,6 +51,9 @@ services:
         value: /opt/render/project/src/vendor/ocr
 
       # ---------------- chaves de IA do operador (fase 11) ----------------
+      # O NOME não precisa de ser exactamente este: a aplicação lê o ambiente sem
+      # distinguir maiúsculas e aceita AI_ ou API_ (AI_KEY_GROQ = API_KEY_Groq =
+      # api_key_groq). Valores colados com aspas ou espaços são limpos.
       # Cada uma é OPCIONAL. `sync: false` = a variável aparece no painel do Render
       # com o nome certo e o valor é colado lá (nunca no repositório). Só a primeira
       # preenchida é usada; a ordem está em AI_OPERATOR_ORDER.

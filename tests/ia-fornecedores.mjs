@@ -31,7 +31,10 @@ const ok = (c, m) => { if (!c) throw new Error(m || 'falhou'); };
 const skip = (why) => { const e = new Error('SKIP: ' + why); e.skip = true; throw e; };
 
 const ENVS = Object.values(PROVIDERS).map((p) => p.envVar).filter(Boolean)
-  .concat(['AI_OPERATOR_ORDER', 'AI_KEYLESS_FALLBACK', 'AI_MODEL_POLLINATIONS']);
+  .concat(['AI_OPERATOR_ORDER', 'AI_KEYLESS_FALLBACK', 'AI_MODEL_POLLINATIONS'])
+  /* nomes alternativos: a leitura do ambiente é tolerante a caixa e a AI_/API_,
+     por isso um nome destes deixado no ambiente mudaria o resultado dos testes */
+  .concat(Object.values(PROVIDERS).map((p) => p.envVar || '').filter(Boolean).map((e) => e.replace(/^AI_KEY_/, 'API_KEY_')));
 const guardar = {};
 ENVS.forEach((k) => { guardar[k] = process.env[k]; delete process.env[k]; });
 const repor = () => ENVS.forEach((k) => { if (guardar[k] === undefined) delete process.env[k]; else process.env[k] = guardar[k]; });
@@ -260,6 +263,40 @@ await t('sondagem real · só com ?probe=1, e com limites (nunca por acidente)',
   const p2 = await fetch(BASE + '/api/ai/estado?probe=1');
   ok(p2.status === 429, 'segunda sondagem não foi limitada: HTTP ' + p2.status);
   return 'sem probe ' + ms + ' ms · sondagem ' + (j1.verificado.ok ? 'ok em ' + j1.verificado.ms + ' ms' : 'falhou: ' + j1.verificado.motivo) + ' · segunda 429';
+});
+
+await t('nome alternativo · API_KEY_Gemini (qualquer caixa) é reconhecida', async () => {
+  /* o que estava escrito no painel do Render era API_KEY_GEMINI / API_KEY_Groq,
+     e o código só procurava AI_KEY_GEMINI: a chave existia e era invisível. */
+  process.env['API_KEY_Gemini'] = 'chave-falsa-nao-real-123';
+  const r = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(r.modo === 'operador', 'modo: ' + r.modo);
+  ok(r.fornecedor === 'gemini', 'fornecedor: ' + r.fornecedor);
+  ok(r.chavesDoOperador === 1, 'chaves contadas: ' + r.chavesDoOperador);
+  ok(!JSON.stringify(r).includes('chave-falsa-nao-real'), 'a chave saiu no corpo');
+  delete process.env['API_KEY_Gemini'];
+  return 'API_KEY_Gemini → fornecedor gemini, 1 chave, valor não devolvido';
+});
+
+await t('nome alternativo · marcador e aspas são tratados como ausente/limpo', async () => {
+  process.env['api_key_gemini'] = 'SUBSTITUIR-no-painel';
+  const m = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(m.chavesDoOperador === 0 && m.modo === 'sem-chave', 'marcador contado como chave: ' + JSON.stringify(m));
+  process.env['api_key_gemini'] = '  "chave-com-aspas"  ';
+  const a = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(a.chavesDoOperador === 1, 'valor com aspas não foi aproveitado: ' + JSON.stringify(a));
+  ok(!JSON.stringify(a).includes('chave-com-aspas'), 'valor devolvido no corpo');
+  delete process.env['api_key_gemini'];
+  return 'marcador contado como ausente · aspas limpas · valor nunca devolvido';
+});
+
+await t('nome alternativo · o modelo também aceita API_MODEL_', async () => {
+  process.env['API_KEY_Gemini'] = 'chave-falsa-nao-real-456';
+  process.env['API_MODEL_Gemini'] = 'gemini-1.5-flash';
+  const r = await (await fetch(BASE + '/api/ai/estado')).json();
+  ok(r.modelo === 'gemini-1.5-flash', 'modelo: ' + r.modelo);
+  delete process.env['API_KEY_Gemini']; delete process.env['API_MODEL_Gemini'];
+  return 'API_MODEL_Gemini respeitado';
 });
 
 srv.close();
