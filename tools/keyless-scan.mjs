@@ -34,12 +34,16 @@ const temFlag = (nome) => process.argv.includes('--' + nome);
 const LIMITE = Number(arg('limit', '60'));
 const INTERVALO = Number(arg('interval', '400'));
 const OUT = arg('out', 'docs/APIS-sem-chave.json');
+const MD = arg('md', '');                       /* resumo em Markdown, gerado dos dados */
+const SO_IDS = String(arg('ids', '')).split(',').map((x) => x.trim()).filter(Boolean);
 const SO_GRATUITOS = temFlag('free-only');
 
 const catalogo = await (await fetch('https://models.dev/api.json', { headers: { accept: 'application/json' } })).json();
 const todos = Object.values(catalogo).filter((p) => p && p.id && p.api && /^https:\/\//.test(String(p.api)));
 const comGratis = todos.filter((p) => Object.values(p.models || {}).some((m) => m && m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0));
-const alvos = (SO_GRATUITOS ? comGratis : todos).slice(0, LIMITE);
+let alvos = (SO_GRATUITOS ? comGratis : todos);
+if (SO_IDS.length) alvos = alvos.filter((p) => SO_IDS.includes(p.id));
+alvos = alvos.slice(0, LIMITE);
 
 process.stderr.write('catálogo: ' + todos.length + ' com API https · ' + comGratis.length + ' com modelos a preço 0\n');
 process.stderr.write('a sondar: ' + alvos.length + ' · ' + INTERVALO + ' ms entre pedidos\n');
@@ -88,6 +92,81 @@ const relatorio = {
   resultados
 };
 writeFileSync(OUT, JSON.stringify(relatorio, null, 2));
+
+/* Resumo em Markdown gerado A PARTIR DOS DADOS, para nunca haver um documento
+   escrito à mão a envelhecer ao lado de um JSON actualizado. */
+if (MD) {
+  const g = relatorio.geracao;
+  const linhas = [];
+  linhas.push('# APIs de IA «sem chave» — o que foi medido');
+  linhas.push('');
+  linhas.push('Relatório gerado por `node tools/keyless-scan.mjs` em **' + relatorio.generatedAt.slice(0, 10) +
+    '** (' + relatorio.generatedAt + '). Dados completos: [`docs/APIS-sem-chave.json`](APIS-sem-chave.json).');
+  linhas.push('');
+  linhas.push('Este ficheiro é **gerado automaticamente** pelo workflow `.github/workflows/keyless-scan.yml`.');
+  linhas.push('Não editar à mão: a próxima execução substitui-o.');
+  linhas.push('');
+  linhas.push('## Método');
+  linhas.push('');
+  linhas.push('| etapa | pedido | o que prova |');
+  linhas.push('|---|---|---|');
+  linhas.push('| 1 | `GET <base>/models`, sem `Authorization`, sem cookies, 8 s de limite | que a **lista de modelos** é pública |');
+  linhas.push('| 2 (confirmar) | `POST <base>/chat/completions`, `max_tokens: 1`, sem `Authorization` | que a **geração** é aberta — só esta etapa conclui «gera sem chave» |');
+  linhas.push('');
+  linhas.push('Fonte dos candidatos: `https://models.dev/api.json`. Nada de CAPTCHA, paywall ou *user-agent* falsificado.');
+  linhas.push('');
+  linhas.push('## Resultado');
+  linhas.push('');
+  linhas.push('| etapa 1 — catálogo público | nº |');
+  linhas.push('|---|---|');
+  linhas.push('| candidatos sondados | ' + relatorio.resultados.length + ' |');
+  linhas.push('| `200` na lista de modelos («sem-chave») | ' + (conta['sem-chave'] || 0) + ' |');
+  linhas.push('| `401`/`403` («exige-chave») | ' + (conta['exige-chave'] || 0) + ' |');
+  linhas.push('| indeterminado | ' + (conta.indeterminado || 0) + ' |');
+  linhas.push('');
+  if (g) {
+    const geram = g.resultados.filter((x) => x.verdict === KEYLESS_VERDICTS.geraSemChave);
+    const recusaram = g.resultados.filter((x) => x.verdict !== KEYLESS_VERDICTS.geraSemChave);
+    linhas.push('| etapa 2 — geração sem chave | nº |');
+    linhas.push('|---|---|');
+    linhas.push('| endpoints confirmados na etapa 2 | ' + g.resultados.length + ' |');
+    linhas.push('| **geram sem chave** | **' + geram.length + '** |');
+    linhas.push('| recusaram | ' + recusaram.length + ' |');
+    linhas.push('');
+    if (geram.length) {
+      linhas.push('### Geram sem chave (confirmado por geração real)');
+      linhas.push('');
+      linhas.push('| fornecedor | endpoint | modelo |');
+      linhas.push('|---|---|---|');
+      geram.forEach((x) => linhas.push('| ' + x.id + ' | `' + x.base + '` | `' + (x.model || '—') + '` |'));
+      linhas.push('');
+    }
+    if (recusaram.length) {
+      linhas.push('### Catálogo público mas geração fechada');
+      linhas.push('');
+      linhas.push('| fornecedor | HTTP |');
+      linhas.push('|---|---|');
+      recusaram.forEach((x) => linhas.push('| ' + x.id + ' | ' + (x.status == null ? '—' : x.status) + ' |'));
+      linhas.push('');
+    }
+  }
+  linhas.push('## Conclusão');
+  linhas.push('');
+  const semChave = relatorio.resultados.filter((r) => r.verdict === KEYLESS_VERDICTS.semChave).length;
+  const geramN = g ? g.resultados.filter((x) => x.verdict === KEYLESS_VERDICTS.geraSemChave).length : 0;
+  linhas.push(semChave === geramN
+    ? 'Todos os endpoints com catálogo público confirmaram a geração sem chave.'
+    : '**Uma lista de modelos pública não é uma API de geração aberta.** ' + semChave +
+      ' endpoints responderam `200` na lista de modelos e apenas ' + geramN +
+      ' aceitaram gerar sem credencial. A conclusão «gera sem chave» só é tirada quando há uma resposta gerada.');
+  linhas.push('');
+  linhas.push('O único endpoint usado pela aplicação para analisar documentos é o declarado em');
+  linhas.push('`server/providers.mjs` (`pollinations`), com o prompt publicado em `docs/PRIVACIDADE.md`.');
+  linhas.push('Este relatório **não** acrescenta fornecedores automaticamente: um endpoint novo exige');
+  linhas.push('revisão humana e declaração de privacidade antes de receber qualquer conteúdo.');
+  linhas.push('');
+  writeFileSync(MD, linhas.join('\n'));
+}
 
 const sem = resultados.filter((r) => r.verdict === KEYLESS_VERDICTS.semChave);
 console.log('\nsem chave (' + sem.length + '):');

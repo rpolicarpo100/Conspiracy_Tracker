@@ -731,6 +731,21 @@ await t('chaves do operador: estado visível, variável nomeada e link para obte
   return info.linhas.length + ' fornecedores · ' + info.links.length + ' ligações';
 });
 
+await t('varrimento «sem chave» aparece na interface com a data e o que NÃO decide', async () => {
+  const info = await p.evaluate(() => {
+    const box = document.querySelector('[data-vn="varrimento-sem-chave"]');
+    return box ? box.textContent : null;
+  });
+  if (!info) throw new Error('sem caixa de varrimento «sem chave» no separador de chaves');
+  if (!/APIs sem chave/.test(info)) throw new Error('sem título: ' + info.slice(0, 80));
+  /* ou há relatório com data, ou diz que não há — nunca uma caixa vazia */
+  if (!/\d{4}-\d{2}-\d{2}|sem relatório|indisponível|nenhum endpoint/.test(info)) {
+    throw new Error('não diz nem a data nem a ausência: ' + info.slice(0, 120));
+  }
+  if (!/não o acrescenta à aplicação/.test(info)) throw new Error('não declara que descoberto ≠ usado');
+  return info.replace(/\s+/g, ' ').slice(0, 110);
+});
+
 }   // fim das capturas (ver capturasOk)
 await B.close();
 srv.kill('SIGTERM');

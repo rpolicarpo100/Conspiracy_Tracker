@@ -16,8 +16,8 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 110
-- ficheiros de teste: 53 · blocos de teste declarados (`await t`): 626 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 111
+- ficheiros de teste: 54 · blocos de teste declarados (`await t`): 638 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -25,7 +25,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | --- | --- | --- |
 | `tests/_env.mjs` | 0 | servidor/módulo |
 | `tests/_ui-entrada.mjs` | 0 | servidor/módulo |
-| `tests/account-ui.mjs` | 18 | interface (Playwright) |
+| `tests/account-ui.mjs` | 19 | interface (Playwright) |
 | `tests/agents-p3.mjs` | 16 | servidor/módulo |
 | `tests/agents-ui.mjs` | 5 | interface (Playwright) |
 | `tests/agents.mjs` | 18 | servidor/módulo |
@@ -47,6 +47,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/fontes.mjs` | 23 | servidor/módulo |
 | `tests/graph.mjs` | 13 | servidor/módulo |
 | `tests/ia-fornecedores.mjs` | 22 | servidor/módulo |
+| `tests/keyless.mjs` | 11 | servidor/módulo |
 | `tests/mfa-publico.mjs` | 0 | servidor/módulo |
 | `tests/mfa-ui.mjs` | 10 | interface (Playwright) |
 | `tests/modelos.mjs` | 12 | servidor/módulo |
@@ -79,7 +80,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: a792832 fase 12: rotação automática de IA por tokens disponíveis + workflow horário
+- último commit: ebc874f docs: §55 (rotação por tokens), §8 em IA-FORNECEDORES e decisões 54-55
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 32 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)

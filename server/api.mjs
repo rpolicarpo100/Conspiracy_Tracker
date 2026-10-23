@@ -5,6 +5,7 @@
    nada devolve chaves, hashes ou tokens de outros utilizadores.
    ===================================================================== */
 import crypto from 'node:crypto';
+import fsSync from 'node:fs';
 import { createStore } from './store.mjs';
 import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, newToken, publicUser } from './auth.mjs';
 import { keyVault } from './crypto-keys.mjs';
@@ -972,6 +973,51 @@ export async function createApi(opts) {
           ok: ready, status: ready ? 'ready' : 'degraded', checks, version: APP_VERSION, now: now(),
           /* um modo só-de-leitura é dito na cara, não escondido em /health */
           aviso: readOnly ? 'outra instância detém a escrita nesta pasta: esta responde a leituras e recusa alterações' : null
+        });
+      }
+
+      /* ---------- varrimento «sem chave» (relatório guardado pelo workflow) ----------
+         O workflow .github/workflows/keyless-scan.yml corre todas as semanas, sonda os
+         fornecedores do catálogo público e guarda docs/APIS-sem-chave.json. Esta rota
+         serve esse relatório — é a parte que faltava: sem isto, o varrimento «guardava»
+         num ficheiro que ninguém conseguia ver a partir da aplicação.
+
+         Regras: público (não há dados de utilizador), só leitura, e a resposta diz o
+         que foi MEDIDO e o que NÃO foi decidido — encontrar um endpoint aberto não o
+         transforma num fornecedor da aplicação. */
+      if (p === '/api/ai/keyless' && method === 'GET') {
+        const ficheiro = new URL('../docs/APIS-sem-chave.json', import.meta.url);
+        let bruto = null;
+        try { bruto = fsSync.readFileSync(ficheiro, 'utf8'); } catch { /* não existe */ }
+        if (!bruto) {
+          return json(res, 404, { ok: false,
+            error: { code: 404, message: 'ainda não existe relatório guardado',
+              how: 'correr o workflow «IA — varrimento sem chave» ou, localmente: node tools/keyless-scan.mjs --confirmar' },
+            aviso: 'sem relatório não se afirma nada sobre fornecedores sem chave' });
+        }
+        let dados = null;
+        try { dados = JSON.parse(bruto); } catch { dados = null; }
+        if (!dados) {
+          return json(res, 500, { ok: false, error: { code: 500, message: 'o relatório guardado não é JSON válido' } });
+        }
+        const geracao = (dados.geracao && Array.isArray(dados.geracao.resultados)) ? dados.geracao.resultados : [];
+        const geram = geracao.filter((g) => g.verdict === 'gera-sem-chave')
+          .map((g) => ({ id: g.id, base: g.base, model: g.model || null, at: g.at || null }));
+        const etaria = Date.now() - Date.parse(dados.generatedAt || 0);
+        const dias = Math.floor(etaria / 86400000);
+        return json(res, 200, {
+          ok: true,
+          geradoEm: dados.generatedAt || null,
+          idadeDias: isFinite(dias) ? dias : null,
+          metodo: dados.metodo || null,
+          fonte: dados.fonte || null,
+          resumo: dados.resumo || null,
+          geracao: dados.geracao ? { veredictos: dados.geracao.veredictos || null, confirmados: geracao.length } : null,
+          /* o que é utilizável de facto: só quem gerou uma resposta sem credencial */
+          geramSemChave: geram,
+          emUsoPelaAplicacao: Object.keys(PROVIDERS).filter((k) => PROVIDERS[k].keyless),
+          nota: 'encontrar um endpoint aberto NÃO o acrescenta à aplicação: só o fornecedor declarado em server/providers.mjs recebe conteúdo, e o prompt enviado está em docs/PRIVACIDADE.md',
+          aviso: dias > 45 ? 'relatório com ' + dias + ' dias: pode estar desactualizado — o workflow corre às segundas-feiras' : null
         });
       }
 

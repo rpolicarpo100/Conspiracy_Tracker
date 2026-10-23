@@ -1,54 +1,67 @@
 # APIs de IA «sem chave» — o que foi medido
 
-Relatório gerado por `node tools/keyless-scan.mjs --limit=45 --confirmar` em
-**2026-10-22**. Dados completos, com data e método por linha:
-[`docs/APIS-sem-chave.json`](APIS-sem-chave.json).
+Relatório gerado por `node tools/keyless-scan.mjs` em **2026-10-23** (2026-10-23T06:53:39.170Z). Dados completos: [`docs/APIS-sem-chave.json`](APIS-sem-chave.json).
+
+Este ficheiro é **gerado automaticamente** pelo workflow `.github/workflows/keyless-scan.yml`.
+Não editar à mão: a próxima execução substitui-o.
 
 ## Método
 
 | etapa | pedido | o que prova |
 |---|---|---|
-| 1 | `GET <base>/models`, sem `Authorization`, sem cookies, 8 s de limite, 300 ms entre pedidos | que a **lista de modelos** é pública |
-| 2 (`--confirmar`) | `POST <base>/chat/completions`, `max_tokens: 1`, sem `Authorization` | que a **geração** é aberta — só esta etapa conclui «gera sem chave» |
+| 1 | `GET <base>/models`, sem `Authorization`, sem cookies, 8 s de limite | que a **lista de modelos** é pública |
+| 2 (confirmar) | `POST <base>/chat/completions`, `max_tokens: 1`, sem `Authorization` | que a **geração** é aberta — só esta etapa conclui «gera sem chave» |
 
-Fonte da lista de candidatos: `https://models.dev/api.json` (232 fornecedores com
-API https). Nada de CAPTCHA, paywall ou *user-agent* falsificado.
+Fonte dos candidatos: `https://models.dev/api.json`. Nada de CAPTCHA, paywall ou *user-agent* falsificado.
 
 ## Resultado
 
 | etapa 1 — catálogo público | nº |
 |---|---|
-| candidatos sondados (45 + 1 controlo) | 46 |
-| `200` na lista de modelos («sem-chave») | 13 |
-| `401`/`403` («exige-chave») | 23 |
-| indeterminado (`5xx`, sem JSON, rede) | 10 |
+| candidatos sondados | 46 |
+| `200` na lista de modelos («sem-chave») | 18 |
+| `401`/`403` («exige-chave») | 24 |
+| indeterminado | 4 |
 
 | etapa 2 — geração sem chave | nº |
 |---|---|
-| endpoints confirmados | 13 |
-| **geram sem chave** | **1 — o controlo (Pollinations)** |
-| recusaram (`401`/`403`) | 11 |
-| limite de pedidos (`429`, Chutes) | 1 |
+| endpoints confirmados na etapa 2 | 18 |
+| **geram sem chave** | **1** |
+| recusaram | 17 |
+
+### Geram sem chave (confirmado por geração real)
+
+| fornecedor | endpoint | modelo |
+|---|---|---|
+| pollinations-control | `https://text.pollinations.ai/openai` | `openai-fast` |
+
+### Catálogo público mas geração fechada
+
+| fornecedor | HTTP |
+|---|---|
+| standardcompute | 401 |
+| umans-ai-coding-plan | 401 |
+| moark | 401 |
+| freemodel | 403 |
+| submodel | — |
+| ofox | 401 |
+| nano-gpt | 401 |
+| vispark | 401 |
+| synthetic | 401 |
+| meganova | 401 |
+| prime | 401 |
+| pioneer | 401 |
+| iteracompute | 401 |
+| hyper | 401 |
+| bee | 401 |
+| sarvam | 403 |
+| io-net | 401 |
 
 ## Conclusão
 
-**Uma lista de modelos pública não é uma API de geração aberta.** Os 12
-candidatos que responderam `200` na etapa 1 recusaram a geração com
-`401`/`403`/`429`. O único endpoint que gerou sem chave foi aquele que já se
-sabia funcionar — e é por isso que ele estava na lista como **controlo**: se a
-sonda não o detectasse, o «0» seria suspeito, não conclusivo.
+**Uma lista de modelos pública não é uma API de geração aberta.** 18 endpoints responderam `200` na lista de modelos e apenas 1 aceitaram gerar sem credencial. A conclusão «gera sem chave» só é tirada quando há uma resposta gerada.
 
-Consequência para a aplicação: existe **um** fornecedor sem chave utilizável
-(Pollinations, com limite de 1 pedido/30 s por IP e sem SLA). Para uso sério,
-uma chave gratuita de outro fornecedor é melhor — ver
-[`docs/IA-FORNECEDORES.md`](IA-FORNECEDORES.md).
-
-## Como repetir
-
-```
-node tools/keyless-scan.mjs --limit=45 --confirmar
-node tools/keyless-scan.mjs --limit=20 --free-only        # só fornecedores com modelos a preço 0
-```
-
-O varrimento **não** corre no arranque da aplicação nem em produção: é uma
-ferramenta de auditoria, corrida a pedido, com um pedido por endpoint.
+O único endpoint usado pela aplicação para analisar documentos é o declarado em
+`server/providers.mjs` (`pollinations`), com o prompt publicado em `docs/PRIVACIDADE.md`.
+Este relatório **não** acrescenta fornecedores automaticamente: um endpoint novo exige
+revisão humana e declaração de privacidade antes de receber qualquer conteúdo.

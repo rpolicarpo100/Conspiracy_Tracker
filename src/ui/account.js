@@ -67,6 +67,10 @@
       else S.projects = [];
       const pv = await api('/api/providers');
       if (pv.ok) { S.providers = pv.json.providers; S.operatorKeys = pv.json.operatorKeys || null; }
+      const kl = await api('/api/ai/keyless');
+      /* api() devolve {status, ok, json}: o relatório vem em .json. Um 404 aqui é
+         informação («ainda não há varrimento guardado»), não um erro de rede. */
+      S.keyless = kl.ok ? kl.json : { ok: false, error: kl.error, status: kl.status };
       const se = await api('/api/auth/sessions');
       if (se.ok) S.sessions = se.json.sessions;
       const mf = await api('/api/auth/mfa');
@@ -79,7 +83,7 @@
         if (a.ok) S.audit = a.json.events;
       }
     } else {
-      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null; S.operatorKeys = null;
+      S.projects = []; S.providers = []; S.sessions = []; S.metrics = null; S.users = []; S.audit = []; S.mfa = null; S.operatorKeys = null; S.keyless = null;
       S.detail = null;
     }
     if (my !== gen) return;
@@ -1550,6 +1554,22 @@
         el('tbody', {}, linhas)
       ]));
     }
+
+    /* ---- varrimento «sem chave»: o que foi medido lá fora, e o que NÃO foi decidido ---- */
+    const kl = S.keyless;
+    const caixaKl = el('div', { class: 'warnbox', style: 'margin:8px 0', 'data-vn': 'varrimento-sem-chave' }, [
+      el('b', { text: 'APIs sem chave (varrimento externo): ' }),
+      el('span', { text: !kl
+        ? 'sem relatório guardado — correr o workflow «IA — varrimento sem chave».'
+        : (kl.ok === false ? 'relatório indisponível: ' + ((kl.error && kl.error.message) || 'erro')
+          : (kl.geramSemChave || []).length === 0
+            ? 'nenhum endpoint gerou sem chave no último varrimento (' + (kl.geradoEm || '').slice(0, 10) + ').'
+            : (kl.geramSemChave || []).length + ' endpoint(s) geraram sem chave · relatório de ' + (kl.geradoEm || '').slice(0, 10) +
+              (kl.idadeDias > 45 ? ' (desactualizado)' : '')) })
+    ]);
+    caixaKl.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-top:4px', text:
+      'Encontrar um endpoint aberto não o acrescenta à aplicação: só os fornecedores declarados em server/providers.mjs recebem conteúdo, e o prompt enviado está em docs/PRIVACIDADE.md.' }));
+    root.appendChild(caixaKl);
 
     const f = DRAFT.key;
     if (!f.provider) f.provider = (S.providers[0] || {}).id || 'groq';

@@ -1,0 +1,151 @@
+# Varrimento «sem chave» — que APIs de IA respondem sem credencial, e guarda o resultado
+#
+# Porque existe: havia só uma ferramenta manual (tools/keyless-scan.mjs). Sem
+# ninguém a correr, o relatório guardado envelhece — e a pergunta «existe alguma
+# API de IA que funcione sem chave?» ficava respondida com dados do mês passado.
+#
+# O que faz, todas as semanas:
+#   1. lê o catálogo público models.dev;
+#   2. sonda cada candidato — etapa 1: GET /models sem Authorization;
+#      etapa 2 (confirmar): POST /chat/completions com max_tokens:1, sem chave;
+#   3. guarda docs/APIS-sem-chave.json (dados) e docs/APIS-sem-chave.md (resumo
+#      gerado dos dados) e faz commit apenas se algo mudou;
+#   4. publica um quadro no resumo da execução e guarda os ficheiros como artefacto.
+#
+# Duas regras que este workflow NÃO quebra:
+#   · o CONTROLTO tem de ser detectado. Se o endpoint que se sabe funcionar sem
+#     chave (Pollinations) não for detectado, a sonda está avariada e o workflow
+#     FALHA — um «0 sem chave» nunca é apresentado como conclusão de uma sonda
+#     que não detecta um caso conhecido;
+#   · o resultado NÃO acrescenta fornecedores à aplicação. Encontrar um endpoint
+#     aberto não é autorização para lhe enviar documentos: isso exige revisão
+#     humana e declaração em docs/PRIVACIDADE.md (ver server/providers.mjs).
+name: IA — varrimento «sem chave» e relatório guardado
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'      # segundas-feiras, 04:23 UTC (fora dos outros crons)
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: 'Quantos fornecedores sondar'
+        required: false
+        default: '45'
+      confirmar:
+        description: 'Confirmar geração real (max_tokens:1) nos candidatos'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write             # para guardar o relatório actualizado no repositório
+
+concurrency:
+  group: keyless-scan
+  cancel-in-progress: false
+
+jobs:
+  varrer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências (o varrimento corre no servidor, não no browser)
+        run: npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund
+
+      - name: Varrer e guardar (JSON + resumo Markdown gerado dos dados)
+        env:
+          LIMITE: ${{ github.event.inputs.limite || '45' }}
+          CONFIRMAR: ${{ github.event.inputs.confirmar || 'true' }}
+        run: |
+          set -o pipefail
+          FLAG=""
+          [ "$CONFIRMAR" = "true" ] && FLAG="--confirmar"
+          echo "a sondar $LIMITE fornecedores · confirmar=$CONFIRMAR"
+          node tools/keyless-scan.mjs --limit="$LIMITE" --interval=400 $FLAG \
+            --out=docs/APIS-sem-chave.json --md=docs/APIS-sem-chave.md 2>&1 | tee /tmp/scan.log
+          echo "--- fim do varrimento ---"
+
+      - name: Controlo obrigatório — a sonda tem de detectar o caso que já se sabe
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          with open('docs/APIS-sem-chave.json', encoding='utf-8') as f:
+              d = json.load(f)
+          ctl = [r for r in d['resultados'] if r['id'] == 'pollinations-control']
+          if not ctl:
+              print('::error::o controlo (pollinations-control) não foi sondado')
+              sys.exit(1)
+          ger = ((d.get('geracao') or {}).get('resultados') or [])
+          ctl_ger = [g for g in ger if g['id'] == 'pollinations-control']
+          if not ctl_ger:
+              print('::warning::etapa 2 não correu: o resultado só diz que o CATÁLOGO é público')
+              sys.exit(0)
+          if ctl_ger[0]['verdict'] != 'gera-sem-chave':
+              print('::error::A SONDA ESTÁ AVARIADA: o controlo (Pollinations) não gerou sem chave. '
+                    'Um «0 sem chave» desta execução não vale como conclusão. '
+                    'Estado: %s (%s)' % (ctl_ger[0]['verdict'], ctl_ger[0].get('porque') or ''))
+              sys.exit(1)
+          print('controlo ok: o endpoint sabido respondeu e gerou sem chave')
+          PY
+
+      - name: Resumo da execução
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open('docs/APIS-sem-chave.json', encoding='utf-8') as f:
+              d = json.load(f)
+          g = d.get('geracao') or {}
+          linhas = ['## Varrimento «sem chave» — ' + d['generatedAt'], '']
+          linhas += ['| etapa 1 — catálogo público | nº |', '|---|---|',
+                     '| sondados | %d |' % len(d['resultados']),
+                     '| sem-chave | %d |' % d['resumo'].get('sem-chave', 0),
+                     '| exige chave | %d |' % d['resumo'].get('exige-chave', 0),
+                     '| indeterminado | %d |' % d['resumo'].get('indeterminado', 0), '']
+          if g:
+              geram = [x for x in g['resultados'] if x['verdict'] == 'gera-sem-chave']
+              linhas += ['| etapa 2 — geração real sem chave | nº |', '|---|---|',
+                         '| confirmados | %d |' % len(g['resultados']),
+                         '| **geram sem chave** | **%d** |' % len(geram), '']
+              if geram:
+                  linhas += ['| fornecedor | endpoint | modelo |', '|---|---|---|']
+                  linhas += ['| %s | `%s` | `%s` |' % (x['id'], x['base'], x.get('model') or '—') for x in geram]
+                  linhas += ['']
+          linhas += ['Relatório: `docs/APIS-sem-chave.json` · resumo: `docs/APIS-sem-chave.md`', '',
+                     'Nenhum fornecedor é acrescentado à aplicação por este workflow.']
+          texto = '\n'.join(linhas)
+          print(texto)
+          p = os.environ.get('GITHUB_STEP_SUMMARY')
+          if p:
+              with open(p, 'a', encoding='utf-8') as f:
+                  f.write(texto + '\n')
+          PY
+
+      - name: Guardar o relatório no repositório (só se mudou)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- docs/APIS-sem-chave.json docs/APIS-sem-chave.md; then
+            echo "sem alterações: nada a guardar (não se cria commit vazio, não se provoca deploy)"
+            exit 0
+          fi
+          git add docs/APIS-sem-chave.json docs/APIS-sem-chave.md
+          RESUMO=$(python3 -c "import json;d=json.load(open('docs/APIS-sem-chave.json'));g=(d.get('geracao') or {});print('%d catalogo publico, %d geram sem chave' % (d['resumo'].get('sem-chave',0), len([x for x in (g.get('resultados') or []) if x['verdict']=='gera-sem-chave'])))")
+          git commit -m "keyless: varrimento de $(date -u +%Y-%m-%d) — $RESUMO"
+          git push
+
+      - name: Guardar os ficheiros como artefacto (90 dias)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyless-scan-${{ github.run_id }}
+          path: |
+            docs/APIS-sem-chave.json
+            docs/APIS-sem-chave.md
+            /tmp/scan.log
+          retention-days: 90
