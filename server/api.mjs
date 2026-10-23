@@ -10,6 +10,7 @@ import { createAuth, hashPassword, verifyPassword, passwordProblems, sha256, new
 import { keyVault } from './crypto-keys.mjs';
 import { PROVIDERS, registryPublic, validateProvider, complete, listModels, breakerState, isPrivateHost } from './providers.mjs';
 import { criarResolvedorDeModelos } from './modelos.mjs';
+import { criarLivroDeQuotas, classificarFalha, limitesAnunciados } from './quota.mjs';
 import { runResearch, profileOf, PROFILES, STEPS, PROMPT_VERSION, promptFor, parseAiJson } from './research.mjs';
 import { buildReport, reportToMarkdown, SECTION_TITLES } from './report.mjs';
 import { buildGraph, validateRelation, ENTITY_TYPES, RELATION_TYPES, periodWindow, relationInWindow } from './graph.mjs';
@@ -476,6 +477,10 @@ export async function createApi(opts) {
   }
   /* modelos: nunca ficar preso a um nome que mudou (ver server/modelos.mjs) */
   const resolvedorDeModelos = criarResolvedorDeModelos({ complete, listModels });
+  /* estado observado de cada fornecedor: ok · limitado · sem-credito · chave ·
+     indisponivel. É o que permite rodar para outro fornecedor com tokens em vez de
+     insistir num que acabou de dizer que não tem. */
+  const quotasIA = criarLivroDeQuotas();
   const { completarComModelo } = resolvedorDeModelos;
 
   function operadorPadrao() {
@@ -506,36 +511,70 @@ export async function createApi(opts) {
       keylessFallback: String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' };
   }
 
+  /* Todos os fornecedores que TÊM chave, pela ordem declarada, mais o sem-chave no
+     fim. Os que estão em espera (limite de ritmo, sem saldo, chave recusada ou
+     fornecedor em baixo) ficam de fora — mas só enquanto durar a espera observada,
+     e nunca para sempre: passado o tempo, voltam a ser tentados. */
+  function cadeiaDeFornecedores({ incluirEmEspera } = {}) {
+    const ordem = String(valorEnv('AI_OPERATOR_ORDER', 'API_OPERATOR_ORDER') || 'groq,gemini,cerebras,openrouter,mistral,github,nvidia,sambanova,huggingface,cohere,cloudflare')
+      .split(',').map((x) => x.trim()).filter(Boolean);
+    const out = [];
+    for (const id of ordem) {
+      const k = chaveDoOperador(id);
+      if (k.estado !== 'ok') continue;
+      if (!incluirEmEspera && !quotasIA.disponivel(id)) continue;
+      out.push({ provider: id, apiKey: k.apiKey, modelo: k.modelo, keyless: false, env: k.env });
+    }
+    /* quaisquer outros fornecedores com chave que não estejam na ordem */
+    Object.keys(PROVIDERS).forEach((id) => {
+      if (ordem.includes(id)) return;
+      const k = chaveDoOperador(id);
+      if (k.estado !== 'ok') return;
+      if (!incluirEmEspera && !quotasIA.disponivel(id)) return;
+      out.push({ provider: id, apiKey: k.apiKey, modelo: k.modelo, keyless: false, env: k.env });
+    });
+    if (String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' && PROVIDERS.pollinations) {
+      if (incluirEmEspera || quotasIA.disponivel('pollinations')) {
+        out.push({ provider: 'pollinations', apiKey: null,
+          modelo: (valorEnv(...nomesDoModelo('pollinations')) || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
+      }
+    }
+    return out;
+  }
+
   /* Executor com a chave do operador (ou sem chave). A utilização fica registada
      com o fornecedor e o modelo reais, e com `viaOperador` para se saber de quem é
      a chave que pagou a chamada. */
   function runnerDoOperador(user, tipo) {
-    const p = operadorPadrao();
-    if (!p) return null;
-    /* Cadeia: chave do operador → fornecedor sem chave. Se a chave do operador estiver
-       inválida (401/403), a aplicação não fica sem IA: cai para o sem-chave e diz que
-       caiu — nunca finge que usou a chave do operador. */
-    const cadeia = [p];
-    if (!p.keyless && String(valorEnv('AI_KEYLESS_FALLBACK', 'API_KEYLESS_FALLBACK') || 'true') !== 'false' && PROVIDERS.pollinations) {
-      cadeia.push({ provider: 'pollinations', apiKey: null,
-        modelo: (valorEnv(...nomesDoModelo('pollinations')) || PROVIDERS.pollinations.modelsHint[0]), keyless: true });
-    }
+    const cadeia = cadeiaDeFornecedores();
+    if (!cadeia.length) return null;
+    const p = cadeia[0];
     return async function ai(req) {
       const messages = tipo === 'research' ? promptFor(req.step && req.step.id, req.project, req.candidates) : req.messages;
       let r = null; let usado = null;
+      const tentativas = [];
       for (const c of cadeia) {
         const feito = await completarComModelo({ provider: c.provider, apiKey: c.apiKey, modelo: c.modelo, mensagens: messages, timeoutMs: (req && req.timeoutMs) || 30000 });
         r = feito.r;
         usado = feito.modelo && feito.modelo !== c.modelo ? Object.assign({}, c, { modelo: feito.modelo }) : c;
-        if (r.ok) break;
-        /* 400 é, em regra, erro do nosso pedido — repetir noutro fornecedor não
-           ajuda. Excepção medida: uma chave inválida chega como 400 em alguns
-           fornecedores (Google devolve API_KEY_INVALID assim). Nesse caso NÃO é
-           erro nosso e a aplicação não pode ficar sem IA por causa de uma chave
-           mal colada: cai para o sem-chave, como no 401. */
-        if (r.status === 400 && !/api[_ -]?key|invalid|unauthor|permission|credential|forbidden/i.test(String(r.error || ''))) break;
+        if (r.ok) {
+          quotasIA.registarSucesso(c.provider, limitesAnunciados(r));
+          tentativas.push({ provider: c.provider, ok: true });
+          break;
+        }
+        /* Falhou: classificar e decidir se vale a pena outro fornecedor. */
+        const classe = classificarFalha(r);
+        quotasIA.registarFalha(c.provider, classe);
+        tentativas.push({ provider: c.provider, ok: false, tipo: classe.tipo, motivo: classe.motivo });
+        /* erro do NOSSO pedido (400 sem ser de credencial): repetir noutro lado não
+           ajuda e ainda gastaria quota de outro fornecedor */
+        const credencial = classe.tipo === 'chave';
+        if (r.status === 400 && !credencial) break;
+        /* os tipos 'limitado', 'sem-credito', 'indisponivel' e 'chave' continuam a
+           cadeia: o fornecedor seguinte tem os seus próprios tokens */
       }
-      const caiu = !!(usado && p.provider !== usado.provider);
+      const primeiro = cadeia[0] && cadeia[0].provider;
+      const caiu = !!(usado && primeiro && primeiro !== usado.provider);
       let parsed = null;
       if (r && r.ok) { const pa = parseAiJson(r.text); parsed = pa.ok ? pa.parsed : null; }
       await store.addUsage({
@@ -546,8 +585,15 @@ export async function createApi(opts) {
         completionTokens: r.usage ? r.usage.completionTokens : null,
         cost: null, latencyMs: r.latencyMs != null ? r.latencyMs : null
       }).catch(() => {});
-      if (!r || !r.ok) return { ok: false, error: 'fornecedor recusou: ' + String((r && r.error) || 'sem resposta').slice(0, 160), provider: usado && usado.provider };
-      return aplicarResposta(r, parsed, usado, p, caiu, tipo);
+      if (!r || !r.ok) {
+        return { ok: false, provider: usado && usado.provider,
+          error: 'fornecedor recusou: ' + String((r && r.error) || 'sem resposta').slice(0, 160),
+          tentativas: tentativas,
+          nota: tentativas.length > 1
+            ? 'tentados ' + tentativas.length + ' fornecedores; nenhum tinha tokens disponíveis neste momento'
+            : null };
+      }
+      return Object.assign(aplicarResposta(r, parsed, usado, p, caiu, tipo), { tentativas: tentativas });
     };
   }
   /* resposta normalizada, igual para o caminho do operador e o do utilizador */
@@ -950,6 +996,15 @@ export async function createApi(opts) {
             : (modo === 'sem-chave'
               ? 'IA pelo fornecedor público sem chave: mais lenta e partilhada; uma chave gratuita em Chaves de IA resolve'
               : null),
+          /* quais fornecedores TÊM tokens agora: a rotação é automática, isto é a
+             fotografia do que ela está a ver. Só aparece quem tem chave ou já foi
+             observado — não é um inventário de infraestrutura. */
+          fornecedores: quotasIA.relatorio().filter((f) => f.estado !== 'desconhecido' || chaveDoOperador(f.id).estado === 'ok'),
+          emRota: (function () {
+            const c = cadeiaDeFornecedores();
+            return { ordem: c.map((x) => x.provider), primeiro: c.length ? c[0].provider : null,
+              emEspera: quotasIA.relatorio().filter((f) => !f.disponivelAgora).map((f) => ({ id: f.id, estado: f.estado, motivo: f.motivo, disponivelEm: f.disponivelEm })) };
+          })(),
           verificado: null
         });
       }
@@ -1010,6 +1065,11 @@ export async function createApi(opts) {
         }).catch((x) => ({ r: { ok: false, error: String(x && x.message) }, modelo: null }));
         const r = feito.r;
         const ms = Date.now() - t0;
+        /* a sondagem é uma observação como qualquer outra: entra no livro que a
+           rotação usa. Assim uma chave que acabou de falhar não é a primeira
+           escolha do pedido seguinte. */
+        if (r && r.ok) quotasIA.registarSucesso(op.provider, limitesAnunciados(r));
+        else if (r) quotasIA.registarFalha(op.provider, classificarFalha(r));
         const via = op ? (op.keyless ? 'sem-chave' : 'operador') : 'nenhuma';
         const verificado = r.ok
           ? { ok: true, ms: ms, via: via, fornecedor: op ? op.provider : null, modelo: feito.modelo || (op && op.modelo),
@@ -3385,6 +3445,80 @@ export async function createApi(opts) {
           detail: { executed: run.executed, skipped: run.skipped, keys: run.results.map((r) => r.key), requests: run.requestsUsed, via: 'cron' } });
         return json(res, 200, Object.assign({}, run, { cron: true, at: new Date().toISOString(), counts: plano.counts,
           note: 'execução agendada: níveis 1–2 apenas, sem chave e sem custo' }));
+      }
+
+      /* ---------- rotação de IA: que fornecedores TÊM tokens agora ----------
+         Existe para o workflow agendado (.github/workflows/ai-quota.yml) e para
+         quem opera a instância. Regras, iguais às do resto do serviço:
+           · só com CRON_TOKEN no ambiente — sem ele responde 503 e não sonda nada;
+           · GET  → devolve o que já se observou, SEM gastar pedidos;
+           · POST → sonda de facto cada fornecedor com chave (texto fixo e público
+                    «Responda apenas: ok»), actualiza o livro de quotas e devolve
+                    o relatório; a rotação do tráfego real passa a evitá-los.
+         O que é enviado é sempre o mesmo texto fixo: nenhum documento do
+         utilizador passa por aqui. */
+      if (p === '/api/service/ai/rotacao' && (method === 'GET' || method === 'POST')) {
+        const esperado = process.env.CRON_TOKEN || '';
+        if (!esperado) {
+          return json(res, 503, { ok: false, configured: false,
+            reason: 'CRON_TOKEN não está definido no servidor: a rotação agendada está desligada',
+            how: 'definir CRON_TOKEN no Render e o mesmo valor no segredo do workflow' });
+        }
+        const recebido = String(req.headers['x-cron-token'] || '');
+        const igual = recebido.length === esperado.length && crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(recebido));
+        if (!igual) {
+          await store.audit({ type: 'cron_refused', actorId: null, action: 'ai_rotation', detail: { reason: 'token inválido' } });
+          return err(res, 401, 'token de serviço inválido');
+        }
+        const candidatos = cadeiaDeFornecedores({ incluirEmEspera: true });
+        const resumoRota = () => ({
+          ok: true, at: new Date().toISOString(),
+          candidatos: candidatos.map((c) => ({ id: c.provider, keyless: !!c.keyless })),
+          estado: quotasIA.relatorio(),
+          utilizavel: cadeiaDeFornecedores().map((x) => x.provider),
+          proximo: (cadeiaDeFornecedores()[0] || {}).provider || null
+        });
+        if (method === 'GET') {
+          return json(res, 200, Object.assign(resumoRota(), { sondado: false,
+            note: 'nenhum pedido feito: o GET só mostra o que já se observou' }));
+        }
+        /* uma sondagem de cada vez no servidor todo (o estado é partilhado) */
+        if (Date.now() - ultimaSondagemGlobal < 20000) {
+          return json(res, 429, Object.assign(resumoRota(), { sondado: false,
+            error: { code: 429, message: 'sondagem recente: espera ' + Math.ceil((20000 - (Date.now() - ultimaSondagemGlobal)) / 1000) + ' s' } }));
+        }
+        ultimaSondagemGlobal = Date.now();
+        const resultados = [];
+        for (const c of candidatos) {
+          const t0 = Date.now();
+          const feito = await completarComModelo({
+            provider: c.provider, apiKey: c.apiKey, modelo: c.modelo,
+            mensagens: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 45000, retries: 1
+          }).catch((x) => ({ r: { ok: false, error: String(x && x.message) }, modelo: c.modelo }));
+          const r = feito.r || { ok: false, error: 'sem resposta' };
+          const ms = Date.now() - t0;
+          if (r.ok) {
+            quotasIA.registarSucesso(c.provider, limitesAnunciados(r));
+            resultados.push({ id: c.provider, ok: true, ms, modelo: feito.modelo, amostra: String(r.text || '').trim().slice(0, 40),
+              limites: limitesAnunciados(r) });
+          } else {
+            const classe = classificarFalha(r);
+            quotasIA.registarFalha(c.provider, classe);
+            resultados.push({ id: c.provider, ok: false, ms, modelo: feito.modelo, classe: classe.tipo,
+              motivo: classe.motivo, disponivelEm: (quotasIA.ler(c.provider).ate ? new Date(quotasIA.ler(c.provider).ate).toISOString() : null) });
+          }
+        }
+        await store.audit({ type: 'ai_rotation', actorId: null, action: 'ai_rotation',
+          detail: { sondados: resultados.length, ok: resultados.filter((x) => x.ok).length,
+            falhas: resultados.filter((x) => !x.ok).map((x) => ({ id: x.id, classe: x.classe })) } }).catch(() => {});
+        const usaveis = resultados.filter((x) => x.ok).map((x) => x.id);
+        return json(res, 200, Object.assign(resumoRota(), { sondado: true, resultados: resultados,
+          utilizavel: usaveis,
+          proximo: usaveis[0] || null,
+          veredicto: usaveis.length
+            ? 'há tokens em ' + usaveis.length + ' fornecedor(es): ' + usaveis.join(', ')
+            : 'NENHUM fornecedor respondeu: a aplicação fica sem IA até um deles voltar',
+          note: 'texto enviado: «Responda apenas: ok» — nenhum documento do utilizador' }));
       }
 
       /* ---------- manutenção de serviço (retenção RGPD) ----------

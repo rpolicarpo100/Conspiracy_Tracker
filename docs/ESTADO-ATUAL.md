@@ -16,8 +16,8 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 - esquema de dados: **v7** · colecções: users, sessions, mfaChallenges, projects, credentials, usage, evidence, claims, runs, relations, agentRuns, notes, entityLinks, sources, sourceChecks, sourceRatings, sourceDecisions, discoveryRuns, providerCatalog, providerTests, providerRankings, selectionDecisions, checkpoints, audit, migrations
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
-- rotas de API: 109
-- ficheiros de teste: 52 · blocos de teste declarados (`await t`): 616 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- rotas de API: 110
+- ficheiros de teste: 53 · blocos de teste declarados (`await t`): 626 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -59,6 +59,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/provedores-ui.mjs` | 16 | interface (Playwright) |
 | `tests/provider-os.mjs` | 25 | servidor/módulo |
 | `tests/provider-tests.mjs` | 18 | servidor/módulo |
+| `tests/quota-ia.mjs` | 10 | servidor/módulo |
 | `tests/real-fetch.mjs` | 0 | interface (Playwright) |
 | `tests/realdata-bundle.mjs` | 0 | servidor/módulo |
 | `tests/research.mjs` | 19 | servidor/módulo |
@@ -78,7 +79,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: 9c019bd fase 12: sondagem com 45 s e uma só tentativa (o gemini pode demorar dezenas de segundos)
+- último commit: d952e5c docs: estado medido das três chaves em produção (§54.13), regras de nomes/modelos e decisão 53
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 32 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)

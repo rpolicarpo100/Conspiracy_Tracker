@@ -1,0 +1,118 @@
+# Rotação de IA — que fornecedores TÊM tokens neste momento
+#
+# Porque existe: em 2026-10-23 a instância tinha três chaves boas e estava a
+# servir-se de um fornecedor que respondia «503 high demand» e outro que respondia
+# «404 modelo retirado». A rotação em tempo de execução já resolve isso pedido a
+# pedido (server/quota.mjs); este workflow é a verificação periódica que diz, sem
+# ninguém entrar na conta, se há tokens e em quem — e falha (com aviso do GitHub)
+# quando não há nenhum, para o problema não passar em silêncio.
+#
+# O que ele NÃO faz: não guarda chaves, não lê documentos, não troca nada no
+# Render. Pede POST /api/service/ai/rotacao com o token de serviço; é o servidor
+# que fala com os fornecedores, com o texto fixo «Responda apenas: ok».
+#
+# Configuração (a mesma dos outros dois workflows, um só segredo serve os três):
+#   1. Render → Environment → CRON_TOKEN = <valor aleatório longo>
+#   2. GitHub → Settings → Secrets and variables → Actions → New secret
+#      Name: CRON_TOKEN   Value: o mesmo valor
+#
+# Sem CRON_TOKEN no servidor, a rota responde 503 e este workflow falha dizendo
+# exactamente isso — não finge que verificou.
+name: IA — quota, tokens e rotação
+
+on:
+  schedule:
+    - cron: '17 * * * *'      # de hora a hora, aos 17 minutos
+  workflow_dispatch:           # e a pedido, a qualquer momento
+
+permissions:
+  contents: read
+
+jobs:
+  rotacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Esperar que o serviço acorde (plano gratuito hiberna)
+        env:
+          BASE: https://conspiracy-aitracker.onrender.com
+        run: |
+          for i in $(seq 1 8); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$BASE/health" || true)
+            echo "health: $code (tentativa $i)"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "::error::o serviço não respondeu a /health em ~2,5 minutos"
+          exit 1
+
+      - name: Ler o estado observado (sem gastar pedidos)
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          BASE: https://conspiracy-aitracker.onrender.com
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::O segredo CRON_TOKEN não está definido neste repositório (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/antes.json -w '%{http_code}' --max-time 60 \
+            -H "x-cron-token: $CRON_TOKEN" "$BASE/api/service/ai/rotacao")
+          echo "GET /api/service/ai/rotacao → HTTP $code"
+          cat /tmp/antes.json; echo
+          if [ "$code" = "503" ]; then
+            echo "::error::O servidor respondeu que a rotação está desligada: falta CRON_TOKEN no Render."
+            exit 1
+          fi
+          [ "$code" = "200" ] || { echo "::error::resposta inesperada ($code)"; exit 1; }
+
+      - name: Sondar os fornecedores (uma chamada mínima a cada)
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          BASE: https://conspiracy-aitracker.onrender.com
+        run: |
+          code=$(curl -s -o /tmp/depois.json -w '%{http_code}' --max-time 300 -X POST \
+            -H "x-cron-token: $CRON_TOKEN" "$BASE/api/service/ai/rotacao")
+          echo "POST /api/service/ai/rotacao → HTTP $code"
+          cat /tmp/depois.json; echo
+          if [ "$code" = "429" ]; then
+            echo "::warning::sondagem recente no servidor (limite de ritmo) — nada foi medido nesta execução"
+            exit 0
+          fi
+          [ "$code" = "200" ] || { echo "::error::resposta inesperada ($code)"; exit 1; }
+
+      - name: Resumir e falhar se não houver tokens em lado nenhum
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          with open('/tmp/depois.json', encoding='utf-8') as f:
+              d = json.load(f)
+          linhas = []
+          linhas.append('## Rotação de IA — ' + d.get('at', ''))
+          linhas.append('')
+          linhas.append('| fornecedor | estado | modelo | motivo |')
+          linhas.append('|---|---|---|---|')
+          for x in d.get('resultados', []):
+              linhas.append('| %s | %s | %s | %s |' % (
+                  x.get('id'), 'ok' if x.get('ok') else (x.get('classe') or 'falha'),
+                  x.get('modelo') or '—', (x.get('motivo') or '—')[:90]))
+          linhas.append('')
+          linhas.append('**Próximo fornecedor usado:** ' + str(d.get('proximo')))
+          linhas.append('')
+          linhas.append('**Veredicto:** ' + str(d.get('veredicto')))
+          resumo = '\n'.join(linhas)
+          print(resumo)
+          p = os.environ.get('GITHUB_STEP_SUMMARY')
+          if p:
+              with open(p, 'a', encoding='utf-8') as f:
+                  f.write(resumo + '\n')
+          usaveis = d.get('utilizavel') or []
+          if not usaveis:
+              print('::error::NENHUM fornecedor de IA respondeu. A aplicação fica sem IA até um deles voltar. '
+                    'Ver o estado por fornecedor no resumo desta execução.')
+              sys.exit(1)
+          semChave = usaveis == ['pollinations']
+          if semChave:
+              print('::warning::só o fornecedor público sem chave responde: mais lento e partilhado. '
+                    'Ver docs/IA-FORNECEDORES.md §7.')
+          print('%d fornecedor(es) com tokens: %s' % (len(usaveis), ', '.join(usaveis)))
+          PY

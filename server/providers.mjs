@@ -326,7 +326,7 @@ export async function complete({ provider, base, apiKey, model, messages, timeou
       const res = await umPedido();
       last = res;
       if (res.ok) { recordSuccess(key); const u = (res.json && res.json.usage) || {};
-        return { ok: true, text: (res.json.choices && res.json.choices[0] && res.json.choices[0].message || {}).content,
+        return { ok: true, headers: res.headers, text: (res.json.choices && res.json.choices[0] && res.json.choices[0].message || {}).content,
           latencyMs: res.ms, esperouMs, usage: { promptTokens: u.prompt_tokens != null ? u.prompt_tokens : null, completionTokens: u.completion_tokens != null ? u.completion_tokens : null }, raw: res.json }; }
       if (res.status === 401 || res.status === 403) break;         // repetir com a mesma chave é inútil
       if (res.status === 400) break;                               // erro de pedido: repetir não ajuda
