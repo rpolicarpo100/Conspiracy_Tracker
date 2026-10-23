@@ -114,6 +114,18 @@ curl -s "https://conspiracy-aitracker.onrender.com/api/ai/estado?probe=1"
 # → "verificado":{"ok":true,"ms":2416,"amostra":"ok"}
 ```
 
+Para verificar **uma chave concreta** (e não só a primeira da ordem), pede-se
+o fornecedor pelo nome:
+
+```bash
+curl -s ".../api/ai/estado?probe=gemini"
+curl -s ".../api/ai/estado?probe=openrouter"
+```
+
+Se a variável desse fornecedor estiver ausente ou com marcador, a resposta diz
+qual é o nome que falta — sem gastar a sondagem do minuto, porque não há
+chamada externa nenhuma.
+
 Se a chave do operador estiver errada, a resposta diz isso **e** mede a
 alternativa, para responder logo à pergunta seguinte:
 

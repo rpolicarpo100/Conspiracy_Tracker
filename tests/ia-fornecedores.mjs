@@ -248,6 +248,20 @@ await t('diagnóstico público · /api/ai/estado diz o modo sem revelar chaves',
   return 'sem-chave → marcador não conta → nenhum, sem valores no corpo';
 });
 
+await t('sondagem por fornecedor · ?probe=<id> olha para a chave DAQUELE fornecedor', async () => {
+  /* fornecedor sem chave no ambiente: responde sem chamada externa nenhuma, e diz
+     qual variável falta — é o que se quer quando se colaram três chaves e se quer
+     saber qual está a ser usada. */
+  delete process.env.AI_KEYLESS_FALLBACK;
+  const r = await fetch(BASE + '/api/ai/estado?probe=cerebras');
+  ok(r.status === 200, 'HTTP ' + r.status);
+  const j = await r.json();
+  ok(j.verificado && j.verificado.fornecedor === 'cerebras', 'não olhou para o fornecedor pedido: ' + JSON.stringify(j.verificado));
+  ok(j.verificado.ok === false && /ausente/.test(j.verificado.motivo || ''), 'devia declarar a chave ausente: ' + JSON.stringify(j.verificado));
+  ok(/AI_KEY_CEREBRAS|API_KEY_CEREBRAS/.test(j.verificado.motivo), 'não diz a variável: ' + j.verificado.motivo);
+  return 'cerebras sem chave → ' + j.verificado.motivo;
+});
+
 await t('sondagem real · só com ?probe=1, e com limites (nunca por acidente)', async () => {
   /* sem probe: nenhuma chamada externa — o corpo tem de vir depressa e sem veredicto */
   const t0 = Date.now();
@@ -297,6 +311,14 @@ await t('nome alternativo · o modelo também aceita API_MODEL_', async () => {
   ok(r.modelo === 'gemini-1.5-flash', 'modelo: ' + r.modelo);
   delete process.env['API_KEY_Gemini']; delete process.env['API_MODEL_Gemini'];
   return 'API_MODEL_Gemini respeitado';
+});
+
+await t('sondagem por fornecedor · fornecedor desconhecido é recusado com 400', async () => {
+  const r = await fetch(BASE + '/api/ai/estado?probe=nao-existe');
+  ok(r.status === 400, 'HTTP ' + r.status + ' (o nome é validado ANTES do limite de ritmo)');
+  const j = await r.json();
+  ok(/desconhecido/.test(j.error.message), JSON.stringify(j.error));
+  return '400 com motivo';
 });
 
 srv.close();

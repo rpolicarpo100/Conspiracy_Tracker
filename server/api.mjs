@@ -934,7 +934,7 @@ export async function createApi(opts) {
          sem entrar na conta e sem abrir o painel do Render, se a aplicação tem IA
          e por que via. Devolve só o modo, o fornecedor e o modelo — nunca a chave,
          nem a lista de nomes de chaves configuradas. */
-      if (p === '/api/ai/estado' && method === 'GET' && url.searchParams.get('probe') !== '1') {
+      if (p === '/api/ai/estado' && method === 'GET' && !url.searchParams.get('probe')) {
         const e = estadoChavesOperador();
         const modo = !e.activo ? 'nenhum' : (e.activo.keyless ? 'sem-chave' : 'operador');
         const comChave = Object.values(e.providers).filter((x) => x.estado === 'ok').length;
@@ -958,14 +958,32 @@ export async function createApi(opts) {
          1 por minuto no servidor todo, 3 por hora por IP. O texto enviado é fixo e
          público («responda apenas: ok»); nenhum documento do utilizador passa por
          aqui. Sem `probe=1` este endereço não faz chamada externa nenhuma. */
-      if (p === '/api/ai/estado' && method === 'GET' && url.searchParams.get('probe') === '1') {
+      if (p === '/api/ai/estado' && method === 'GET' && !!url.searchParams.get('probe')) {
         const e = estadoChavesOperador();
         const modo = !e.activo ? 'nenhum' : (e.activo.keyless ? 'sem-chave' : 'operador');
         const base = { ok: true, modo: modo, fornecedor: e.activo ? e.activo.provider : null,
           modelo: e.activo ? e.activo.modelo : null, semChave: modo === 'sem-chave',
           chavesDoOperador: Object.values(e.providers).filter((x) => x.estado === 'ok').length,
           cofrePorUtilizador: vault.enabled };
+        const alvo = String(url.searchParams.get('probe') || '').trim().toLowerCase();
+        const especifico = alvo && alvo !== '1' ? alvo : null;
+        if (especifico && !PROVIDERS[especifico]) {
+          return json(res, 400, Object.assign(base, { verificado: null,
+            error: { code: 400, message: 'fornecedor desconhecido: ' + especifico + ' (ver /api/meta para a lista)' } }));
+        }
         if (!e.activo) return json(res, 200, Object.assign(base, { verificado: { ok: false, motivo: 'sem IA configurada' } }));
+        /* ler a chave e verificar que existe não custa rede: faz-se ANTES do limite
+           de ritmo, para que um «falta a variável» não gaste a sondagem do minuto */
+        let op = operadorPadrao();
+        if (especifico) {
+          const k = chaveDoOperador(especifico);
+          if (k.estado !== 'ok' && k.estado !== 'sem-chave') {
+            return json(res, 200, Object.assign(base, { verificado: { ok: false, via: 'operador', fornecedor: especifico,
+              motivo: 'chave ' + (k.estado === 'marcador' ? 'por preencher (marcador)' : 'ausente') + ' em ' + (k.env || '—') } }));
+          }
+          op = k.keyless ? { provider: especifico, apiKey: null, modelo: k.modelo, keyless: true }
+            : { provider: especifico, apiKey: k.apiKey, modelo: k.modelo, env: k.env };
+        }
         const agora = Date.now();
         const ip = ipOf(req);
         const porIp = (estadoSondagem.get(ip) || []).filter((t) => agora - t < 3600000);
@@ -982,7 +1000,8 @@ export async function createApi(opts) {
         const t0 = Date.now();
         /* a chave usada é a que a aplicação usaria de facto — a do operador, se
            existir (é a mesma que serve os utilizadores sem chave própria) */
-        const op = operadorPadrao();
+        /* ?probe=<fornecedor> sonda ESSE fornecedor (e não só o primeiro da
+           ordem): é assim que se verifica, uma a uma, as chaves que se colaram. */
         const feito = await completarComModelo({
           provider: op ? op.provider : e.activo.provider,
           apiKey: op ? op.apiKey : null,
