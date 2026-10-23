@@ -14,7 +14,7 @@
      · quando a lista não serve, falha — não inventa um nome;
      · o que foi pedido e o que foi usado ficam ambos registados.
    ===================================================================== */
-import { escolherModeloConversa, razaoDaEscolha, criarResolvedorDeModelos, ERRO_DE_MODELO } from '../server/modelos.mjs';
+import { escolherModeloConversa, razaoDaEscolha, criarResolvedorDeModelos, ERRO_DE_MODELO, erroDeModelo } from '../server/modelos.mjs';
 
 const R = [];
 const t = async (name, fn) => {
@@ -144,11 +144,35 @@ await t('resolvedor · o pedido repetido leva o MESMO texto (nada de conteúdo n
   return 'duas chamadas, exactamente o mesmo corpo';
 });
 
+await t('resolvedor · 404 sem mensagem (o caso do Google) também corrige o modelo', async () => {
+  const pedidos = [];
+  const r = criarResolvedorDeModelos({
+    complete: async ({ model }) => {
+      pedidos.push(model);
+      /* o Google responde 404 com corpo vazio: a aplicação só vê «HTTP 404» */
+      return model === 'gemini-2.0-flash' ? { ok: false, status: 404, error: 'HTTP 404' }
+        : { ok: true, text: 'ok', model };
+    },
+    listModels: async () => ({ ok: true, models: ['gemini-2.5-flash', 'text-embedding-004', 'gemini-2.5-pro'] })
+  });
+  const s = await r.completarComModelo({ provider: 'gemini', apiKey: 'k', modelo: 'gemini-2.0-flash', mensagens: [], timeoutMs: 1000 });
+  ok(s.r.ok, 'não recuperou de um 404 sem mensagem: ' + JSON.stringify(s.r));
+  ok(s.modelo === 'gemini-2.5-flash', 'escolheu ' + s.modelo);
+  ok(pedidos.length === 2, 'pedidos: ' + pedidos.length);
+  return 'HTTP 404 sem corpo → ' + s.modelo;
+});
+
 await t('reconhecimento do erro · cobre os avisos reais dos fornecedores', async () => {
   ['does not exist', 'no access', 'model_not_found', 'decommissioned', 'deprecated', 'unknown model', 'unsupported model']
     .forEach((m) => ok(ERRO_DE_MODELO.test(m), 'não reconhece: ' + m));
   ['Invalid API Key', 'rate limit exceeded', 'HTTP 500', 'timeout após 30000 ms']
     .forEach((m) => ok(!ERRO_DE_MODELO.test(m), 'confunde erro de chave com modelo: ' + m));
+  /* erroDeModelo: 404/410 contam, 401/429/500 não */
+  ok(erroDeModelo({ status: 404, error: 'HTTP 404' }), '404 sem corpo devia contar');
+  ok(erroDeModelo({ status: 410, error: '' }), '410 devia contar');
+  ok(!erroDeModelo({ status: 401, error: 'HTTP 401' }), '401 não é modelo');
+  ok(!erroDeModelo({ status: 429, error: 'rate limit' }), '429 não é modelo');
+  ok(!erroDeModelo({ status: 500, error: 'HTTP 500' }), '500 não é modelo');
   return '7 reconhecidos · 4 não confundidos';
 });
 

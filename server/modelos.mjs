@@ -24,6 +24,17 @@
 /* erros que significam «esse modelo não serve» e não «o pedido está mal» */
 export const ERRO_DE_MODELO = /does not exist|no access|not found|unknown model|invalid model|decommission|deprecat|unsupported model|model[_ ]not[_ ]found/i;
 
+/* Um 404 também é, na prática, «esse modelo não existe»: é assim que o Google
+   responde a um modelo retirado. A diferença é que, neste caso, o corpo pode vir
+   vazio e a mensagem ser só «HTTP 404» — sem esta regra, a correcção automática
+   nunca chegava a correr num dos três fornecedores que estavam configurados. */
+export const erroDeModelo = (r) => {
+  const texto = String((r && r.error) || '');
+  if (ERRO_DE_MODELO.test(texto)) return true;
+  const semCorpo = !texto || /^HTTP \d{3}$/.test(texto.trim());
+  return !!(semCorpo && r && (r.status === 404 || r.status === 410));
+};
+
 const FORA = /embed|whisper|tts|audio|speech|moderation|guard|rerank|clip|image|dall|sd-|flux|stable-diffusion|vision-only|ocr/i;
 const PREFERENCIA = [
   /(^|\/)llama-?3(\.\d+)?-[\d.]+b/i,
@@ -31,7 +42,7 @@ const PREFERENCIA = [
   /(^|\/)llama/i,
   /qwen/i,
   /mistral|mixtral|magistral/i,
-  /gemini-[\d.]*-flash/i,
+  /gemini-[\d.]*-flash(-lite)?/i,
   /gpt-4o-mini|gpt-4\.1-mini|gpt-5-mini/i,
   /chat/i
 ];
@@ -81,7 +92,7 @@ export function criarResolvedorDeModelos({ complete, listModels, agora, cacheMs 
   async function completarComModelo({ provider, apiKey, modelo, mensagens, timeoutMs }) {
     const r1 = await complete({ provider, apiKey, model: modelo, messages: mensagens, timeoutMs });
     if (r1 && r1.ok) return { r: r1, modelo };
-    if (!ERRO_DE_MODELO.test(String((r1 && r1.error) || ''))) return { r: r1, modelo };
+    if (!erroDeModelo(r1)) return { r: r1, modelo };
     const lista = await modelosDoFornecedor(provider, apiKey);
     const decisao = razaoDaEscolha(lista, modelo);
     if (!decisao.escolhido || decisao.escolhido === modelo) {

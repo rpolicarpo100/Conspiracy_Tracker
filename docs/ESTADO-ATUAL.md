@@ -17,7 +17,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 - estados de validação: 9 (confirmada, corroborada-independente, alegacao-atribuida, inferencia-suportada, hipotese, contraditoria, insuficiente, refutada, fonte-inacessivel)
 - agentes: 13 (6 locais, 7 de IA)
 - rotas de API: 109
-- ficheiros de teste: 52 · blocos de teste declarados (`await t`): 613 (os ficheiros de interface usam outro executor e contam 0 aqui)
+- ficheiros de teste: 52 · blocos de teste declarados (`await t`): 614 (os ficheiros de interface usam outro executor e contam 0 aqui)
 
 ### Suites
 
@@ -49,7 +49,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 | `tests/ia-fornecedores.mjs` | 22 | servidor/módulo |
 | `tests/mfa-publico.mjs` | 0 | servidor/módulo |
 | `tests/mfa-ui.mjs` | 10 | interface (Playwright) |
-| `tests/modelos.mjs` | 9 | servidor/módulo |
+| `tests/modelos.mjs` | 10 | servidor/módulo |
 | `tests/ocr-publico.mjs` | 0 | servidor/módulo |
 | `tests/ocr.mjs` | 15 | servidor/módulo |
 | `tests/pdftext.mjs` | 19 | servidor/módulo |
@@ -78,7 +78,7 @@ Regras: nada aqui é aspiracional. Se uma linha diz «testado», o teste está i
 
 ### Registo
 
-- último commit: b1440c2 fase 12: modelo de IA que deixou de existir passa a ser corrigido com a lista real do fornecedor
+- último commit: ae7b547 fase 12: sondagem por fornecedor (?probe=<id>) e verificação da chave antes do limite de ritmo
 - árvore de trabalho: com alterações locais
 - último bloco de resultados: §42 — FASE 7 DO «PROVIDER OS» — BENCHMARKS (NÍVEL 7) E CRON DE SERVIÇO (2026-10-22, 2.
 - documentação: 32 documentos (ACEITACAO.md, ACESSO-FONTES.md, AGENTES-P3.md, AGENTES.md, APIS-sem-chave.md, APIS.md, AUDITORIA-2026-10-22.md, AUDITORIA-CODIGO.md, AUDITORIA-FONTES.md, BENCHMARKS.md, DADOS-REAIS.md, DECISOES.md, DEPENDENCIAS.md, DOCUMENTOS.md, ENTREGA-FASE3G.md, ESTADO-ATUAL.md, EVIDENCIA.md, FONTES.md, FORNECEDORES.md, GRAFO.md, IA-E-EVIDENCIA.md, IA-FORNECEDORES.md, MOTOR-PESQUISA.md, PERMISSOES.md, PERSISTENCIA.md, PESQUISA.md, PRIVACIDADE.md, PROVIDER-OS-AUDITORIA.md, PROVIDER-OS.md, SCHEMA.md, SEGURANCA.md, SSRN.md)
