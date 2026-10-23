@@ -14,7 +14,7 @@
      · quando a lista não serve, falha — não inventa um nome;
      · o que foi pedido e o que foi usado ficam ambos registados.
    ===================================================================== */
-import { escolherModeloConversa, razaoDaEscolha, normalizarNomes, criarResolvedorDeModelos, ERRO_DE_MODELO, erroDeModelo } from '../server/modelos.mjs';
+import { escolherModeloConversa, razaoDaEscolha, normalizarNomes, criarResolvedorDeModelos, ERRO_DE_MODELO, erroDeModelo, sugestaoDoFornecedor } from '../server/modelos.mjs';
 
 const R = [];
 const t = async (name, fn) => {
@@ -172,6 +172,29 @@ await t('nomes com prefixo de recurso · «models/gemini-2.5-flash» vira «gemi
   const igual = razaoDaEscolha(['models/gemini-2.5-flash'], 'gemini-2.5-flash');
   ok(igual.escolhido === 'gemini-2.5-flash' && /existe/.test(igual.razao), JSON.stringify(igual));
   return 'prefixo removido só quando é comum a todos · modelo pedido reconhecido';
+});
+
+await t('sugestão do fornecedor · «use models/gemini-3.8-flash» é seguida tal e qual', async () => {
+  const corpo = '[{ "error": { "code": 404, "message": "This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features." } }]';
+  ok(sugestaoDoFornecedor(corpo) === 'gemini-3.8-flash', 'extraiu: ' + sugestaoDoFornecedor(corpo));
+  ok(sugestaoDoFornecedor('Please use `gpt-4.1-mini` instead') === 'gpt-4.1-mini', 'com crases: ' + sugestaoDoFornecedor('Please use `gpt-4.1-mini` instead'));
+  ok(sugestaoDoFornecedor('use meta-llama/llama-3.1-8b-instant.') === 'meta-llama/llama-3.1-8b-instant', 'com barra: ' + sugestaoDoFornecedor('use meta-llama/llama-3.1-8b-instant.'));
+  ok(sugestaoDoFornecedor('nada aqui') === null, 'inventou uma sugestão');
+  ok(sugestaoDoFornecedor('') === null, 'string vazia');
+
+  /* e o resolvedor segue-a ANTES de pedir a lista: um pedido, sem consulta extra */
+  const pedidos = []; let listas = 0;
+  const r = criarResolvedorDeModelos({
+    complete: async ({ model }) => {
+      pedidos.push(model);
+      return model === 'gemini-3.8-flash' ? { ok: true, text: 'ok' } : { ok: false, status: 404, error: 'HTTP 404', detalhe: corpo };
+    },
+    listModels: async () => { listas++; return { ok: true, models: ['gemini-2.5-flash'] }; }
+  });
+  const s = await r.completarComModelo({ provider: 'gemini', apiKey: 'k', modelo: 'gemini-2.0-flash', mensagens: [], timeoutMs: 1000 });
+  ok(s.r.ok && s.modelo === 'gemini-3.8-flash', 'não seguiu a sugestão: ' + JSON.stringify(s));
+  ok(listas === 0, 'pediu a lista apesar de o fornecedor já ter dito qual usar (' + listas + ')');
+  return 'sugestão seguida com ' + pedidos.length + ' pedidos e 0 listas';
 });
 
 await t('reconhecimento do erro · cobre os avisos reais dos fornecedores', async () => {

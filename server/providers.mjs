@@ -338,7 +338,11 @@ export async function complete({ provider, base, apiKey, model, messages, timeou
   if (feito.ok) return feito;
   recordFailure(key);
   const last = feito.last || {};
-  const msg = (last.json && last.json.error && (last.json.error.message || last.json.error)) || last.error || ('HTTP ' + last.status);
+  /* Alguns fornecedores (Google) embrulham o erro numa LISTA: [{error:{...}}].
+     Sem isto, a mensagem era só «HTTP 404» e a razão real — «este modelo já não
+     está disponível, use models/x» — ficava escondida no corpo. */
+  const corpo = Array.isArray(last.json) && last.json[0] && last.json[0].error ? last.json[0] : last.json;
+  const msg = (corpo && corpo.error && (corpo.error.message || corpo.error)) || last.error || ('HTTP ' + last.status);
   /* `detalhe` guarda o início do corpo devolvido: quando o fornecedor responde um
      código sem mensagem JSON, é a única coisa que diz PORQUE recusou. Não leva
      nada nosso — é a resposta dele. */

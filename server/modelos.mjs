@@ -28,6 +28,19 @@ export const ERRO_DE_MODELO = /does not exist|no access|not found|unknown model|
    responde a um modelo retirado. A diferença é que, neste caso, o corpo pode vir
    vazio e a mensagem ser só «HTTP 404» — sem esta regra, a correcção automática
    nunca chegava a correr num dos três fornecedores que estavam configurados. */
+/* O fornecedor às vezes DIZ qual usar: «Please update your code to use
+   models/gemini-3.8-flash». Ignorar essa frase e escolher outra coisa qualquer
+   seria escolher às cegas quando a resposta certa estava escrita na recusa. */
+export function sugestaoDoFornecedor(texto) {
+  const t = String(texto || '');
+  if (!t) return null;
+  const m = t.match(/(?:use|uses|migrate to|switch to|replace with)\s+[`"']?((?:models\/)?[A-Za-z0-9][A-Za-z0-9._\/-]*[A-Za-z0-9])/i);
+  if (!m) return null;
+  const nome = m[1].replace(/^models\//, '').replace(/[.,;:)]+$/, '');
+  if (!nome || /^the$|^a$|^this$/i.test(nome)) return null;
+  return nome;
+}
+
 export const erroDeModelo = (r) => {
   const texto = String((r && r.error) || '');
   if (ERRO_DE_MODELO.test(texto)) return true;
@@ -106,6 +119,15 @@ export function criarResolvedorDeModelos({ complete, listModels, agora, cacheMs 
     const r1 = await complete({ provider, apiKey, model: modelo, messages: mensagens, timeoutMs });
     if (r1 && r1.ok) return { r: r1, modelo };
     if (!erroDeModelo(r1)) return { r: r1, modelo };
+    const decisaoDoFornecedor = { escolhido: sugestaoDoFornecedor((r1 && (r1.detalhe || r1.error)) || ''), razao: 'o próprio fornecedor indicou o modelo a usar' };
+    if (decisaoDoFornecedor.escolhido && decisaoDoFornecedor.escolhido !== modelo) {
+      const r2 = await complete({ provider, apiKey, model: decisaoDoFornecedor.escolhido, messages: mensagens, timeoutMs });
+      contas.correcoes++;
+      if (r2 && r2.ok) {
+        return { r: Object.assign({}, r2, { modeloCorrigido: decisaoDoFornecedor.escolhido, modeloPedido: modelo, razaoDaCorrecao: decisaoDoFornecedor.razao }),
+          modelo: decisaoDoFornecedor.escolhido };
+      }
+    }
     const lista = await modelosDoFornecedor(provider, apiKey);
     const decisao = razaoDaEscolha(lista, modelo);
     if (!decisao.escolhido || decisao.escolhido === modelo) {
