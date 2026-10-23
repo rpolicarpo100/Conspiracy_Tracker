@@ -263,7 +263,17 @@ content-security-policy: default-src 'self'; img-src 'self' data: blob:;
 - Segredos: cofre `aes-256-gcm` (`/ready` → `keyVault.mode: "aes-256-gcm"`), chaves nunca
   devolvidas em claro nas listagens.
 
-### A-07 — Persistência não sobrevive a um deploy (por omissão) `PARCIAL`
+### A-07 — Persistência: **correcção posterior** — em produção a base é Postgres e declara-se durável `PARCIAL`
+
+> **Correcção (2026-10-23, depois do deploy da FASE B).** A medição abaixo foi feita no servidor
+> **local**, que não tem `DATABASE_URL`. Em produção o `/ready` responde
+> `mode: "postgres+ficheiro"`, `durableBetweenDeploys: true`, `postgres: {configured: true, active: true,
+> ready: true, version: 1046, host: ep-green-sound-…neon.tech, ssl: "verify-full", writes: 1, errors: 0}`.
+> Ou seja: **a produção tem base durável configurada e a escrever**. O que continua sem prova é o
+> ciclo completo criar → reiniciar → reler numa base descartável (exigiria autorização). O erro da
+> primeira medição foi medir o ambiente local e generalizar — fica registado como tal.
+
+#### Medição local (mantém-se válida para o ambiente sem `DATABASE_URL`)
 
 `GET /ready` local: `persistence: {mode: "ficheiro", durableBetweenDeploys: false, postgres: {configured: false, active: false}}`.
 `tests/persistencia-pg.mjs` **não testa nada** sem `DATABASE_URL` (imprime `SKIP … sem base real

@@ -2180,3 +2180,17 @@ E. O que continua por fazer
    · tests/caso-socrates.mjs com documentos reais
    · durabilidade entre deploys (BLOQUEADO: sem DATABASE_URL)
    · produção continua no commit anterior: DEPLOY REQUER AUTORIZAÇÃO
+
+§57.10  P R O D U Ç Ã O   (depois do push — leitura apenas)
+   NOTA: render.yaml tem autoDeploy:true, por isso o push das fases A/B
+   desencadeou o deploy. Não foi uma ordem de deploy; está registado como tal
+   em docs/ENTREGA-FASE-B.md §6.b.
+   PASS GET /health → 2.1.0-faseB · commit 68e996a251aa · alive
+   PASS GET /api/meta → 2.1.0-faseB · 13 agentes · registo fechado
+   PASS GET / → script-src 'self' · frame-ancestors 'self' · HSTS · XFO SAMEORIGIN
+   PASS GET /api/ai/keyless → 200 · relatório de 2026-10-23 (18 públicos, 1 gera)
+   CORRECÇÃO /ready em produção → ready · postgres+ficheiro · durableBetweenDeploys
+        TRUE · writes 1 · errors 0 · ssl verify-full (Neon)
+        → a auditoria media o ambiente LOCAL e generalizou; a durabilidade em
+          produção está activa. A-07 e B3 corrigidos; falta o ensaio
+          criar→reiniciar→reler numa base descartável (exige autorização).

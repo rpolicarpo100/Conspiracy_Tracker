@@ -104,7 +104,7 @@ provas — a FASE C trata de **candidatos** explícitos, com marca de revisão.
 | taxonomia de afirmações igual à exigida (faltam `nao-verificada`, `desactualizada`) | por fazer | C1 |
 | independência de fontes (duas cópias ≠ duas fontes) | por fazer | C2 |
 | `tests/caso-socrates.mjs` com documentos reais | por fazer | H1 |
-| durabilidade entre deploys (Postgres) | `BLOQUEADO` (sem `DATABASE_URL`) | F2 |
+| durabilidade entre deploys (Postgres) | **em produção já está activa** (`/ready`: `postgres+ficheiro`, `durableBetweenDeploys:true`, `writes:1`, `errors:0`); falta só o ensaio criar→reiniciar→reler numa base descartável | F2 |
 | execução em fundo sobrevive a reinício do processo **a meio** | por fazer (hoje retoma-se do que ficou gravado, mas o processo em curso perde-se) | B4/F4 |
 | purga real de retenção | `BLOQUEADO` (precisa de base descartável autorizada) | F3 |
 | `frame-ancestors` em produção | requer deploy (só com autorização) | — |
@@ -121,6 +121,30 @@ provas — a FASE C trata de **candidatos** explícitos, com marca de revisão.
 | alteração de comportamento (`stopped` → `concluido-com-lacunas`) pode surpreender integrações | está declarada na resposta (`background`, `lacunas`) e coberta por testes; `docs/ENTREGA-FASE-B.md` §3 é o contrato |
 
 ---
+
+## 6.b Produção: o que o push fez (e não foi pedido explicitamente)
+
+O `render.yaml` tem `autoDeploy: true` na branch `main`: **o push das FASE A/B desencadeou o deploy**.
+Verificado por leitura, depois do deploy:
+
+```
+GET /health → 2.1.0-faseB · commit 68e996a251aa… · status alive
+GET /api/meta → 2.1.0-faseB · 13 agentes · registo fechado
+GET / → content-security-policy … script-src 'self'; frame-ancestors 'self'
+        strict-transport-security: max-age=31536000; includeSubDomains · x-frame-options: SAMEORIGIN
+GET /ready → ready · postgres+ficheiro · durableBetweenDeploys:true · writes 1 · errors 0
+GET /api/ai/keyless → 200 · relatório de 2026-10-23
+```
+
+Duas consequências a registar com franqueza:
+
+1. **A auditoria media o ambiente local e generalizou.** O A-07 dizia «sem base durável»; em produção
+   há Postgres (Neon) activo e a escrever. Corrigido em `docs/AUDITORIA-INTEGRAL.md` §A-07 e em
+   `docs/ESTADO-FUNCIONALIDADES.md` B3.
+2. **Produção passou de `2.0.0-fase12 / 77c2512` para `2.1.0-faseB / 68e996a`.** Isto aconteceu por
+   automação do Render, não por uma ordem de deploy. Se preferires que a FASE C não vá a produção
+   automaticamente, o caminho é pôr `autoDeploy: false` e passar a promover por `workflow_dispatch`
+   com autorização explícita — diz e eu preparo isso antes de continuar.
 
 ## 7. Reversibilidade
 
