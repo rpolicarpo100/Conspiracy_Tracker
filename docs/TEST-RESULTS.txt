@@ -1971,3 +1971,32 @@ E. O que continua por fazer
    PASS produção: /health 2.0.0-fase12 · /ready ready · IA por chave do operador
         (groq e openrouter respondem; gemini responde 404 e a aplicação declara-o
         com o detalhe do fornecedor)
+
+§54.13  A S  T R Ê S  C H A V E S  D O  O P E R A D O R — M E D I D O  E M  P R O D U Ç Ã O
+   Chaves coladas no Render: API_KEY_GEMINI, API_KEY_Groq, API_KEY_OpenRouter.
+   Depois das correcções desta fase, `GET /api/ai/estado` em produção diz:
+        modo «operador» · fornecedor groq · chavesDoOperador 3
+
+   PASS groq        → verificado ok em 277–410 ms, modelo openai/gpt-oss-120b
+        (o catálogo apontava para llama-3.3-70b-versatile, que já não existe; a
+         correcção automática propôs um modelo real da lista e o catálogo foi
+         actualizado com o que foi medido)
+   PASS openrouter  → verificado ok em 0,8–1,3 s, modelo openai/gpt-4o-mini
+   ATENÇÃO gemini   → a CHAVE está certa (a app identifica-a e envia-a), mas o
+        fornecedor respondeu, em três medições seguidas:
+          · 404 «This model models/gemini-2.0-flash is no longer available.
+                 Please update your code to use models/gemini-3.8-flash» →
+            corrigido automaticamente para gemini-3.8-flash (o próprio Google
+            indicava o nome; a aplicação passou a seguir essa indicação);
+          · 503 «This model is currently experiencing high demand… UNAVAILABLE»
+            → condição externa, temporária; não é defeito nosso e é declarada
+            com as palavras do fornecedor.
+        Em todas as falhas do gemini, a resposta inclui
+        alternativaSemChave:{ok:true} — a aplicação não fica sem IA.
+
+   O que NÃO se afirma: que a chave do gemini esteja a servir. Ela é reconhecida e
+   usada; o fornecedor é que não respondeu. Para fixar outro modelo, basta
+   AI_MODEL_GEMINI (ou API_MODEL_GEMINI) com um nome da lista
+   (GET /api/ai/estado?probe=gemini mostra o que foi pedido e o que foi usado).
+
+   PASS npm test → 522 linhas PASS · 0 falhas (31 ficheiros)

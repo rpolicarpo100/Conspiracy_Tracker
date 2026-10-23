@@ -265,3 +265,26 @@ Com sessão, `GET /api/providers` devolve `operatorKeys`:
 Os valores das chaves **nunca** aparecem — nem aqui, nem na interface, nem nos
 registos. Há um teste que verifica que o corpo da resposta não contém a chave
 (`tests/ia-fornecedores.mjs`).
+
+
+---
+
+## 7. Estado medido das chaves em produção (2026-10-23)
+
+| fornecedor | variável encontrada | resposta | modelo usado |
+|---|---|---|---|
+| Groq | `API_KEY_Groq` | **ok** (~0,3 s) | `openai/gpt-oss-120b` (o sugerido antes, `llama-3.3-70b-versatile`, já não existe) |
+| OpenRouter | `API_KEY_OpenRouter` | **ok** (~1 s) | `openai/gpt-4o-mini` |
+| Gemini | `API_KEY_GEMINI` | chave aceite; fornecedor respondeu `503 high demand` / `404 modelo retirado` | `gemini-3.8-flash` (indicado pelo próprio Google na recusa) |
+
+Verificar a qualquer momento:
+
+```bash
+curl -s "$URL/api/ai/estado"                 # modo e fornecedor em uso
+curl -s "$URL/api/ai/estado?probe=groq"      # uma chave concreta
+```
+
+Regras que estes números mostram na prática: **a chave certa num nome diferente é
+uma chave invisível** (§«O nome da variável»), **um modelo retirado não é um erro
+teu** (§«Se o modelo sugerido já não existir») e **um fornecedor em baixa não deixa
+a aplicação sem IA** (cai para o fornecedor sem chave, e diz que caiu).

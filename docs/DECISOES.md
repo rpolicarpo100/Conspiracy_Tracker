@@ -333,3 +333,13 @@ Formato: data · decisão · motivo · o que foi recusado.
     Motivo: a sugestão de modelo do Groq no catálogo deixou de existir e a instância passou a
     responder «The model … does not exist» com uma chave perfeitamente válida. Não havia nada no
     código que se pudesse corrigir a tempo: o catálogo dos fornecedores muda fora do nosso controlo.
+
+53. **2026-10-23 · A recusa do fornecedor pode trazer a solução — e é seguida.**
+    Se a mensagem disser «use models/X», tenta-se X **antes** de pedir a lista de modelos (zero
+    consultas extra). «no longer available», «retired», «sunset» e afins contam como erro de
+    modelo, tal como um `404`/`410` sem corpo. Os nomes sugeridos no catálogo passam a ser os que
+    responderam de facto (groq `openai/gpt-oss-120b`, gemini `gemini-3.8-flash`), e a correcção
+    automática fica como rede para o dia em que estes também mudarem.
+    Motivo: em produção, o Google respondeu com o nome exacto a usar e a aplicação, sem esta
+    regra, ia pedir a lista para escolher às cegas — ou nem isso, quando a mensagem não casava
+    com nenhum padrão conhecido («no longer available» não casava).
