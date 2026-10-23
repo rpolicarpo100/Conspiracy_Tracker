@@ -123,13 +123,13 @@ export function criarResolvedorDeModelos({ complete, listModels, agora, cacheMs 
     return r.models;
   }
 
-  async function completarComModelo({ provider, apiKey, modelo, mensagens, timeoutMs }) {
-    const r1 = await complete({ provider, apiKey, model: modelo, messages: mensagens, timeoutMs });
+  async function completarComModelo({ provider, apiKey, modelo, mensagens, timeoutMs, retries }) {
+    const r1 = await complete({ provider, apiKey, model: modelo, messages: mensagens, timeoutMs, retries });
     if (r1 && r1.ok) return { r: r1, modelo };
     if (!erroDeModelo(r1)) return { r: r1, modelo };
     const decisaoDoFornecedor = { escolhido: sugestaoDoFornecedor((r1 && (r1.detalhe || r1.error)) || ''), razao: 'o próprio fornecedor indicou o modelo a usar' };
     if (decisaoDoFornecedor.escolhido && decisaoDoFornecedor.escolhido !== modelo) {
-      const r2 = await complete({ provider, apiKey, model: decisaoDoFornecedor.escolhido, messages: mensagens, timeoutMs });
+      const r2 = await complete({ provider, apiKey, model: decisaoDoFornecedor.escolhido, messages: mensagens, timeoutMs, retries });
       contas.correcoes++;
       if (r2 && r2.ok) {
         return { r: Object.assign({}, r2, { modeloCorrigido: decisaoDoFornecedor.escolhido, modeloPedido: modelo, razaoDaCorrecao: decisaoDoFornecedor.razao }),
@@ -142,7 +142,7 @@ export function criarResolvedorDeModelos({ complete, listModels, agora, cacheMs 
       contas.falhas++;
       return { r: r1, modelo, listaConsultada: lista.length, razao: decisao.razao };
     }
-    const r2 = await complete({ provider, apiKey, model: decisao.escolhido, messages: mensagens, timeoutMs });
+    const r2 = await complete({ provider, apiKey, model: decisao.escolhido, messages: mensagens, timeoutMs, retries });
     contas.correcoes++;
     return {
       r: Object.assign({}, r2, { modeloCorrigido: decisao.escolhido, modeloPedido: modelo, razaoDaCorrecao: decisao.razao }),

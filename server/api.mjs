@@ -1006,7 +1006,7 @@ export async function createApi(opts) {
           provider: op ? op.provider : e.activo.provider,
           apiKey: op ? op.apiKey : null,
           modelo: op ? op.modelo : e.activo.modelo,
-          mensagens: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 25000
+          mensagens: [{ role: 'user', content: 'Responda apenas: ok' }], timeoutMs: 45000, retries: 1
         }).catch((x) => ({ r: { ok: false, error: String(x && x.message) }, modelo: null }));
         const r = feito.r;
         const ms = Date.now() - t0;
