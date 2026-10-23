@@ -55,7 +55,7 @@ import {
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.0.0-fase12';
+const APP_VERSION = '2.1.0-faseB';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -690,6 +690,9 @@ export async function createApi(opts) {
   }
   const accessLimiter = makeLimiter(60);
   const docLimiter = makeLimiter(40);          // recolhas de documentos por hora/utilizador
+  /* Execuções em curso no modo fundo: guardadas para o encerramento poder
+     esperá-las (senão um teste ou um deploy corta-as a meio sem rasto). */
+  const emCurso = new Map();
   const mfaLimiter = makeAttemptLimiter();     // códigos TOTP errados por conta
   const providerDiscoveryLimiter = makeLimiter(10);  // catálogos externos: 10/h por utilizador
   const providerScheduleLimiter = makeLimiter(20);   // lotes de reavaliação: 20/h por utilizador
@@ -2967,16 +2970,44 @@ export async function createApi(opts) {
         const run = await store.createRun(pid, {
           profile, userId: a.user.id, status: 'running',
           candidates: { urls }, budget: profileOf(profile),
-          aiAvailable: !!aiRunner(a.user), vaultReady: vault.enabled
+          aiAvailable: !!aiRunner(a.user), vaultReady: vault.enabled, lacunas: []
         });
         const ai = aiRunner(a.user);
+        /* Modo fundo: o pedido responde já e a execução corre fora dele.
+           Existe porque uma execução de 30–60 minutos não cabe numa ligação
+           HTTP: o proxy corta, e o utilizador perde a resposta de um trabalho
+           que a aplicação fez. O modo síncrono mantém-se para compatibilidade
+           (é o que os testes antigos usam) e está declarado na resposta. */
+        if (body.background === true) {
+          const corrida = (async () => {
+            try {
+              const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
+              await store.audit({
+                type: 'research_run', actorId: a.user.id, subjectId: run.id, action: 'run-background',
+                detail: { projectId: pid, profile, status: out.run && out.run.status, stopReason: out.run && out.run.stopReason, urls: urls.length }
+              });
+              await store.count('research_runs');
+            } catch (e) {
+              /* uma excepção fora dos passos não pode deixar a execução «running» para sempre */
+              await store.updateRun(run.id, { status: 'stopped', stopReason: 'erro-nao-tratado',
+                stopDetail: String(e && e.message).slice(0, 300), finishedAt: new Date().toISOString() });
+            }
+          })();
+          emCurso.set(run.id, corrida);
+          corrida.finally(() => emCurso.delete(run.id));
+          return json(res, 202, {
+            ok: true, background: true, run: store.runById(run.id),
+            comoAcompanhar: 'GET /api/runs/' + run.id,
+            aiUsed: !!ai, vaultReady: vault.enabled
+          });
+        }
         const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
         await store.audit({
           type: 'research_run', actorId: a.user.id, subjectId: run.id, action: 'run',
           detail: { projectId: pid, profile, status: out.run && out.run.status, stopReason: out.run && out.run.stopReason, urls: urls.length }
         });
         await store.count('research_runs');
-        return json(res, 201, { ok: true, run: out.run, aiUsed: !!ai, vaultReady: vault.enabled });
+        return json(res, 201, { ok: true, background: false, run: out.run, aiUsed: !!ai, vaultReady: vault.enabled });
       }
       if (p.match(/^\/api\/runs\/[^/]+$/) && method === 'GET') {
         const a = await requireUser(req, res); if (!a) return;
@@ -3000,11 +3031,19 @@ export async function createApi(opts) {
         }
         if (run.status === 'aguarda-revisao-humana') return err(res, 409, 'execução já concluída: nada para retomar');
         if (run.status === 'cancelled') return err(res, 409, 'execução cancelada: crie uma nova');
-        await store.updateRun(rid, { status: 'running' });
+        /* «concluido-com-lacunas» PODE retomar-se: é precisamente o caso em que
+           faltou alguma coisa (chave de IA que entretanto foi configurada). O que
+           já foi concluído não se repete — runResearch salta os passos feitos — e
+           os documentos já arquivados são reutilizados em vez de descarregados. */
+        const antes = (run.lacunas || []).length;
+        await store.updateRun(rid, { status: 'running', lacunas: [] });
         const ai = aiRunner(a.user);
         const out = await runResearch({ store, ai, fetchDoc }, rid, { ai });
-        await store.audit({ type: 'research_run', actorId: a.user.id, subjectId: rid, action: 'resume', detail: { status: out.run && out.run.status } });
-        return json(res, 200, { ok: true, run: out.run });
+        await store.audit({
+          type: 'research_run', actorId: a.user.id, subjectId: rid, action: 'resume',
+          detail: { status: out.run && out.run.status, lacunasAntes: antes, lacunasDepois: ((out.run && out.run.lacunas) || []).length }
+        });
+        return json(res, 200, { ok: true, run: out.run, lacunasAntes: antes });
       }
 
       /* ---------- relatório de 18 secções ---------- */
@@ -3986,8 +4025,13 @@ export async function createApi(opts) {
   if (opts.exposeStore === true) api.__test = { store };
 
   api.close = async () => {
+    /* espera pelas execuções em fundo: fechar a meio deixaria a execução
+       «running» para sempre e perderia os últimos passos */
+    if (emCurso.size) await Promise.allSettled([...emCurso.values()]);
     if (typeof store.readOnly === 'function' && store.readOnly()) return;   // nada a gravar
     await store.persist();
   };
+  /* quantas execuções em fundo estão a correr agora (usado pelos testes) */
+  api.runsEmCurso = () => emCurso.size;
   return api;
 }

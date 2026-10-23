@@ -70,15 +70,23 @@ const stubAi = (behaviour) => async ({ step }) => {
 
 console.log('\n== P2 · MOTOR DE PESQUISA E RELATÓRIO (tests/research.mjs)\n');
 
-await t('sem fornecedor de IA o motor pára no primeiro passo e diz porquê', async () => {
+await t('sem fornecedor de IA a execução não pára: declara a lacuna e continua até ao fim', async () => {
+  /* Mudança de contrato (fase B1): uma falha de IA já não aborta a execução.
+     O passo fica «nao-executado» com motivo, entra na lista de lacunas, e os
+     passos locais + a recolha continuam. Sem URLs, pára no passo 8 e diz porquê. */
   const run = await store.createRun(project.id, { userId: user.id, profile: 'normal', candidates: { urls: [] } , budget: PROFILES.normal });
   const out = await runResearch({ store, ai: null, fetchDoc }, run.id, { ai: null });
-  ok(out.run.status === 'stopped', 'estado ' + out.run.status);
-  ok(out.run.stopReason === 'sem-fornecedor-de-ia-validado', 'motivo: ' + out.run.stopReason);
-  const s1 = out.run.steps[0];
-  ok(s1.id === 'interpretar' && s1.status === 'nao-executado', 'passo 1 devia ficar «nao-executado»');
+  const s1 = out.run.steps.find((x) => x.id === 'interpretar');
+  ok(s1 && s1.status === 'nao-executado', 'passo 1 devia ficar «nao-executado»');
   ok(/sem fornecedor de IA validado/.test(s1.reason), 'motivo do passo: ' + s1.reason);   // motivo legível, não só o slug
-  return 'parou no passo 1 · ' + s1.reason + ' · nada inventado';
+  ok(s1.output === null, 'inventou saída para um passo de IA sem fornecedor');
+  const lac = out.run.lacunas || [];
+  ok(lac.some((l) => l.id === 'interpretar' && l.tipo === 'sem-fornecedor-de-ia-validado'), 'lacuna não registada: ' + JSON.stringify(lac));
+  /* sem URLs só se pára no passo 8 — e o motivo é esse, não a falta de IA */
+  ok(out.run.status === 'stopped', 'estado ' + out.run.status);
+  ok(out.run.stopReason === 'sem-urls-para-consultar', 'motivo: ' + out.run.stopReason);
+  ok(out.run.steps.some((x) => x.id === 'ambito' && x.status === 'concluido'), 'passo local não correu apesar de haver lacuna de IA');
+  return 'lacuna declarada (' + lac.length + ') · passos locais correram · parou por falta de URLs';
 });
 
 await t('com IA simulada corre os 20 passos, recolhe documentos reais e entrega para revisão humana', async () => {
@@ -111,17 +119,99 @@ await t('conteúdo que dá ordens ao agente é assinalado, não obedecido', asyn
 });
 
 await t('orçamento de documentos corta a recolha e a paragem fica escrita', async () => {
+  /* URLs com marca própria: este teste quer exercitar o ORÇAMENTO, não a
+     reutilização do arquivo (que tem o seu próprio teste abaixo). */
   const run = await store.createRun(project.id, {
     userId: user.id, profile: 'rapida',
-    candidates: { urls: [FIX + '/relatorio', FIX + '/noticia'] }, budget: { maxCalls: 3, maxDocuments: 1, maxMinutes: 5 }
+    candidates: { urls: [FIX + '/relatorio?orc=1', FIX + '/noticia?orc=1'] }, budget: { maxCalls: 3, maxDocuments: 1, maxMinutes: 5 }
   });
   const ai = stubAi();
   const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
   ok(out.run.status === 'stopped' || out.run.status === 'aguarda-revisao-humana', 'estado ' + out.run.status);
   const recolher = out.run.steps.find((s) => s.id === 'recolher');
-  ok(recolher && recolher.output.length === 1, 'documentos recolhidos: ' + (recolher ? recolher.output.length : 'sem passo'));
+  ok(recolher, 'sem passo de recolha');
+  ok(recolher.counts.arquivados === 1, 'o orçamento devia cortar em 1 documento: ' + JSON.stringify(recolher.counts));
+  ok(recolher.counts.pedidos === 1, 'pedidos deviam ser 1: ' + JSON.stringify(recolher.counts));
   ok(/orçamento|limite/.test(String(out.run.stopReason || '') + String(recolher.reason || '')), 'paragem sem motivo: ' + out.run.stopReason);
   return '1 documento apesar de 2 URLs · ' + (out.run.stopReason || recolher.reason);
+});
+
+await t('retomar não volta a descarregar: o que já está arquivado é reutilizado', async () => {
+  const urls = [FIX + '/relatorio?reusa=1', FIX + '/noticia?reusa=1'];
+  const r1 = await store.createRun(project.id, { userId: user.id, profile: 'normal', candidates: { urls }, budget: PROFILES.normal });
+  const o1 = await runResearch({ store, ai: stubAi(), fetchDoc }, r1.id, { ai: stubAi() });
+  const c1 = o1.run.steps.find((s) => s.id === 'recolher').counts;
+  ok(c1.arquivados === 2 && c1.reutilizados === 0, 'primeira execução: ' + JSON.stringify(c1));
+  const r2 = await store.createRun(project.id, { userId: user.id, profile: 'normal', candidates: { urls }, budget: PROFILES.normal });
+  const o2 = await runResearch({ store, ai: stubAi(), fetchDoc }, r2.id, { ai: stubAi() });
+  const c2 = o2.run.steps.find((s) => s.id === 'recolher').counts;
+  ok(c2.pedidos === 0 && c2.reutilizados === 2 && c2.arquivados === 0, 'segunda execução: ' + JSON.stringify(c2));
+  const docs = store.documentsOf(project.id).filter((d) => /reusa=1/.test(d.url));
+  ok(docs.length === 2, 'documentos duplicados no arquivo: ' + docs.length);
+  return 'recolha 1: 2 arquivados · recolha 2: 0 descargas, 2 reutilizados, arquivo com 2';
+});
+
+await t('cancelar a meio interrompe a recolha e diz onde parou', async () => {
+  /* fetchDoc lento para haver tempo de cancelar entre dois documentos */
+  const lento = async (url) => {
+    await new Promise((r) => setTimeout(r, 120));
+    return { ok: true, status: 200, text: 'x', bytes: 1, hash: 'h-' + crypto.randomBytes(3).toString('hex') };
+  };
+  const urls = Array.from({ length: 6 }, (_, i) => FIX + '/relatorio?cancel=' + i);
+  const run = await store.createRun(project.id, { userId: user.id, profile: 'normal', candidates: { urls }, budget: PROFILES.normal });
+  const ai = stubAi();
+  const promessa = runResearch({ store, ai, fetchDoc: lento }, run.id, { ai });
+  /* cancela enquanto a recolha decorre */
+  await new Promise((r) => setTimeout(r, 400));
+  await store.updateRun(run.id, { status: 'cancelled', stopReason: 'cancelado-pelo-utilizador' });
+  const out = await promessa;
+  const rec = out.run.steps.find((x) => x.id === 'recolher');
+  ok(rec, 'a recolha não chegou a começar');
+  ok(rec.counts.pedidos < urls.length, 'recolheu tudo apesar de cancelada: ' + JSON.stringify(rec.counts));
+  ok(/cancelada/.test(String(rec.reason)), 'motivo do corte não escrito: ' + rec.reason);
+  ok(out.run.status === 'cancelled', 'estado ' + out.run.status);
+  return 'parou a meio: ' + rec.counts.pedidos + ' de ' + urls.length + ' documentos · motivo escrito';
+});
+
+await t('retomar uma execução com lacunas não repete passos nem volta a descarregar', async () => {
+  const urls = [FIX + '/relatorio?retoma=1'];
+  /* 1.ª execução sem IA: lacunas e documentos arquivados */
+  const r1 = await store.createRun(project.id, { userId: user.id, profile: 'normal', candidates: { urls }, budget: PROFILES.normal });
+  const o1 = await runResearch({ store, ai: null, fetchDoc }, r1.id, { ai: null });
+  ok((o1.run.lacunas || []).length > 0, 'primeira execução sem lacunas');
+  ok(o1.run.status === 'concluido-com-lacunas', 'estado ' + o1.run.status);
+  const recolher1 = JSON.parse(JSON.stringify(o1.run.steps.find((x) => x.id === 'recolher')));
+  ok(recolher1.counts.arquivados === 1, 'não arquivou: ' + JSON.stringify(recolher1.counts));
+  const lacunas1 = o1.run.lacunas.length;
+  /* 2.ª: retoma com IA disponível */
+  await store.updateRun(r1.id, { status: 'running', lacunas: [] });
+  const o2 = await runResearch({ store, ai: stubAi(), fetchDoc }, r1.id, { ai: stubAi() });
+  ok(o2.run.status === 'aguarda-revisao-humana', 'estado depois de retomar: ' + o2.run.status + ' lacunas=' + JSON.stringify(o2.run.lacunas));
+  ok(o2.run.steps.length === 20, 'passos duplicados depois de retomar: ' + o2.run.steps.length);
+  const recolher2 = o2.run.steps.find((x) => x.id === 'recolher');
+  /* o passo de recolha já estava concluído: não se repete */
+  ok(recolher2.startedAt === recolher1.startedAt, 'a recolha voltou a correr ao retomar');
+  ok(recolher2.counts.arquivados === 1, 'contagem da recolha mudou: ' + JSON.stringify(recolher2.counts));
+  const docs = store.documentsOf(project.id).filter((d) => /retoma=1/.test(d.url));
+  ok(docs.length === 1, 'documento duplicado no arquivo: ' + docs.length);
+  return 'lacunas ' + lacunas1 + ' → 0 · recolha não repetida · 20 passos · arquivo com 1 documento';
+});
+
+await t('orçamento esgotado não mata a execução: os passos locais continuam', async () => {
+  const run = await store.createRun(project.id, {
+    userId: user.id, profile: 'normal',
+    candidates: { urls: [FIX + '/relatorio?orcamento=1'] },
+    budget: { maxCalls: 0, maxDocuments: 2, maxMinutes: 5 }
+  });
+  const ai = stubAi();
+  const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
+  ok(out.run.status === 'concluido-com-lacunas', 'estado ' + out.run.status + ' (' + out.run.stopReason + ')');
+  ok((out.run.lacunas || []).some((l) => l.tipo === 'orcamento-esgotado'), 'lacuna de orçamento não declarada');
+  /* com orçamento a zero, nada externo corre — mas a revisão final e o relatório correm */
+  const feitos = out.run.steps.filter((x) => x.status === 'concluido').map((x) => x.id);
+  ok(feitos.includes('ambito') && feitos.includes('revisao') && feitos.includes('relatorio'), 'passos locais não correram: ' + feitos.join(','));
+  ok(out.run.steps.filter((x) => x.kind === 'ia' && x.status === 'concluido').length === 0, 'chamou IA com orçamento zero');
+  return 'lacunas: ' + out.run.lacunas.length + ' · locais correram (ambito, relatorio, revisao) · nenhuma chamada externa';
 });
 
 await t('perfil declarado ignora passos que não inclui (e diz quais)', async () => {
@@ -142,13 +232,13 @@ await t('resposta de IA que não é JSON não é guardada como resultado', async
   const run = await store.createRun(project.id, { userId: user.id, profile: 'rapida', candidates: { urls: [FIX + '/relatorio'] }, budget: PROFILES.rapida });
   const ai = async () => ({ ok: true, provider: 'stub', model: 'stub-1', expectsJson: true, parsed: null, note: 'sem objecto JSON na resposta' });
   const out = await runResearch({ store, ai, fetchDoc }, run.id, { ai });
-  ok(out.run.status === 'stopped', 'estado ' + out.run.status);
-  ok(out.run.stopReason === 'resposta-invalida-de-ia', 'motivo ' + out.run.stopReason);
   const s = out.run.steps[0];
   ok(s.status === 'falhou' && s.output === null, 'guardou saída inválida: ' + JSON.stringify(s.output));
+  ok((out.run.lacunas || []).some((l) => l.tipo === 'resposta-invalida-de-ia'), 'lacuna não declarada');
+  ok(out.run.sourcesConsulted.length === 1, 'a recolha não correu apesar do texto inválido da IA');
   const p = parseAiJson('desculpe, não sei responder');
   ok(!p.ok, 'parser aceitou texto sem JSON');
-  return 'parou com «resposta-invalida-de-ia» · saída não guardada';
+  return '«resposta-invalida-de-ia» registada como lacuna · nada inventado · recolha continuou';
 });
 
 await t('execução cancelada não continua ao retomar', async () => {
@@ -297,20 +387,51 @@ try {
      fornecedor sem chave. O que NÃO pode acontecer é dizer «usei IA» quando não
      há nenhuma via. Aqui desligam-se as duas vias e prova-se que o motor pára.
      (A via sem chave em si é testada em tests/ia-fornecedores.mjs.) */
-  await t('POST /runs sem chave de IA valida e pára com motivo declarado (HTTP)', async () => {
+  await t('POST /runs sem chave de IA conclui com lacunas declaradas (não mente nem pára a recolha)', async () => {
     const r = await call('POST', '/api/projects/' + prj.id + '/runs', { profile: 'normal', urls: [FIX + '/relatorio'] });
     ok(r.status === 201, 'status ' + r.status + ' ' + JSON.stringify(r.json));
+    ok(r.json.background === false, 'o modo síncrono devia estar declarado na resposta');
     ok(r.json.aiUsed === false, 'disse ter usado IA sem via nenhuma');
-    ok(r.json.run.stopReason === 'sem-fornecedor-de-ia-validado', 'motivo: ' + r.json.run.stopReason);
-    return 'run criada · parou em «' + r.json.run.stopReason + '» (nada inventado)';
+    ok(r.json.run.status === 'concluido-com-lacunas', 'estado ' + r.json.run.status);
+    ok((r.json.run.lacunas || []).length > 0, 'não declarou lacuna nenhuma');
+    ok(r.json.run.lacunas.every((l) => l.tipo && l.motivo), 'lacuna sem tipo/motivo: ' + JSON.stringify(r.json.run.lacunas));
+    const rec = r.json.run.steps.find((x) => x.id === 'recolher');
+    ok(rec, 'a recolha não chegou a correr apesar de haver URL');
+    /* o fixture vive em 127.0.0.1 e a defesa SSRF recusa endereços locais:
+       o que se exige aqui é que a recolha TENHA corrido e que o motivo da
+       recusa fique registado — não que o documento tenha sido obtido. */
+    ok(r.json.run.sourcesConsulted.length === 1, 'fontes consultadas: ' + r.json.run.sourcesConsulted.length);
+    const fonte = r.json.run.sourcesConsulted[0];
+    ok(fonte.ok === true || /privado|local|SSRF|proibid/i.test(String(fonte.error)), 'falha sem motivo declarado: ' + JSON.stringify(fonte).slice(0, 200));
+    return 'concluiu com ' + r.json.run.lacunas.length + ' lacuna(s) · recolha executada (ok=' + fonte.ok + ')';
+  });
+
+  await t('POST /runs com background:true responde 202 e a execução é acompanhável', async () => {
+    const t0 = Date.now();
+    const r = await call('POST', '/api/projects/' + prj.id + '/runs', { profile: 'normal', urls: [FIX + '/noticia'], background: true });
+    const ms = Date.now() - t0;
+    ok(r.status === 202, 'status ' + r.status + ' ' + JSON.stringify(r.json).slice(0, 160));
+    ok(r.json.background === true && r.json.run && r.json.run.id, 'sem identificador de execução');
+    ok(ms < 1500, 'o pedido demorou ' + ms + ' ms: não está a correr em fundo');
+    /* acompanhar até terminar (tecto curto: usa o mesmo fixture local) */
+    let ultimo = null;
+    for (let i = 0; i < 60; i++) {
+      const um = await call('GET', '/api/runs/' + r.json.run.id);
+      ultimo = um.json.run;
+      if (ultimo.status !== 'running' && ultimo.status !== 'pending') break;
+      await new Promise((x) => setTimeout(x, 250));
+    }
+    ok(ultimo && ultimo.status !== 'running', 'a execução ficou presa em «running»');
+    ok(ultimo.steps.length === 20, 'passos registados: ' + ultimo.steps.length);
+    return '202 em ' + ms + ' ms · terminou em «' + ultimo.status + '» com 20 passos';
   });
 
   await t('GET /api/projects/{id}/runs lista a execução com os 20 passos descritos', async () => {
     const r = await call('GET', '/api/projects/' + prj.id + '/runs');
-    ok(r.status === 200 && r.json.runs.length === 1, 'execuções: ' + (r.json.runs || []).length);
+    ok(r.status === 200 && r.json.runs.length === 2, 'execuções: ' + (r.json.runs || []).length);   // síncrona + fundo
     ok(r.json.steps.length === 20, 'passos descritos: ' + r.json.steps.length);
     ok(r.json.profiles.includes('profunda'), 'perfis em falta');
-    return '1 execução · 20 passos descritos · perfis ' + r.json.profiles.join('/');
+    return r.json.runs.length + ' execuções · 20 passos descritos · perfis ' + r.json.profiles.join('/');
   });
 
   await t('cancelar execução terminada é recusado; outra conta não vê a execução', async () => {

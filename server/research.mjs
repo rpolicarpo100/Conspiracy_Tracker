@@ -4,13 +4,19 @@
    Regras:
    · cada passo grava o que fez, com que dados e por que parou;
    · um passo que precisa de IA só corre com um fornecedor VALIDADO do utilizador;
-     sem ele o passo fica «não executado» e a execução pára com motivo escrito —
-     nunca se inventa interpretação, entidade ou excerto;
+     sem ele o passo fica «não executado» e é registado como LACUNA — a execução
+     NÃO pára: os passos locais e a recolha de documentos continuam, porque uma
+     falha de IA não é razão para não arquivar o que o utilizador indicou;
+     nunca se inventa interpretação, entidade ou excerto para preencher a lacuna;
    · um passo que precisa de URLs só corre se houver URLs para consultar;
    · o orçamento (chamadas, documentos, minutos) é verificado antes de cada
      chamada externa e a paragem por orçamento fica registada;
    · nada aqui escreve provas: a extracção devolve CANDIDATOS que o utilizador
-     tem de confirmar (a prova continua a exigir excerto e decisão humana).
+     tem de confirmar (a prova continua a exigir excerto e decisão humana);
+   · os documentos recolhidos são ARQUIVADOS (com hash, estado e revisão pendente),
+     porque um resultado que não fica guardado não serve para investigar;
+   · cancelar é verificado entre passos e dentro da recolha; retomar salta os
+     passos concluídos e NÃO volta a descarregar o que já está arquivado.
    ===================================================================== */
 import { hostOf } from './evidence.mjs';
 import crypto from 'node:crypto';
@@ -99,6 +105,21 @@ export async function runResearch(deps, runId, opts) {
   const spent = { calls: 0, documents: 0 };
   const candidates = run.candidates || {};
   const steps = run.steps || [];
+  /* Lacunas declaradas: cada passo que não pôde correr entra aqui com motivo.
+     A execução continua; no fim o estado diz que terminou COM lacunas. */
+  const lacunas = (run.lacunas || []).slice();
+  const registarLacuna = async (rec, tipo, motivo) => {
+    lacunas.push({ passo: rec.n, id: rec.id, tipo, motivo: String(motivo || '').slice(0, 300),
+      em: new Date().toISOString() });
+    await store.updateRun(runId, { lacunas });
+  };
+  const cancelada = () => store.runById(runId).status === 'cancelled';
+  /* Um passo tem UM registo. Ao retomar, o registo novo substitui o antigo —
+     senão a lista de 20 passos passa a ter duplicados e a UI mente na contagem. */
+  const guardarPasso = (rec) => {
+    const i = steps.findIndex((x) => x.id === rec.id);
+    if (i >= 0) steps[i] = rec; else steps.push(rec);
+  };
 
   const stop = async (reason, detail) => {
     await store.updateRun(runId, {
@@ -118,7 +139,10 @@ export async function runResearch(deps, runId, opts) {
   for (const step of STEPS) {
     const current = store.runById(runId);
     if (current.status === 'cancelled') return stop('cancelado-pelo-utilizador');
-    if (steps.some((s) => s.id === step.id && s.status === 'concluido')) continue;    // retoma: já feito
+    /* retoma: um passo já concluído, ou já descartado pelo perfil, não se repete.
+       Os que falharam («nao-executado»/«falhou») voltam a tentar-se. */
+    const anterior = steps.find((s) => s.id === step.id);
+    if (anterior && ['concluido', 'ignorado-pelo-perfil'].includes(anterior.status)) continue;
 
     const rec = {
       n: step.n, id: step.id, phase: step.phase, title: step.title, kind: step.kind,
@@ -127,14 +151,21 @@ export async function runResearch(deps, runId, opts) {
       provider: null, model: null, output: null, reason: null, counts: null
     };
 
-    /* --- orçamento antes de qualquer chamada externa --- */
-    if (step.kind !== 'local') {
+    /* --- orçamento antes de qualquer chamada externa ---
+       Só se verifica para passos que VÃO mesmo chamar algo: um passo de IA que o
+       perfil ignora, ou um passo local, não gasta orçamento nenhum. E esgotar o
+       orçamento não mata o resto da execução: os passos locais ainda correm. */
+    const vaiChamar = step.kind === 'fetch' || (step.kind === 'ia' && profile.aiSteps.includes(step.id));
+    if (vaiChamar) {
       const left = budgetLeft();
       if (left.calls <= 0 || left.minutes <= 0) {
+        const motivo = 'orçamento esgotado (' + (left.calls <= 0 ? 'chamadas' : 'tempo') + ')';
         rec.status = 'nao-executado';
-        rec.reason = 'orçamento esgotado (' + (left.calls <= 0 ? 'chamadas' : 'tempo') + ')';
-        await store.updateRun(runId, { steps: steps.concat([rec]).map(cleanStep) });
-        return stop('orcamento-esgotado', rec.reason);
+        rec.reason = motivo + ': passo não executado';
+        await registarLacuna(rec, 'orcamento-esgotado', motivo + ' (passo ' + step.n + ')');
+        guardarPasso(rec);
+        await store.updateRun(runId, { steps: steps.map(cleanStep), step: step.n });
+        continue;
       }
     }
 
@@ -148,11 +179,15 @@ export async function runResearch(deps, runId, opts) {
             ? await opts.ai({ step, project, candidates, deps })
             : { ok: false, error: 'sem fornecedor de IA validado: configure e valide uma chave em «Chaves de IA» para este passo poder correr' };
           if (!ai.ok) {
+            /* NÃO se pára a execução: regista-se a lacuna e segue-se. Os passos
+               locais e a recolha não dependem de IA para serem úteis. */
             rec.status = 'nao-executado';
             rec.reason = ai.error || 'sem fornecedor de IA validado';
-            await store.updateRun(runId, { steps: steps.concat([rec]).map(cleanStep) });
             const slug = /^sem fornecedor de IA validado/.test(rec.reason) ? 'sem-fornecedor-de-ia-validado' : 'falha-de-ia';
-            return stop(slug, rec.reason + ' (passo ' + step.n + ')');
+            await registarLacuna(rec, slug, rec.reason + ' (passo ' + step.n + ')');
+            guardarPasso(rec);
+            await store.updateRun(runId, { steps: steps.map(cleanStep), step: step.n });
+            continue;
           }
           spent.calls++;
           rec.provider = ai.provider || null;
@@ -162,8 +197,10 @@ export async function runResearch(deps, runId, opts) {
           if (ai.parsed === null && ai.expectsJson) {
             rec.status = 'falhou';
             rec.reason = 'resposta não é JSON válido: nada foi registado';
-            await store.updateRun(runId, { steps: steps.concat([rec]).map(cleanStep) });
-            return stop('resposta-invalida-de-ia', rec.reason + ' (passo ' + step.n + ')');
+            await registarLacuna(rec, 'resposta-invalida-de-ia', rec.reason + ' (passo ' + step.n + ')');
+            guardarPasso(rec);
+            await store.updateRun(runId, { steps: steps.map(cleanStep), step: step.n });
+            continue;
           }
           rec.status = 'concluido';
         }
@@ -172,14 +209,37 @@ export async function runResearch(deps, runId, opts) {
         if (!urls.length) {
           rec.status = 'nao-executado';
           rec.reason = 'sem URLs para consultar: indique fontes candidatas antes de recolher';
-          await store.updateRun(runId, { steps: steps.concat([rec]).map(cleanStep) });
+          guardarPasso(rec);
+          await store.updateRun(runId, { steps: steps.map(cleanStep) });
           return stop('sem-urls-para-consultar');
         }
         const docs = [];
+        /* retoma: não se volta a descarregar o que já está arquivado neste projecto */
+        const arquivo = new Map();
+        (store.documentsOf ? store.documentsOf(project.id) : []).forEach((d) => {
+          const k = canonicalUrl(d.canonicalUrl || d.url || '');
+          if (k && !arquivo.has(k)) arquivo.set(k, d);
+        });
+        let saltados = 0;
         for (const url of urls) {
+          if (cancelada()) { rec.reason = 'cancelada pelo utilizador antes de recolher ' + url; break; }
           if (budgetLeft().documents <= 0) { rec.reason = 'limite de documentos do orçamento atingido'; break; }
           if (budgetLeft().calls <= 0) { rec.reason = 'limite de chamadas do orçamento atingido'; break; }
           if ((Date.now() - t0) / 60000 > budget.maxMinutes) { rec.reason = 'limite de tempo atingido'; break; }
+          const guardado = arquivo.get(canonicalUrl(url));
+          if (guardado) {
+            /* já está no arquivo: reutiliza-se o registo em vez de voltar a
+               descarregar. Conta como reutilizado, nunca como recolha nova. */
+            saltados++;
+            docs.push({
+              url: String(url).slice(0, 1500), canonicalUrl: canonicalUrl(url), host: hostOf(url),
+              ok: !!guardado.ok, status: guardado.status || null, bytes: guardado.bytes || 0,
+              kind: guardado.kind || 'desconhecido', hash: guardado.hash || null,
+              error: guardado.error || null, injection: null, extraction: guardado.extraction || null,
+              reutilizado: true, documentoId: guardado.id, consultadoEm: guardado.createdAt || null
+            });
+            continue;
+          }
           const got = await deps.fetchDoc(url);
           spent.calls++; spent.documents++;
           const ex = got.extraction || null;
@@ -201,11 +261,31 @@ export async function runResearch(deps, runId, opts) {
           /* o texto recolhido alimenta passos posteriores, mas não é prova por si só */
           (candidates.docs = candidates.docs || []).push({ url, text: got.ok ? String(got.text).slice(0, 20000) : null });
         }
+        /* arquivar de facto: um documento recolhido e não guardado perde-se com o
+           processo. Fica com hash, estado e revisão humana pendente — não é prova. */
+        let arquivados = 0;
+        for (const d of docs) {
+          if (!store.addDocument || d.reutilizado) continue;   // reutilizado já está no arquivo
+          try {
+            await store.addDocument(project.id, run.userId, {
+              url: d.url, canonicalUrl: d.canonicalUrl, host: d.host, kind: d.kind,
+              title: null, note: 'recolhido pela execução ' + runId, ok: d.ok, status: d.status,
+              bytes: d.bytes, hash: d.hash, error: d.error, text: '',
+              extraction: d.extraction, needsReview: true, reviewed: false,
+              createdBy: run.userId, runId
+            });
+            arquivados++;
+          } catch { /* se o arquivo falhar, o documento continua listado em sourcesConsulted */ }
+        }
         rec.output = docs;
-        rec.counts = { pedidos: docs.length, obtidos: docs.filter((d) => d.ok).length };
+        rec.counts = {
+          pedidos: docs.filter((d) => !d.reutilizado).length,
+          obtidos: docs.filter((d) => d.ok).length,
+          arquivados, reutilizados: saltados
+        };
         rec.status = docs.some((d) => d.ok) ? 'concluido' : 'falhou';
         if (!docs.some((d) => d.ok)) rec.reason = 'nenhum documento foi obtido (ver estado por URL)';
-        steps.push(rec);
+        guardarPasso(rec);
         await store.updateRun(runId, {
           steps: steps.map(cleanStep),
           step: step.n,
@@ -217,22 +297,28 @@ export async function runResearch(deps, runId, opts) {
         rec.status = 'concluido';
         rec.counts = summarise(rec.output);
       }
-      steps.push(rec);
+      guardarPasso(rec);
       await store.updateRun(runId, { steps: steps.map(cleanStep), step: step.n });
     } catch (e) {
       rec.status = 'falhou';
       rec.reason = String(e.message).slice(0, 300);
-      steps.push(rec);
+      guardarPasso(rec);
       await store.updateRun(runId, { steps: steps.map(cleanStep) });
       return stop('erro-no-passo-' + step.id, rec.reason);
     }
   }
 
+  /* Terminou. Se houve lacunas, o estado diz isso em vez de fingir cobertura:
+     «concluido-com-lacunas» não é falha nem sucesso pleno — é o que aconteceu. */
+  const comLacunas = lacunas.length > 0;
   await store.updateRun(runId, {
-    status: 'aguarda-revisao-humana', finishedAt: new Date().toISOString(),
-    budget: Object.assign({}, budget), spent,
+    status: comLacunas ? 'concluido-com-lacunas' : 'aguarda-revisao-humana',
+    finishedAt: new Date().toISOString(),
+    budget: Object.assign({}, budget), spent, lacunas,
     stopReason: null,
-    stopDetail: 'pipeline concluído: nenhuma conclusão é publicada sem revisão humana'
+    stopDetail: comLacunas
+      ? 'pipeline concluído com ' + lacunas.length + ' lacuna(s) declarada(s): nenhum passo foi substituído por invenção'
+      : 'pipeline concluído: nenhuma conclusão é publicada sem revisão humana'
   });
   return { ok: true, run: store.runById(runId) };
 }
