@@ -171,7 +171,10 @@ await t('resolução de entidades distingue colisões de falta de desambiguador'
 
 await t('auditor adversário encontra conclusão acima das provas e cópias como corroboração', async () => {
   /* 1) pela API o servidor já não deixa «confirmar» com uma só origem nem com cópias */
-  const tentativa = await A.call('PATCH', '/api/claims/' + clConfirmada.id, { state: 'confirmada' });
+  /* FASE C: o estado forte passou a chamar-se «facto-documentado» (a força vive
+     nos factores) e exige procura de contraprova registada. Ambos os motivos
+     travam a promoção — é a garantia, não o nome, que se testa aqui. */
+  const tentativa = await A.call('PATCH', '/api/claims/' + clConfirmada.id, { state: 'facto-documentado' });
   ok(tentativa.status === 409, 'o servidor deixou confirmar com cópias (' + tentativa.status + ')');
   /* 2) o auditor apanha o caso antigo: conclusão «confirmada» assente em duas cópias da mesma peça */
   const legado = redTeamAudit({
@@ -179,7 +182,7 @@ await t('auditor adversário encontra conclusão acima das provas e cópias como
       { id: 'e1', title: 'Comunicado', excerpt: 'Texto suficientemente longo do comunicado.', canonicalUrl: 'https://empresa.pt/c', originKey: 'sind:https://empresa.pt/c', syndicationOf: 'https://empresa.pt/c', stance: 'favoravel', validationState: 'insuficiente' },
       { id: 'e2', title: 'Cópia noutro sítio', excerpt: 'Texto suficientemente longo do comunicado.', canonicalUrl: 'https://sindicado.pt/n', originKey: 'sind:https://empresa.pt/c', syndicationOf: 'https://empresa.pt/c', stance: 'favoravel', validationState: 'insuficiente' }
     ],
-    claims: [{ id: 'c1', text: 'A empresa controla X', state: 'confirmada', evidenceIds: ['e1', 'e2'], confidence: 'alta' }],
+    claims: [{ id: 'c1', text: 'A empresa controla X', state: 'facto-documentado', evidenceIds: ['e1', 'e2'], confidence: 'alta' }],
     relations: []
   });
   const codigosLegado = legado.findings.map((f) => f.code);
@@ -336,11 +339,11 @@ await t('agente de IA com stub devolve saída estruturada e é registado', async
 
 await t('esquema v5 registado e meta publica os agentes', async () => {
   const meta = await (await fetch(BASE + '/api/meta')).json();
-  ok(meta.schemaVersion === 7, 'versão ' + meta.schemaVersion);
+  ok(meta.schemaVersion === 8, 'versão ' + meta.schemaVersion);
   ok(meta.agents.total === 13 && meta.agents.local + meta.agents.ai === 13, 'meta dos agentes: ' + JSON.stringify(meta.agents));
   /* base criada já na versão actual não tem passos de migração; uma base antiga tem de os registar */
   ok(meta.migrations.length === 0 || meta.migrations.some((m) => m.to >= 4), 'migração para v4+ não registada');
-  return 'schemaVersion 5 (' + (meta.migrations.length ? meta.migrations.length + ' passo(s) de migração' : 'base criada na versão actual') + ') · ' + meta.agents.local + ' agentes locais · ' + meta.agents.ai + ' de IA · prompt ' + meta.agents.promptVersion;
+  return 'schemaVersion 8 (' + (meta.migrations.length ? meta.migrations.length + ' passo(s) de migração' : 'base criada na versão actual') + ') · ' + meta.agents.local + ' agentes locais · ' + meta.agents.ai + ' de IA · prompt ' + meta.agents.promptVersion;
 });
 
 srv.kill('SIGTERM');

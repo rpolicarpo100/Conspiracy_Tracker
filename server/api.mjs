@@ -51,11 +51,12 @@ import {
   rateSource, coverageFrom, ADAPTERS
 } from './sources.mjs';
 import {
-  STATES, STATE_LABEL, validateEvidence, evaluate, corroboration, suggestedState, dedupeKey
+  STATES, STATE_LABEL, EVIDENCE_STATES, STATE_MIGRATION, migrateState, validateEvidence, evaluate,
+  corroboration, suggestedState, dedupeKey, provenanceOf, isStale, contraprovaRegistada
 } from './evidence.mjs';
 
 const MAX_BODY = 512 * 1024;
-const APP_VERSION = '2.1.0-faseB';
+const APP_VERSION = '2.2.0-faseC';
 
 /* Formato das cópias de segurança. O identificador antigo ('meridiano-backup/1') continua a ser
    lido, para que uma cópia exportada antes da mudança de nome possa ser reposta; o novo é o que
@@ -1153,6 +1154,16 @@ export async function createApi(opts) {
           ok: true, version: APP_VERSION, schemaVersion: store.schemaVersion(),
           migrations: store.migrations().map((m) => ({ to: m.to, at: m.at, changes: m.changes })),
           states: STATES.map((id) => ({ id, label: STATE_LABEL[id] })),
+          /* FASE C: a taxonomia de AFIRMAÇÕES é uma lista fechada e única; os estados
+             de FONTE são outra lista; e os nomes antigos têm mapa declarado. */
+          claimStates: STATES.map((id) => ({ id, label: STATE_LABEL[id] })),
+          evidenceStates: EVIDENCE_STATES.map((id) => ({ id, label: STATE_LABEL[id] || id })),
+          stateMigration: Object.entries(STATE_MIGRATION).map(([de, d]) => ({ de, para: d.para, motivo: d.motivo })),
+          claimRules: {
+            factoDocumentado: 'exige prova primária/documental OU 2 origens independentes, sem contradição activa, sem caducidade e com contraprova procurada e datada',
+            copias: 'textos idênticos em domínios diferentes são a mesma origem: não contam duas vezes',
+            proveniencia: 'cada prova tem de ter excerto, localização, hash e data de recolha'
+          },
           research: { steps: STEPS.length, profiles: Object.keys(PROFILES), promptVersion: PROMPT_VERSION, reportSections: SECTION_TITLES.length },
           agents: { total: AGENTS.length, promptVersion: AGENT_PROMPT_VERSION, local: AGENTS.filter((x) => x.kind === 'local').length, ai: AGENTS.filter((x) => x.kind === 'ai').length },
           providers: registryPublic(),
@@ -1656,7 +1667,7 @@ export async function createApi(opts) {
               author: STR(e.author, 200), publicationDate: DATE(e.publicationDate), eventDate: DATE(e.eventDate),
               collectionDate: DATE(e.collectionDate), verificationDate: DATE(e.verificationDate),
               extractionMethod: e.extractionMethod || 'manual', limitations: STR(e.limitations, 1000),
-              validationState: STATES.includes(e.validationState) ? e.validationState : 'insuficiente',
+              validationState: EVIDENCE_STATES.includes(e.validationState) ? e.validationState : migrateState(e.validationState).state,
               entities: Array.isArray(e.entities) ? e.entities.slice(0, 50) : [], originKey: STR(e.originKey, 200),
               contentHash: STR(e.contentHash, 200), dedupeKey: STR(e.dedupeKey, 300),
               syndicationOf: STR(e.syndicationOf, 1500), retractedAt: DATE(e.retractedAt), retractReason: STR(e.retractReason, 500),
@@ -1670,7 +1681,7 @@ export async function createApi(opts) {
             if (!STR(c.text)) continue;
             const saved = await store.createClaim(pid, {
               text: STR(c.text, 2000), kind: c.kind || 'facto',
-              state: STATES.includes(c.state) ? c.state : 'hipotese',
+              state: STATES.includes(c.state) ? c.state : migrateState(c.state).state,
               confidence: c.confidence || null, reasoning: STR(c.reasoning, 4000),
               evidenceIds: (Array.isArray(c.evidenceIds) ? c.evidenceIds : []).map((id) => evMap.get(id)).filter(Boolean),
               createdBy: a.user.id
@@ -1916,7 +1927,9 @@ export async function createApi(opts) {
         }
         const patch = {};
         if (body.validationState !== undefined) {
-          if (!STATES.includes(body.validationState)) return err(res, 400, 'validationState inválido', { allowed: STATES });
+          if (!EVIDENCE_STATES.includes(body.validationState)) {
+            return err(res, 400, 'validationState inválido', { allowed: EVIDENCE_STATES, nota: 'estados de afirmação e de fonte são listas diferentes' });
+          }
           patch.validationState = body.validationState;
         }
         if (body.limitations !== undefined) patch.limitations = String(body.limitations).slice(0, 1000);
@@ -2726,7 +2739,7 @@ export async function createApi(opts) {
         if (text.length < 8) return err(res, 400, 'a alegação precisa de texto (mínimo 8 caracteres)');
         const kind = ['facto', 'alegacao', 'hipotese', 'inferencia'].includes(body.kind) ? body.kind : 'facto';
         const state = STATES.includes(body.state) ? body.state : 'hipotese';
-        if (!['hipotese', 'insuficiente', 'alegacao-atribuida'].includes(state)) {
+        if (!['hipotese', 'insuficiente', 'alegacao-atribuida', 'nao-verificada'].includes(state)) {
           return err(res, 409, 'uma alegação nova começa como hipótese/insuficiente/alegação atribuída; o estado forte é atribuído depois de reunir provas e é validado pelo servidor');
         }
         /* provas indicadas na criação são ligadas aqui: antes eram descartadas em
@@ -2774,12 +2787,13 @@ export async function createApi(opts) {
         }
         if (body.state !== undefined) {
           if (!STATES.includes(body.state)) return err(res, 400, 'estado inválido', { allowed: STATES, labels: STATE_LABEL });
-          const verdict = evaluate(body.state, evs);
+          const verdict = evaluate(body.state, evs, { claim: c });
           /* O servidor recusa estados que as provas não sustentam. A interface pode
              pedir, mas não pode declarar «confirmada» o que está por provar. */
           if (!verdict.ok) {
             return err(res, 409, 'estado recusado: as provas não sustentam «' + body.state + '»', {
-              reasons: verdict.reasons, factors: verdict.factors, suggested: suggestedState(evs)
+              reasons: verdict.reasons, factors: verdict.factors, pendencias: verdict.pendencias || [],
+              suggested: suggestedState(evs, { claim: c })
             });
           }
           patch.state = body.state;
@@ -2791,7 +2805,54 @@ export async function createApi(opts) {
         const updated = await store.updateClaim(c.id, patch, a.user.id, body.state ? 'estado alterado' : 'actualizada');
         await store.audit({ type: 'claim_updated', actorId: a.user.id, subjectId: c.id, action: 'update_claim',
           detail: { from: c.history[c.history.length - 1].from, to: updated.state, fields: Object.keys(patch) } });
-        return json(res, 200, { ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs) });
+        return json(res, 200, {
+          ok: true, claim: updated, factors: corroboration(evs), suggested: suggestedState(evs, { claim: updated }),
+          proveniencia: provenienciaDaAfirmacao(updated, evs),
+          caducidade: isStale(updated, evs)
+        });
+      }
+
+      /* ---------- proveniência de uma afirmação (FASE C3) ---------- */
+      if (p.match(/^\/api\/claims\/[^/]+\/provenance$/) && method === 'GET') {
+        const a = await requireUser(req, res); if (!a) return;
+        const c = claimFor(a, p.split('/')[3]);
+        if (!c) return err(res, 404, 'alegação não encontrada');
+        const evs = store.evidenceOf(c.projectId).filter((e) => (c.evidenceIds || []).includes(e.id));
+        const prov = provenienciaDaAfirmacao(c, evs);
+        return json(res, 200, {
+          ok: true, claim: { id: c.id, text: c.text, state: c.state, kind: c.kind },
+          proveniencia: prov,
+          caducidade: isStale(c, evs),
+          contraprova: contraprovaRegistada(c),
+          nota: prov.completa
+            ? 'cada prova tem excerto, localização, hash e data de recolha'
+            : 'há provas sem rasto completo: a afirmação não deve ser publicada como facto até serem completadas'
+        });
+      }
+      /* ---------- contraprova: registar a procura (FASE C4) ---------- */
+      if (p.match(/^\/api\/claims\/[^/]+\/counter-evidence$/) && method === 'POST') {
+        const a = await requireUser(req, res); if (!a) return;
+        if (!requireCsrf(req, res, a)) return;
+        const c = claimFor(a, p.split('/')[3]);
+        if (!c) return err(res, 404, 'alegação não encontrada');
+        const body = await readBody(req);
+        const resultado = body.resultado === 'encontrada' ? 'encontrada' : (body.resultado === 'nao-encontrada' ? 'nao-encontrada' : null);
+        if (!resultado) return err(res, 400, 'resultado tem de ser «encontrada» ou «nao-encontrada»');
+        const metodo = String(body.metodo || '').trim().slice(0, 300);
+        if (!metodo) return err(res, 400, 'a procura de contraprova tem de declarar o método (ex.: consulta a, data, termos)');
+        const ids = Array.isArray(body.evidenceIds) ? body.evidenceIds.slice(0, 20).map(String) : [];
+        if (resultado === 'encontrada' && !ids.length) return err(res, 400, 'diz ter encontrado contraprova: indique a prova (evidenceIds)');
+        const byId = new Map(store.evidenceOf(c.projectId).map((e) => [e.id, e]));
+        const maus = ids.filter((id) => !byId.get(id));
+        if (maus.length) return err(res, 400, 'provas inexistentes neste projecto: ' + maus.join(', '));
+        const contraprova = {
+          procuradaEm: new Date().toISOString(), metodo, resultado, evidenceIds: [...new Set(ids)],
+          por: a.user.id
+        };
+        const updated = await store.updateClaim(c.id, { contraprova }, a.user.id, 'contraprova registada');
+        await store.audit({ type: 'claim_counter_evidence', actorId: a.user.id, subjectId: c.id, action: 'counter_evidence',
+          detail: { resultado, metodo: metodo.slice(0, 120), provas: ids.length } });
+        return json(res, 200, { ok: true, claim: updated, contraprova: contraprovaRegistada(updated) });
       }
 
       /* ---------- agentes ---------- */
@@ -3999,6 +4060,14 @@ export async function createApi(opts) {
       return err(res, status, status >= 500 ? 'erro interno' : e.message);
     }
   };
+
+  /* Proveniência de uma afirmação: delega em server/evidence.mjs (fonte única)
+     e acrescenta o que só aqui se sabe — a que documento do arquivo pertence. */
+  function provenienciaDaAfirmacao(claim, evs) {
+    const byId = new Map((evs || []).map((e) => [e.id, e]));
+    const prov = provenanceOf(claim, byId);
+    return prov;
+  }
 
   function summaryProject(p) {
     return {

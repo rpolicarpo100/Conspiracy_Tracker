@@ -93,9 +93,9 @@ await t('projecto guarda o objecto de investigação completo', async () => {
 });
 
 await t('hipótese não sobe a facto sem passar pelas regras do servidor', async () => {
-  const r = await A.call('PATCH', '/api/projects/' + proj.id, { hypotheses: [{ text: 'A alegação é verdadeira', state: 'confirmada' }] });
+  const r = await A.call('PATCH', '/api/projects/' + proj.id, { hypotheses: [{ text: 'A alegação é verdadeira', state: 'facto-documentado' }] });
   const h = r.json.project.hypotheses[0];
-  ok(h.state === 'hipotese', 'o servidor aceitou uma hipótese «confirmada» vinda do cliente');
+  ok(h.state === 'hipotese', 'o servidor aceitou uma hipótese «facto documentado» vinda do cliente');
   return 'estado forçado no corpo do pedido é ignorado';
 });
 
@@ -117,7 +117,9 @@ await t('prova primária é aceite com hash, URL canónico e origem', async () =
   ok(evPrimary.canonicalUrl === 'https://exemplo.pt/relatorio', 'URL canónico errado: ' + evPrimary.canonicalUrl);
   ok(!/utm_/.test(r.json.evidence.originalUrl || '') === false, 'UTM devia ficar no original e sair do canónico');
   ok(evPrimary.originKey === 'src:exemplo.pt', 'origem inesperada: ' + evPrimary.originKey);
-  ok(evPrimary.validationState === 'insuficiente', 'devia começar em «insuficiente», não em ' + evPrimary.validationState);
+  /* FASE C: uma prova nova nasce «não verificada» — é o estado honesto. «Insuficiente»
+     dizia respeito à afirmação, não à prova. */
+  ok(evPrimary.validationState === 'nao-verificada', 'devia começar em «não verificada», não em ' + evPrimary.validationState);
   return 'hash ' + evPrimary.contentHash.slice(0, 12) + '… · canónico ' + evPrimary.canonicalUrl + ' · origem ' + evPrimary.originKey;
 });
 
@@ -160,17 +162,17 @@ await t('dez cópias de um comunicado dão UMA origem independente', async () =>
   ok(view.factors.independentOrigins === 1, 'fatores contam ' + view.factors.independentOrigins + ' origens');
   ok(view.factors.copiesWithoutIndependentValue === 9, 'cópias redundantes mal contadas: ' + view.factors.copiesWithoutIndependentValue);
   ok(view.factors.favourable === 10, 'provas favoráveis contadas: ' + view.factors.favourable);
-  ok(view.suggested !== 'corroborada-independente', 'sugeriu corroboração com uma só origem');
-  const refused = await A.call('PATCH', '/api/claims/' + cid, { state: 'corroborada-independente' });
+  ok(view.suggested !== 'facto-documentado', 'sugeriu corroboração com uma só origem');
+  const refused = await A.call('PATCH', '/api/claims/' + cid, { state: 'facto-documentado' });
   ok(refused.status === 409, 'aceitou corroboração independente com uma origem (' + refused.status + ')');
   return '10 registos · 1 origem · 9 cópias redundantes · servidor recusa «corroborada independente» (409): ' + refused.json.error.reasons[0];
 });
 
-await t('servidor recusa «confirmada» sem prova primária e origens independentes', async () => {
+await t('servidor recusa «facto documentado» sem prova primária e origens independentes', async () => {
   const c = (await A.call('POST', '/api/projects/' + proj.id + '/claims', { text: 'Valor de 12 milhões atribuído ao relatório', kind: 'facto' })).json.claim;
   await A.call('PATCH', '/api/claims/' + c.id, { evidenceId: evPrimary.id });
-  const r1 = await A.call('PATCH', '/api/claims/' + c.id, { state: 'confirmada' });
-  ok(r1.status === 409, 'aceitou «confirmada» com uma só origem');
+  const r1 = await A.call('PATCH', '/api/claims/' + c.id, { state: 'facto-documentado' });
+  ok(r1.status === 409, 'aceitou «facto documentado» com uma só origem');
   const reasons1 = r1.json.error.reasons.join(' | ');
   /* segunda origem independente, secundária e favorável */
   const ev2 = (await A.call('POST', '/api/projects/' + proj.id + '/evidence', {
@@ -178,11 +180,20 @@ await t('servidor recusa «confirmada» sem prova primária e origens independen
     originalUrl: 'https://jornal.example.org/noticia', sourceType: 'secundaria', stance: 'favoravel', extractionMethod: 'http'
   })).json.evidence;
   await A.call('PATCH', '/api/claims/' + c.id, { evidenceId: ev2.id });
-  const r2 = await A.call('PATCH', '/api/claims/' + c.id, { state: 'confirmada' });
-  ok(r2.status === 200, 'não deixou confirmar com 2 origens e 1 primária: ' + JSON.stringify(r2.json));
-  ok(r2.json.claim.state === 'confirmada', 'estado final ' + r2.json.claim.state);
+  /* C4: sem registo de procura de contraprova, «facto documentado» é recusado. */
+  const semContra = await A.call('PATCH', '/api/claims/' + c.id, { state: 'facto-documentado' });
+  ok(semContra.status === 409 && /contraprova/i.test(JSON.stringify(semContra.json)),
+    'aceitou «facto documentado» sem procura de contraprova registada');
+  const cp = await A.call('POST', '/api/claims/' + c.id + '/counter-evidence', {
+    metodo: 'pesquisa por «12 milhões» em jornal.example.org e no Diário da República, 2026-10-23',
+    resultado: 'nao-encontrada'
+  });
+  ok(cp.status === 200, 'não registou a contraprova: ' + JSON.stringify(cp.json).slice(0, 160));
+  const r2 = await A.call('PATCH', '/api/claims/' + c.id, { state: 'facto-documentado' });
+  ok(r2.status === 200, 'não deixou confirmar com 2 origens, 1 primária e contraprova procurada: ' + JSON.stringify(r2.json).slice(0, 300));
+  ok(r2.json.claim.state === 'facto-documentado', 'estado final ' + r2.json.claim.state);
   ok(r2.json.claim.history.length >= 2, 'sem histórico de alterações');
-  return 'recusado com 1 origem (' + reasons1.slice(0, 60) + '…) · aceite com 2 origens e 1 primária';
+  return 'recusado com 1 origem (' + reasons1.slice(0, 60) + '…) · recusado sem contraprova · aceite com 2 origens, 1 primária e contraprova procurada';
 });
 
 await t('prova contrária torna a conclusão «contraditória» e não desaparece', async () => {
@@ -193,12 +204,12 @@ await t('prova contrária torna a conclusão «contraditória» e não desaparec
     originalUrl: 'https://auditoria.example.net/relatorio', sourceType: 'primaria', stance: 'contraria', extractionMethod: 'http'
   })).json.evidence;
   await A.call('PATCH', '/api/claims/' + c.id, { evidenceId: evContrary.id });
-  const confirmar = await A.call('PATCH', '/api/claims/' + c.id, { state: 'confirmada' });
-  ok(confirmar.status === 409, 'aceitou «confirmada» com prova contrária activa');
+  const confirmar = await A.call('PATCH', '/api/claims/' + c.id, { state: 'facto-documentado' });
+  ok(confirmar.status === 409, 'aceitou «facto documentado» com prova contrária activa');
   const r = await A.call('PATCH', '/api/claims/' + c.id, { state: 'contraditoria' });
   ok(r.status === 200 && r.json.claim.state === 'contraditoria', 'não aceitou «contraditória»');
   ok(r.json.factors.favourable === 1 && r.json.factors.contrary === 1, 'factores desequilibrados');
-  return '«confirmada» recusada (409): ' + confirmar.json.error.reasons[0] + ' · «contraditória» aceite';
+  return '«facto documentado» recusada (409): ' + confirmar.json.error.reasons[0] + ' · «contraditória» aceite';
 });
 
 await t('prova pode ser anotada (limitações, data de verificação) com histórico', async () => {
@@ -231,7 +242,7 @@ await t('retirar prova exige motivo e mantém o registo auditável', async () =>
 await t('prova de outro utilizador não é acessível nem associável', async () => {
   const r1 = await B.call('GET', '/api/projects/' + proj.id + '/evidence');
   ok(r1.status === 404, 'B viu as provas de A (' + r1.status + ')');
-  const r2 = await B.call('PATCH', '/api/evidence/' + evPrimary.id, { validationState: 'confirmada' });
+  const r2 = await B.call('PATCH', '/api/evidence/' + evPrimary.id, { validationState: 'facto-documentado' });
   ok(r2.status === 404, 'B alterou prova de A (' + r2.status + ')');
   const cp = (await B.call('POST', '/api/projects', { title: 'Projecto de B' })).json.project;
   const cB = (await B.call('POST', '/api/projects/' + cp.id + '/claims', { text: 'Alegação de B sobre outra prova' })).json.claim;
@@ -248,8 +259,8 @@ await t('estado inválido é recusado com a lista dos nove estados', async () =>
   return '9 estados permitidos · «verdade-absoluta» recusado';
 });
 
-await t('alegação nova não pode nascer «confirmada»', async () => {
-  const r = await A.call('POST', '/api/projects/' + proj.id + '/claims', { text: 'Alegação que tenta nascer provada', state: 'confirmada' });
+await t('alegação nova não pode nascer «facto documentado»', async () => {
+  const r = await A.call('POST', '/api/projects/' + proj.id + '/claims', { text: 'Alegação que tenta nascer provada', state: 'facto-documentado' });
   ok(r.status === 409, 'aceitou nascer confirmada (' + r.status + ')');
   return '409 · começa sempre como hipótese/insuficiente/alegação atribuída';
 });
@@ -308,8 +319,8 @@ await t('esquema v1 é migrado para v2 com registo do que mudou', async () => {
   try {
     await new Promise((r) => setTimeout(r, 1800));
     const meta = await (await fetch('http://127.0.0.1:' + port2 + '/api/meta')).json();
-    ok(meta.schemaVersion === 7, 'versão de esquema ' + meta.schemaVersion);
-    ok(meta.migrations.map((m) => m.to).join(',') === '2,3,4,5,6,7', 'registo de migrações: ' + JSON.stringify(meta.migrations.map((m) => m.to)));
+    ok(meta.schemaVersion === 8, 'versão de esquema ' + meta.schemaVersion);
+    ok(meta.migrations.map((m) => m.to).join(',') === '2,3,4,5,6,7,8', 'registo de migrações: ' + JSON.stringify(meta.migrations.map((m) => m.to)));
     const db = JSON.parse(await fs.readFile(path.join(dir, 'db.json'), 'utf8'));
     const p = db.projects[0];
     ok(p.status === 'draft' && Array.isArray(p.hypotheses) && p.budget.maxCalls === 50, 'projecto antigo não completado');
@@ -319,7 +330,7 @@ await t('esquema v1 é migrado para v2 com registo do que mudou', async () => {
     ok(Array.isArray(db.sources) && Array.isArray(db.sourceChecks) && Array.isArray(db.discoveryRuns), 'colecções do registo de fontes ausentes');
     ok(Array.isArray(db.providerCatalog) && Array.isArray(db.providerTests) && Array.isArray(db.checkpoints), 'colecções do Provider OS ausentes');
     ok(db.migrations[0].changes.length > 0, 'migração sem descrição de alterações');
-    return 'v1 → v7 em seis passos · ' + db.migrations.map((m) => m.from + '→' + m.to + ': ' + m.changes.join('; ')).join(' | ');
+    return 'v1 → v8 em sete passos · ' + db.migrations.map((m) => m.from + '→' + m.to + ': ' + m.changes.join('; ')).join(' | ');
   } finally { srv2.kill('SIGTERM'); }
 });
 

@@ -138,7 +138,9 @@ export function redTeamAudit({ evidence, claims, relations, citations }) {
     if (!(c.evidenceIds || []).length) add('conclusao-sem-prova', 'alta', 'Conclusão sem qualquer prova ligada: «' + c.text.slice(0, 70) + '»', { type: 'claim', id: c.id });
     if (c.confidence === 'alta' && f.independentOrigins < 2) add('confianca-inflacionada', 'media', 'Confiança «alta» com ' + f.independentOrigins + ' origem(ns) independente(s)', { type: 'claim', id: c.id }, evs.map((e) => e.id));
     if (ABSOLUTE.some((re) => re.test(String(c.text || '')))) add('linguagem-absoluta', 'media', 'Linguagem absoluta numa conclusão de investigação: «' + c.text.slice(0, 70) + '»', { type: 'claim', id: c.id });
-    if (f.copiesWithoutIndependentValue > 0 && ['confirmada', 'corroborada-independente'].includes(c.state)) {
+    /* FASE C: o estado forte passou a «facto-documentado»; os nomes antigos ficam
+       aqui de propósito — o auditor tem de apanhar dados legados, não só os novos. */
+    if (f.copiesWithoutIndependentValue > 0 && ['facto-documentado', 'confirmada', 'corroborada-independente'].includes(c.state)) {
       add('copias-como-corroboracao', 'alta', 'Estado forte assente em cópias da mesma origem (' + f.copiesWithoutIndependentValue + ' cópia(s))', { type: 'claim', id: c.id }, evs.map((e) => e.id));
     }
   });

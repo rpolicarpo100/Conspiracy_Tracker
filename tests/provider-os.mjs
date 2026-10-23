@@ -155,10 +155,10 @@ const user = await st.createUser({ email: 'p@exemplo.pt', passwordHash: 'x', sal
 const prj = await st.createProject(user.id, { title: 'Provider OS' });
 
 await t('store · migração v7 cria as colecções novas sem tocar nas antigas', async () => {
-  ok(st.schemaVersion() === 7, 'versão ' + st.schemaVersion());
+  ok(st.schemaVersion() === 8, 'versão ' + st.schemaVersion());
   ['providerCatalog', 'providerTests', 'providerRankings', 'selectionDecisions', 'checkpoints'].forEach((k) => ok(Array.isArray(st.data[k]), 'falta ' + k));
   ok(st.data.projects.length === 1 && st.data.users.length === 1, 'dados antigos intactos');
-  return 'v7 · 5 colecções novas · projectos e utilizadores preservados';
+  return 'v8 (v7 aplicada) · 5 colecções novas · projectos e utilizadores preservados';
 });
 
 await t('store · upsert idempotente por chave canónica (o mesmo modelo não entra duas vezes)', async () => {
@@ -289,7 +289,7 @@ await t('servidor · descoberta real de catálogo público (rede; SKIP se inaces
 
 await t('servidor · nada da fase 2 alterou os testes antigos (amostra de rotas)', async () => {
   const meta = await call('GET', '/api/meta');
-  ok(meta.json.schemaVersion === 7, 'esquema ' + meta.json.schemaVersion);
+  ok(meta.json.schemaVersion === 8, 'esquema ' + meta.json.schemaVersion);
   const prov = await call('GET', '/api/providers');
   ok(prov.status === 200 && Array.isArray(prov.json.providers), 'rota antiga de fornecedores partiu');
   return 'schemaVersion 7 · /api/providers intacto com ' + prov.json.providers.length + ' adaptadores';

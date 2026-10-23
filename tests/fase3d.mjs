@@ -247,8 +247,11 @@ await t('caminho com restrições exclui arestas e diz quantas excluiu', async (
 await t('resumo JSON marca conclusão acima do que as provas sustentam', async () => {
   const cl = await A.call('GET', '/api/projects/' + pid + '/claims');
   const id = cl.json.claims[0].id;
-  const patch = await A.call('PATCH', '/api/claims/' + id, { state: 'corroborada-independente' });
-  ok(patch.status === 200, 'estado forte recusado sem prova suficiente? ' + JSON.stringify(patch.json).slice(0, 160));
+  /* FASE C: o estado forte é «facto-documentado» e exige contraprova procurada.
+     O resumo tem de assinalar a conclusão que está acima do que as provas dão. */
+  await A.call('POST', '/api/claims/' + id + '/counter-evidence', { metodo: 'procura declarada no teste', resultado: 'nao-encontrada' });
+  const patch = await A.call('PATCH', '/api/claims/' + id, { state: 'facto-documentado' });
+  ok(patch.status === 200, 'estado forte recusado com 2 origens e contraprova: ' + JSON.stringify(patch.json).slice(0, 200));
   const s = await A.call('GET', '/api/projects/' + pid + '/summary?format=json');
   ok(s.status === 200, 'resumo ' + s.status);
   const c = s.json.conclusoes.find((x) => x.id === id);

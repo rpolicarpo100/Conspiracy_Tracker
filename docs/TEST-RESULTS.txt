@@ -2194,3 +2194,73 @@ E. O que continua por fazer
         → a auditoria media o ambiente LOCAL e generalizou; a durabilidade em
           produção está activa. A-07 e B3 corrigidos; falta o ensaio
           criar→reiniciar→reler numa base descartável (exige autorização).
+
+=====================================================================
+§58  FASE C — TAXONOMIA ÚNICA, INDEPENDÊNCIA DE FONTES, PROVENIÊNCIA,
+     CONTRAPROVA E CADUCIDADE — 2026-10-23
+=====================================================================
+
+§58.1  P O N T O   D E   P A R T I D A
+   A taxonomia exigida não existia: faltavam «não verificada» e «desactualizada»,
+   «fonte-inacessivel» misturava estado de fonte com estado de afirmação, e
+   «confirmada»/«corroborada-independente» punham a força no nome em vez de a
+   medirem. Duas cópias do mesmo texto em domínios diferentes contavam duas
+   origens. Nada obrigava a procurar contraprova nem a verificar proveniência.
+
+§58.2  T A X O N O M I A  (server/evidence.mjs — fonte única)
+   PASS 9 estados de afirmação exactamente os exigidos:
+        facto-documentado · alegacao-atribuida · inferencia · hipotese ·
+        contraditoria · refutada · nao-verificada · insuficiente · desactualizada
+   PASS estados de FONTE à parte (acessivel · fonte-inacessivel · retirada):
+        uma afirmação recusa um estado de fonte (400), e vice-versa
+   PASS STATE_MIGRATION: 9 nomes antigos com destino E motivo escritos
+   PASS migração v8: prova «fonte-inacessivel» → «nao-verificada», afirmação
+        «corroborada-independente» → «facto-documentado», hipótese legada idem,
+        com estadoMigradoDe/Motivo e resumo no registo de migrações
+   PASS /api/meta publica claimStates, evidenceStates, stateMigration, claimRules
+   PASS servidor + interface + grafo + relatório na MESMA lista (teste cruza os 4)
+
+§58.3  I N D E P E N D Ê N C I A  (C2)
+   PASS 3 provas com o MESMO texto em 3 domínios → 1 origem · 2 cópias
+        redundantes assinaladas · via {'origem':1,'texto-identico':2}
+   PASS 2 textos diferentes em domínios diferentes → 2 origens, 1 primária
+   PASS syndicationOf leva a cópia (texto reescrito) à peça original → 1 origem
+   PASS o auditor red-team continua a apanhar «estado forte assente em cópias»
+
+§58.4  P R O V E N I Ê N C I A  (C3)
+   PASS GET /api/claims/:id/provenance devolve excerto, localização, documento,
+        hash, data de recolha, tipo, postura e estado, por prova
+   PASS falta de localização é apontada pelo nome («localização (página/…)»)
+   PASS prova completa = excerto + localização + hash + documento/URL + data
+   PASS o relatório menciona a limitação; a interface tem botão «Proveniência»
+
+§58.5  C O N T R A P R O V A  (C4)
+   PASS «facto documentado» sem procura registada → 409 com motivo nomeado
+   PASS contraprova sem método → 400 · «encontrada» sem prova indicada → 400
+   PASS contraprova válida (data + método + resultado) → promoção aceite (200)
+   PASS prova contrária activa impede facto documentado; «contraditória» aceite
+   PASS POST /api/claims/:id/counter-evidence com CSRF e auditoria
+
+§58.6  C A D U C I D A D E  (C5)
+   PASS prova com validityUntil no passado → facto recusado (409) e sugestão
+        passa a «desactualizada»
+   PASS «desactualizada» sem marca explícita → 409 (não se adivinha caducidade)
+   PASS supersededBy e validade terminada são reconhecidos por isStale()
+
+§58.7  S U Í T E S
+   PASS npm test → 563 PASS · 0 falhas · 34 ficheiros · exit 0
+   PASS npm run test:ui → 9 suites · 100 verificações · exit 0
+   PASS tests/afirmacoes.mjs (NOVO) → 14/14
+   PASS tests/evidence.mjs → 17/17 com o contrato novo
+   PASS matriz ficheiro-a-ficheiro → 34 ficheiros, 0 com código ≠ 0
+
+§58.8  D E C I S Ã O   D E C L A R A D A
+   A proveniência incompleta AVISA mas não bloqueia a promoção (o relatório e a
+   rota dizem o que falta). Endurecer para bloquear está na fase H — uma linha
+   em evaluate(). Fica escrito para não parecer esquecimento.
+
+§58.9  O  Q U E   C O N T I N U A   A   F A L T A R
+   · arquivo como destino do fluxo (dossiê por investigação) — fase F
+   · tests/caso-socrates.mjs com documentos reais — fase H
+   · orçamento/retry/cancelamento por agente — fase D
+   · catálogo de APIs com máquina de estados e validação na UI — fase E

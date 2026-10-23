@@ -728,10 +728,20 @@
     await openProject(S.detail.project.id);
   }
 
+  /* Taxonomia única (FASE C): o estado diz o TIPO de conhecimento; a força está
+     nos factores. Rótulos vêm do servidor quando existirem, para não haver duas
+     listas a divergir. */
+  const ESTADO_LABEL = {
+    'facto-documentado': 'facto documentado', 'alegacao-atribuida': 'alegação atribuída',
+    'inferencia': 'inferência', 'hipotese': 'hipótese', 'contraditoria': 'contraditória',
+    'refutada': 'refutada', 'nao-verificada': 'não verificada', 'insuficiente': 'informação insuficiente',
+    'desactualizada': 'desactualizada', 'fonte-inacessivel': 'fonte inacessível'
+  };
   function stateTag(state) {
-    const ok = ['confirmada', 'corroborada-independente'].includes(state);
-    const bad = ['refutada', 'contraditoria', 'fonte-inacessivel'].includes(state);
-    return el('span', { class: 'tag ' + (ok ? 'ok' : bad ? 'bad' : 'warn'), text: state });
+    const forte = state === 'facto-documentado';
+    const mau = ['refutada', 'contraditoria', 'desactualizada'].includes(state);
+    const label = ((S.meta && (S.meta.claims || {}).labels) || ESTADO_LABEL)[state] || ESTADO_LABEL[state] || state;
+    return el('span', { class: 'tag ' + (forte ? 'ok' : mau ? 'bad' : 'warn'), text: label });
   }
 
   /* filtro temporal: os parâmetros têm nomes próprios para não colidirem com
@@ -1405,7 +1415,7 @@
 
     /* conclusões */
     root.appendChild(el('h4', { style: 'margin:16px 0 4px;font-size:12px', text: 'Conclusões e alegações (' + d.claims.length + ')' }));
-    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'O servidor recusa estados que as provas não sustentam: «confirmada» exige duas origens independentes e uma prova primária, sem prova contrária activa.' }));
+    root.appendChild(el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text: 'O servidor recusa estados que as provas não sustentam: «facto documentado» exige prova primária/documental ou duas origens independentes, sem contradição activa, sem caducidade e com procura de contraprova registada. Cópias do mesmo texto não contam duas vezes.' }));
     if (!d.claims.length) root.appendChild(el('div', { style: 'font-size:11px;color:var(--muted)', text: 'Sem conclusões registadas.' }));
     d.claims.forEach((c) => {
       const fa = c.factors || {};
@@ -1419,7 +1429,38 @@
           'origens independentes ' + (fa.independentOrigins || 0) + ' · favoráveis ' + (fa.favourable || 0) +
           ' · contrárias ' + (fa.contrary || 0) + ' · primárias ' + (fa.primaryFavourable || 0) +
           ' · cópias redundantes ' + (fa.copiesWithoutIndependentValue || 0) }),
+        el('div', { style: 'font-size:10px;color:var(--muted);margin-bottom:4px', text:
+          (c.contraprova
+            ? 'contraprova: ' + c.contraprova.resultado + ' em ' + String(c.contraprova.procuradaEm || '').slice(0, 10) + ' · ' + String(c.contraprova.metodo || '').slice(0, 80)
+            : 'contraprova: NÃO procurada — «facto documentado» é recusado enquanto não houver registo') }),
         el('div', { class: 'chips' }, [
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Proveniência',
+            onclick: async () => {
+              const r = await api('/api/claims/' + c.id + '/provenance');
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              const pv = r.json.proveniencia;
+              note('Proveniência: ' + pv.completos + '/' + pv.total + ' prova(s) com rasto completo'
+                + (pv.completa ? '' : ' — faltas: ' + pv.faltas.slice(0, 3).join(' | ')), pv.completa ? 'ok' : 'warn', 8000);
+            }
+          }),
+          el('button', {
+            class: 'btn sm', type: 'button', text: 'Registar contraprova',
+            onclick: async () => {
+              const metodo = window.prompt('Método da procura de contraprova (onde procurou, com que termos, em que data):');
+              if (!metodo) return;
+              const resultado = window.confirm('Encontrou contraprova?\nOK = sim · Cancelar = não encontrada') ? 'encontrada' : 'nao-encontrada';
+              const body = { metodo, resultado };
+              if (resultado === 'encontrada') {
+                const eid = window.prompt('ID da prova contrária (tem de estar ligada à afirmação):');
+                if (!eid) return note('Sem prova indicada, não se regista «encontrada».', 'warn');
+                body.evidenceIds = [eid.trim()];
+              }
+              const r = await api('/api/claims/' + c.id + '/counter-evidence', { method: 'POST', body });
+              if (!r.ok) return note('Falhou: ' + r.error.message, 'bad');
+              note('Contraprova registada: ' + resultado, 'ok'); await reloadDetail();
+            }
+          }),
           el('button', {
             class: 'btn sm', type: 'button', text: 'Aplicar estado sugerido (' + c.suggested + ')',
             onclick: async () => {

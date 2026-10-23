@@ -215,7 +215,17 @@ O relatório `docs/APIS-sem-chave.*` (18 catálogos públicos, 1 geração real,
 o essencial: encontrar um endpoint aberto não o torna utilizável neste fluxo. **A conclusão
 operacional é nova e material: o «modo sem chave» não sustenta a investigação.**
 
-### A-04 — Taxonomia de estados de afirmação não coincide com a exigida `PARCIAL`
+### A-04 — Taxonomia de estados de afirmação — **RESOLVIDO na FASE C** `IMPLEMENTADO_E_TESTADO`
+
+> **Fecho (2026-10-23, FASE C).** `server/evidence.mjs` passou a ser a fonte única com os nove
+> estados exigidos — `facto-documentado`, `alegacao-atribuida`, `inferencia`, `hipotese`,
+> `contraditoria`, `refutada`, `nao-verificada`, `insuficiente`, `desactualizada` — e uma lista
+> separada para estados de **fonte** (`fonte-inacessivel`, `retirada`). Os nomes antigos têm mapa
+> declarado (`STATE_MIGRATION`) e a migração v8 da base converte-os, guardando `estadoMigradoDe`.
+> `docs/ENTREGA-FASE-C.md` e `tests/afirmacoes.mjs` provam as quatro superfícies (servidor, UI,
+> grafo, relatório) na mesma lista. O texto abaixo fica como registo do que estava errado.
+
+#### Registo original
 
 `GET /api/meta` publica 9 estados: `confirmada`, `corroborada-independente`, `alegacao-atribuida`,
 `inferencia-suportada`, `hipotese`, `contraditoria`, `insuficiente`, `refutada`, `fonte-inacessivel`.

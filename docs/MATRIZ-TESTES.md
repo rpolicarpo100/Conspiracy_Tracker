@@ -13,48 +13,48 @@ código 1.
 
 ---
 
-## 1. `npm test` — 33 ficheiros, um a um (FASE B aplicada)
+## 1. `npm test` — 34 ficheiros, um a um (FASES B e C aplicadas)
 
-Gerado por `node tools/auditoria/matriz-testes.mjs` (cada ficheiro em processo próprio; o
-`/tmp/matriz.json` tem os dados completos).
+Gerado por `node tools/auditoria/matriz-testes.mjs` (cada ficheiro em processo próprio).
 
-Total: **33 ficheiros · 549 PASS · 0 FAIL · 0 ficheiros com código de saída ≠ 0**.
+Total: **34 ficheiros · 563 PASS · 0 FAIL · 0 ficheiros com código de saída ≠ 0**.
 
 | ficheiro | PASS | FAIL | duração | código | veredicto |
 |---|---|---|---|---|---|
-| `tests/agents-p3.mjs` | 16 | 0 | 2,3 s | 0 | ok |
+| `tests/afirmacoes.mjs` | 14 | 0 | 1,2 s | 0 | ok |
+| `tests/agents-p3.mjs` | 16 | 0 | 2,2 s | 0 | ok |
 | `tests/agents.mjs` | 18 | 0 | 4,7 s | 0 | ok |
 | `tests/apis.mjs` | 13 | 0 | 0,2 s | 0 | ok |
-| `tests/auth-privacidade.mjs` | 15 | 0 | 6,4 s | 0 | ok |
-| `tests/benchmark.mjs` | 18 | 0 | 3,1 s | 0 | ok |
+| `tests/auth-privacidade.mjs` | 15 | 0 | 5,8 s | 0 | ok |
+| `tests/benchmark.mjs` | 18 | 0 | 2,7 s | 0 | ok |
 | `tests/cabecalhos.mjs` | 2 | 0 | 1,8 s | 0 | ok |
-| `tests/discovery.mjs` | 13 | 0 | 1,5 s | 0 | ok |
-| `tests/evidence.mjs` | 17 | 0 | 4,1 s | 0 | ok |
+| `tests/discovery.mjs` | 13 | 0 | 1,4 s | 0 | ok |
+| `tests/evidence.mjs` | 17 | 0 | 4,0 s | 0 | ok |
 | `tests/fase3c.mjs` | 28 | 0 | 3,1 s | 0 | ok |
-| `tests/fase3d.mjs` | 18 | 0 | 2,4 s | 0 | ok |
-| `tests/fase3e.mjs` | 21 | 0 | 0,7 s | 0 | ok |
-| `tests/flow.mjs` | 14 | 0 | 7,7 s | 0 | ok |
-| `tests/fontes.mjs` | 23 | 0 | 1,0 s | 0 | ok |
-| `tests/graph.mjs` | 13 | 0 | 2,2 s | 0 | ok |
-| `tests/ia-fornecedores.mjs` | 21 | 0 | 1,9 s | 0 | ok |
+| `tests/fase3d.mjs` | 18 | 0 | 2,3 s | 0 | ok |
+| `tests/fase3e.mjs` | 21 | 0 | 0,6 s | 0 | ok |
+| `tests/flow.mjs` | 14 | 0 | 7,2 s | 0 | ok |
+| `tests/fontes.mjs` | 23 | 0 | 1,6 s | 0 | ok |
+| `tests/graph.mjs` | 13 | 0 | 2,1 s | 0 | ok |
+| `tests/ia-fornecedores.mjs` | 21 | 0 | 1,8 s | 0 | ok |
 | `tests/keyless.mjs` | 10 | 0 | 0,3 s | 0 | ok |
 | `tests/modelos.mjs` | 12 | 0 | 0,1 s | 0 | ok |
-| `tests/ocr.mjs` | 15 | 0 | 5,4 s | 0 | ok |
+| `tests/ocr.mjs` | 15 | 0 | 4,5 s | 0 | ok |
 | `tests/pdftext.mjs` | 19 | 0 | 0,1 s | 0 | ok |
 | `tests/persistencia-pg.mjs` | 0 | 0 | 0,1 s | 0 | ok |
-| `tests/pesquisa-servidor.mjs` | 18 | 0 | 1,5 s | 0 | ok |
-| `tests/provider-os.mjs` | 25 | 0 | 0,8 s | 0 | ok |
-| `tests/provider-tests.mjs` | 18 | 0 | 4,3 s | 0 | ok |
-| `tests/quota-ia.mjs` | 10 | 0 | 0,9 s | 0 | ok |
-| `tests/realdata-bundle.mjs` | 7 | 0 | 0,1 s | 0 | ok |
-| `tests/research.mjs` | 24 | 0 | 3,8 s | 0 | ok |
-| `tests/retencao.mjs` | 10 | 0 | 1,2 s | 0 | ok |
-| `tests/scheduler.mjs` | 21 | 0 | 2,3 s | 0 | ok |
-| `tests/search.mjs` | 17 | 0 | 5,7 s | 0 | ok |
-| `tests/seguranca.mjs` | 25 | 0 | 15,6 s | 0 | ok |
-| `tests/selector.mjs` | 24 | 0 | 0,5 s | 0 | ok |
-| `tests/server.mjs` | 26 | 0 | 4,4 s | 0 | ok |
-| `tests/ssrn.mjs` | 18 | 0 | 0,8 s | 0 | ok |
+| `tests/pesquisa-servidor.mjs` | 18 | 0 | 1,3 s | 0 | ok |
+| `tests/provider-os.mjs` | 25 | 0 | 0,6 s | 0 | ok |
+| `tests/provider-tests.mjs` | 18 | 0 | 4,1 s | 0 | ok |
+| `tests/quota-ia.mjs` | 10 | 0 | 1,0 s | 0 | ok |
+| `tests/realdata-bundle.mjs` | 7 | 0 | 0,0 s | 0 | ok |
+| `tests/research.mjs` | 24 | 0 | 3,5 s | 0 | ok |
+| `tests/retencao.mjs` | 10 | 0 | 1,1 s | 0 | ok |
+| `tests/scheduler.mjs` | 21 | 0 | 2,5 s | 0 | ok |
+| `tests/search.mjs` | 17 | 0 | 5,3 s | 0 | ok |
+| `tests/seguranca.mjs` | 25 | 0 | 25,1 s | 0 | ok |
+| `tests/selector.mjs` | 24 | 0 | 0,3 s | 0 | ok |
+| `tests/server.mjs` | 26 | 0 | 4,0 s | 0 | ok |
+| `tests/ssrn.mjs` | 18 | 0 | 0,7 s | 0 | ok |
 
 > **`tests/persistencia-pg.mjs` continua a ser o único ficheiro com 0 asserções:** imprime
 > `SKIP persistência: DATABASE_URL não está definida` e sai com 0. Um «verde» aqui **não prova
@@ -65,8 +65,8 @@ Total: **33 ficheiros · 549 PASS · 0 FAIL · 0 ficheiros com código de saída
 `npm test` encadeia os 32 ficheiros com `&&`. Numa cadeia assim, um ficheiro que rebente no
 arranque aparece como falha global sem dizer qual foi — e um ficheiro que não corre passa
 despercebido se estiver fora da cadeia. A matriz existe precisamente para separar as duas coisas.
-A soma coincide com a cadeia completa: **549 PASS / 0 falhas** (542 da fase anterior + 7 novos da
-FASE B: `tests/cabecalhos.mjs` 2, `tests/research.mjs` 23 −19, mais os casos novos dentro dele).
+A soma coincide com a cadeia completa: **563 PASS / 0 falhas** (542 da FASE A + 7 da FASE B +
+14 de `tests/afirmacoes.mjs` na FASE C).
 
 ---
 

@@ -14,12 +14,13 @@
    ===================================================================== */
 import { promises as fs } from 'node:fs';
 import { createPgStore } from './pg.mjs';
+import { migrateState, STATES as CLAIM_STATES } from './evidence.mjs';
 import fs_sync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const EMPTY = () => ({
   version: SCHEMA_VERSION,
@@ -102,6 +103,38 @@ const MIGRATIONS = {
     add('checkpoints', 'arquivo de trabalho: contexto recuperável, decisões, artefactos e versão');
     return changes;
   },
+  /* v8 — taxonomia única de estados de afirmação (FASE C).
+     Os nomes antigos («confirmada», «corroborada-independente», «inferencia-suportada»,
+     «fonte-inacessivel») confundiam TIPO de conhecimento com FORÇA do apoio. A força
+     passou a ser medida em factores; o estado passou a dizer o tipo. Cada valor antigo
+     é convertido e a origem fica registada em `estadoMigradoDe`, para que o relatório
+     possa dizer de onde veio em vez de reescrever a história. */
+  8: (db) => {
+    const changes = [];
+    let provas = 0; let conclusoes = 0;
+    const porPar = {};
+    const converter = (obj, campo) => {
+      const antes = obj[campo];
+      const m = migrateState(antes);
+      if (!m.migradoDe) return false;
+      obj[campo] = m.state;
+      obj.estadoMigradoDe = m.migradoDe;
+      obj.estadoMigradoMotivo = m.motivo;
+      const k = m.migradoDe + ' → ' + m.state;
+      porPar[k] = (porPar[k] || 0) + 1;
+      return true;
+    };
+    (db.evidence || []).forEach((e) => { if (converter(e, 'validationState')) provas++; });
+    (db.claims || []).forEach((c) => { if (converter(c, 'state')) conclusoes++; });
+    (db.projects || []).forEach((p) => (p.hypotheses || []).forEach((h) => {
+      if (h && h.state && !STATES_OK.includes(h.state)) { const m = migrateState(h.state); if (m.migradoDe) { h.state = m.state; h.estadoMigradoDe = m.migradoDe; conclusoes++; } }
+    }));
+    if (provas) changes.push(provas + ' prova(s) convertidas para a taxonomia única');
+    if (conclusoes) changes.push(conclusoes + ' afirmação(ões) convertidas para a taxonomia única');
+    Object.keys(porPar).forEach((k) => changes.push(k + ' (' + porPar[k] + ')'));
+    if (!changes.length) changes.push('nenhum valor antigo de estado encontrado');
+    return changes;
+  },
   5: (db, missing) => {
     const changes = [];
     if (!Array.isArray(db.notes)) db.notes = [];
@@ -111,6 +144,9 @@ const MIGRATIONS = {
     return changes;
   }
 };
+
+/* Os estados válidos vêm de server/evidence.mjs — fonte única, sem lista paralela. */
+const STATES_OK = CLAIM_STATES;
 
 function migrate(db, missing) {
   const from = Number(db.version || 1);
