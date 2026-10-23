@@ -205,6 +205,7 @@ await t('reconhecimento do erro · cobre os avisos reais dos fornecedores', asyn
   /* erroDeModelo: 404/410 contam, 401/429/500 não */
   ok(erroDeModelo({ status: 404, error: 'HTTP 404' }), '404 sem corpo devia contar');
   ok(erroDeModelo({ status: 410, error: '' }), '410 devia contar');
+  ok(erroDeModelo({ status: 404, error: 'This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.8-flash' }), '«no longer available» devia contar');
   ok(!erroDeModelo({ status: 401, error: 'HTTP 401' }), '401 não é modelo');
   ok(!erroDeModelo({ status: 429, error: 'rate limit' }), '429 não é modelo');
   ok(!erroDeModelo({ status: 500, error: 'HTTP 500' }), '500 não é modelo');

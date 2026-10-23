@@ -22,7 +22,14 @@
    ===================================================================== */
 
 /* erros que significam «esse modelo não serve» e não «o pedido está mal» */
-export const ERRO_DE_MODELO = /does not exist|no access|not found|unknown model|invalid model|decommission|deprecat|unsupported model|model[_ ]not[_ ]found/i;
+export const ERRO_DE_MODELO = new RegExp([
+  'does not exist', 'no access', 'not found', 'unknown model', 'invalid model',
+  'decommission', 'deprecat', 'unsupported model', 'model[_ ]not[_ ]found',
+  /* avisos reais vistos em produção (Google): «This model … is no longer
+     available. Please update your code to use models/gemini-3.8-flash» */
+  'no longer available', 'not available', 'has been retired', 'retired',
+  'discontinued', 'has been removed', 'sunset'
+].join('|'), 'i');
 
 /* Um 404 também é, na prática, «esse modelo não existe»: é assim que o Google
    responde a um modelo retirado. A diferença é que, neste caso, o corpo pode vir
@@ -44,8 +51,9 @@ export function sugestaoDoFornecedor(texto) {
 export const erroDeModelo = (r) => {
   const texto = String((r && r.error) || '');
   if (ERRO_DE_MODELO.test(texto)) return true;
-  const semCorpo = !texto || /^HTTP \d{3}$/.test(texto.trim());
-  return !!(semCorpo && r && (r.status === 404 || r.status === 410));
+  /* um 404/410 numa chamada de conversa é, na prática, «esse modelo não existe»:
+     o fornecedor pode explicá-lo por palavras ou não explicar nada */
+  return !!(r && (r.status === 404 || r.status === 410));
 };
 
 const FORA = /embed|whisper|tts|audio|speech|moderation|guard|rerank|clip|image|dall|sd-|flux|stable-diffusion|vision-only|ocr/i;
