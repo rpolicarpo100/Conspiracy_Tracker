@@ -1,6 +1,6 @@
 # APIs de IA «sem chave» — o que foi medido
 
-Relatório gerado por `node tools/keyless-scan.mjs` em **2026-10-26** (2026-10-26T10:18:19.240Z). Dados completos: [`docs/APIS-sem-chave.json`](APIS-sem-chave.json).
+Relatório gerado por `node tools/keyless-scan.mjs` em **2026-11-02** (2026-11-02T12:39:21.896Z). Dados completos: [`docs/APIS-sem-chave.json`](APIS-sem-chave.json).
 
 Este ficheiro é **gerado automaticamente** pelo workflow `.github/workflows/keyless-scan.yml`.
 Não editar à mão: a próxima execução substitui-o.
@@ -19,15 +19,15 @@ Fonte dos candidatos: `https://models.dev/api.json`. Nada de CAPTCHA, paywall ou
 | etapa 1 — catálogo público | nº |
 |---|---|
 | candidatos sondados | 46 |
-| `200` na lista de modelos («sem-chave») | 15 |
-| `401`/`403` («exige-chave») | 22 |
-| indeterminado | 9 |
+| `200` na lista de modelos («sem-chave») | 14 |
+| `401`/`403` («exige-chave») | 20 |
+| indeterminado | 12 |
 
 | etapa 2 — geração sem chave | nº |
 |---|---|
-| endpoints confirmados na etapa 2 | 15 |
+| endpoints confirmados na etapa 2 | 14 |
 | **geram sem chave** | **1** |
-| recusaram | 14 |
+| recusaram | 13 |
 
 ### Geram sem chave (confirmado por geração real)
 
@@ -39,24 +39,23 @@ Fonte dos candidatos: `https://models.dev/api.json`. Nada de CAPTCHA, paywall ou
 
 | fornecedor | HTTP |
 |---|---|
-| moark | 401 |
-| pareto | 401 |
-| umans-ai | 401 |
-| orcarouter | 401 |
-| subconscious | 401 |
-| alibaba-coding-plan | 401 |
+| helicone | 401 |
+| bailing | — |
+| iteracompute | 401 |
 | tinfoil | 401 |
-| hyper | 401 |
-| alibaba-coding-plan-cn | 401 |
-| huggingface | 401 |
-| munito | 401 |
+| vispark | 401 |
+| alibaba-coding-plan | 401 |
+| qiniu-ai | 401 |
+| sarvam | 403 |
+| meganova | 401 |
 | coralbricks | 401 |
-| freemodel | 403 |
-| bee | 401 |
+| engy | 401 |
+| abacus | 403 |
+| berget | 401 |
 
 ## Conclusão
 
-**Uma lista de modelos pública não é uma API de geração aberta.** 15 endpoints responderam `200` na lista de modelos e apenas 1 aceitaram gerar sem credencial. A conclusão «gera sem chave» só é tirada quando há uma resposta gerada.
+**Uma lista de modelos pública não é uma API de geração aberta.** 14 endpoints responderam `200` na lista de modelos e apenas 1 aceitaram gerar sem credencial. A conclusão «gera sem chave» só é tirada quando há uma resposta gerada.
 
 O único endpoint usado pela aplicação para analisar documentos é o declarado em
 `server/providers.mjs` (`pollinations`), com o prompt publicado em `docs/PRIVACIDADE.md`.
